@@ -114,6 +114,30 @@ function Harness(): React.ReactElement {
 	);
 }
 
+function TitleEditHarness(): React.ReactElement {
+	const [card, setCard] = useState(createCard());
+
+	return (
+		<TooltipProvider>
+			<BoardCard
+				card={card}
+				index={0}
+				columnId="review"
+				onSaveTitle={(taskId, title) => {
+					setCard((currentCard) =>
+						currentCard.id === taskId
+							? {
+									...currentCard,
+									title,
+								}
+							: currentCard,
+					);
+				}}
+			/>
+		</TooltipProvider>
+	);
+}
+
 describe("BoardCard", () => {
 	let container: HTMLDivElement;
 	let root: Root;
@@ -339,5 +363,45 @@ describe("BoardCard", () => {
 		});
 
 		expect(container.textContent).toContain("Freshly created task description");
+	});
+
+	it("edits the title inline and saves on blur", async () => {
+		await act(async () => {
+			root.render(<TitleEditHarness />);
+		});
+
+		const editButton = container.querySelector('button[aria-label="Edit task title"]');
+		expect(editButton).toBeInstanceOf(HTMLButtonElement);
+
+		await act(async () => {
+			if (!(editButton instanceof HTMLButtonElement)) {
+				throw new Error("Expected an edit title button.");
+			}
+			editButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			editButton.click();
+		});
+
+		const input = container.querySelector("input");
+		expect(input).toBeInstanceOf(HTMLInputElement);
+		if (!(input instanceof HTMLInputElement)) {
+			throw new Error("Expected an inline title input.");
+		}
+
+		await act(async () => {
+			input.focus();
+		});
+
+		await act(async () => {
+			const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+			valueSetter?.call(input, "Renamed title");
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+		});
+
+		await act(async () => {
+			input.blur();
+		});
+
+		expect(container.querySelector("input")).toBeNull();
+		expect(container.textContent).toContain("Renamed title");
 	});
 });

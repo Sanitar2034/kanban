@@ -17,7 +17,6 @@ import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components
 import { TaskCreateDialog } from "@/components/task-create-dialog";
 import { TaskInlineCreateCard } from "@/components/task-inline-create-card";
 import { TaskStartServicePromptDialog } from "@/components/task-start-service-prompt-dialog";
-import { TaskTitleDialog } from "@/components/task-title-dialog";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,8 +75,6 @@ export default function App(): ReactElement {
 	const [homeSidebarSection, setHomeSidebarSection] = useState<"projects" | "agent">("projects");
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
-	const [editingTitleTaskId, setEditingTitleTaskId] = useState<string | null>(null);
-	const [editingTitleValue, setEditingTitleValue] = useState("");
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
@@ -288,34 +285,14 @@ export default function App(): ReactElement {
 		queueTaskStartAfterEdit,
 	});
 
-	const handleOpenTaskTitleEditor = useCallback(
-		(taskId: string) => {
-			const selection = findCardSelection(board, taskId);
-			if (!selection) {
-				return;
-			}
-			setEditingTitleTaskId(taskId);
-			setEditingTitleValue(selection.card.title);
-		},
-		[board],
-	);
-
-	const handleCloseTaskTitleEditor = useCallback(() => {
-		setEditingTitleTaskId(null);
-		setEditingTitleValue("");
-	}, []);
-
-	const handleSaveTaskTitle = useCallback(() => {
-		if (!editingTitleTaskId) {
-			return;
-		}
+	const handleSaveTaskTitle = useCallback((taskId: string, title: string) => {
 		setBoard((currentBoard) => {
-			const selection = findCardSelection(currentBoard, editingTitleTaskId);
+			const selection = findCardSelection(currentBoard, taskId);
 			if (!selection) {
 				return currentBoard;
 			}
-			const updated = updateTask(currentBoard, editingTitleTaskId, {
-				title: editingTitleValue,
+			const updated = updateTask(currentBoard, taskId, {
+				title,
 				prompt: selection.card.prompt,
 				startInPlanMode: selection.card.startInPlanMode,
 				autoReviewEnabled: selection.card.autoReviewEnabled === true,
@@ -324,8 +301,7 @@ export default function App(): ReactElement {
 			});
 			return updated.updated ? updated.board : currentBoard;
 		});
-		handleCloseTaskTitleEditor();
-	}, [editingTitleTaskId, editingTitleValue, handleCloseTaskTitleEditor]);
+	}, []);
 
 	useEffect(() => {
 		taskEditorResetRef.current = resetTaskEditorState;
@@ -891,7 +867,7 @@ export default function App(): ReactElement {
 											editingTaskId={editingTaskId}
 											inlineTaskEditor={inlineTaskEditor}
 											onEditTask={handleOpenEditTask}
-											onEditTaskTitle={handleOpenTaskTitleEditor}
+											onSaveTaskTitle={handleSaveTaskTitle}
 											onCommitTask={handleCommitTask}
 											onOpenPrTask={handleOpenPrTask}
 											onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
@@ -974,7 +950,7 @@ export default function App(): ReactElement {
 								onEditTask={(task) => {
 									handleOpenEditTask(task, { preserveDetailSelection: true });
 								}}
-								onEditTaskTitle={handleOpenTaskTitleEditor}
+								onSaveTaskTitle={handleSaveTaskTitle}
 								onCommitTask={handleCommitTask}
 								onOpenPrTask={handleOpenPrTask}
 								onAgentCommitTask={handleAgentCommitTask}
@@ -1062,13 +1038,6 @@ export default function App(): ReactElement {
 				branchRef={newTaskBranchRef}
 				branchOptions={createTaskBranchOptions}
 				onBranchRefChange={setNewTaskBranchRef}
-			/>
-			<TaskTitleDialog
-				open={editingTitleTaskId !== null}
-				title={editingTitleValue}
-				onTitleChange={setEditingTitleValue}
-				onClose={handleCloseTaskTitleEditor}
-				onSave={handleSaveTaskTitle}
 			/>
 			<ClearTrashDialog
 				open={isClearTrashDialogOpen}
