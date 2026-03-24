@@ -1,5 +1,114 @@
 # Changelog
 
+## [0.1.34]
+
+- Model pickers now show recommended Cline models for quick selection
+- Failed tasks show a red error icon and failure reason on the board card instead of a spinner
+- When adding a project on a headless/remote runtime where no directory picker is available, you can now enter the project path manually
+- Fixed workspace not refreshing correctly on startup by waiting for the runtime snapshot before syncing
+- Fixed Kanban agent creating tasks for worktree paths instead of the main project
+
+## [0.1.33]
+
+- Fixed task worktree setup for Turbopack projects no longer attempting slow background copies of node_modules; affected subproject dependencies are now correctly skipped instead of symlinked
+
+## [0.1.32]
+
+- Fix concurrent task mutations (e.g. adding multiple tasks at the same time) failing due to write conflicts -- task mutations now use a workspace lock to safely handle simultaneous operations
+- Fix a bug where stopping a task that was restored from a previous session would fail because the session wasn't properly reconnected on startup
+- Fix a bug where restarting the app would show raw metadata in user messages for old Cline sessions that were reloaded
+- Fix worktrees for projects using Turbopack, where symlinked node_modules would cause build failures -- worktrees now fall back to copying node_modules for Turbopack projects
+- Fix SDK command parsing that could cause agent system prompts to be malformed
+- Fix Cmd+V image paste in the chat composer not working due to the paste handler running asynchronously, causing the browser to swallow the event
+- Fix proper-lockfile crashing due to accidentally passing undefined as the onCompromised handler
+- Require confirmation before git init when adding projects
+- Fix task card agent preview flickering to empty state
+- Cancel inline task edit on Escape key press
+- Move task worktrees to ~/.cline/worktrees
+- Update onboarding intro video and frame width
+- Change the start-all-tasks shortcut to Cmd+B
+
+## [0.1.31]
+
+- Add ability to resume Cline tasks that were trashed
+- Support image attachments for Cline agent chat
+- Fix the commit and make PR button in the Cline agent chat panel
+- Fix issue where creating multiple tasks at the same time with git submodules would run into a git config locking issue
+- Fix script shortcuts to interrupt previously long-running commands, so you no longer need to Ctrl+C before hitting the shortcut again
+- Fix issue where running incorrect kanban commands would auto-open the browser
+- Preserve runnable kanban command in sidebar prompt
+- Avoid premature Codex review state transitions
+- Fix diff "Add" button incorrectly sending Cline chat messages
+- Various UX improvements (checkbox labels, Cline thinking shimmer animation)
+
+## [0.1.30]
+
+- Add MCP server management and OAuth authentication for Cline providers
+- Add "Start All Tasks" keyboard shortcut (Alt + Shift + S)
+- Show assistant response previews in task card activity instead of generic "Agent active" text
+- Track full chat history per task, enabling richer conversation display and reliable message streaming
+- Display API key expiry as a human-readable date instead of a raw number
+- Support launching Kanban without a selected project (global-only mode)
+- Automatically restart agent terminals when the underlying process exits unexpectedly
+- Fix prewarm cleanup accidentally disposing the detail panel terminal for active tasks
+- Fix task card expand animation jumping by waiting for measured height before animating
+- Fix Cline thinking indicator flicker in the chat panel
+
+## [0.1.29]
+
+- Fix onboarding and settings screens not working when no projects exist
+- Update Cline SDK with auth migration for existing CLI users and fixes for OpenAI-compatible APIs
+
+## [0.1.28]
+
+- Onboarding dialog for first-time users with guided walkthroughs for auto-commit, linking, and diff comments
+- Dependency links now show arrowheads so you can see direction at a glance, and the agent provides guidance about link direction when creating them
+- Cline chat input field now includes a model selector, plan/act mode toggle, and a cancel button to stop generations midstream
+- Resizable project sidebar (drag to resize, persists across sessions)
+- Show the full command in expanded run_commands tool calls
+- Review actions (Commit, Open PR) only appear when there are actual file changes
+- Cline chat preserves your scroll position when reading older messages
+- Failed tool calls display proper error messages instead of deadlocking the session
+- "Thinking" indicator shows while tool calls are loading
+- ANSI escape codes from CLI output are stripped instead of showing raw characters
+- Inline code in Cline chat wraps correctly instead of overflowing
+- Tasks with uncompleted dependencies can no longer be started
+- Better error reporting when Cline fails to start (clear messages instead of silent hangs)
+- Gracefully handles missing provider settings instead of crashing
+- Removed OpenAI, Gemini, and Droid agents to reduce surface area at launch (coming back in follow-up releases)
+
+## [0.1.27]
+
+- Upgraded Cline SDK to stable v0.0.4, replacing nightly builds for more reliable native Cline sessions
+
+## [0.1.26]
+
+- Trashing a task now saves a git patch of any uncommitted work, and restoring it from trash automatically reapplies those changes so nothing gets lost
+- "Create more" toggle in the new task dialog lets you create multiple tasks in a row without reopening the dialog each time
+- New keyboard shortcuts: Cmd/Ctrl+G toggles the git history view, Cmd/Ctrl+Shift+S opens settings, and Esc closes git history from the home screen
+- Shortcut commands now safely interrupt any running terminal process before executing, so commands no longer get jumbled with whatever was previously running
+- Agent file-read activity now shows the full list of files being accessed instead of truncating with "(+N more)"
+- Expanding the diff view now automatically closes the terminal panel to avoid overlapping views
+- Task worktree cleanup no longer gets stuck when patch capture fails
+- Fixed the "Thinking..." indicator incorrectly appearing while the agent is actively streaming a response
+- Native Cline sessions now correctly capture their latest changes when entering review
+- Removed the redundant "Projects" label below the sidebar segment tabs
+- Consistent spacing and alignment across all alert dialogs
+- Fixed terminal background color in the detail view to match the rest of the overlay
+
+## [0.1.25]
+
+- Added a chat view to the home sidebar for project-scoped agent conversations. What used to be the project column is now a sidebar that can switch between projects and chat.
+- The agent can now trash and delete tasks on your behalf using new task management commands
+- When no CLI agent is detected, a guided setup flow walks you through getting started
+- Replaced the Kanban skill system with `--append-system-prompt` -- since the board now has a dedicated agent, we just append context to its prompt instead of maintaining a separate skill
+- Native Cline SDK chat runtime with cancelable turns
+- `--host` flag to bind the server to a custom IP address
+- Submodules are now initialized automatically in new task worktrees
+- Fix Escape key unexpectedly closing the detail view
+- Increased shortcut label and footer font sizes
+- Capped agent preview lines in task cards
+
 ## [0.1.24]
 
 - Fixed multiline prompt arguments being broken on Windows cmd.exe

@@ -94,10 +94,6 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 				configured: false,
 			},
 		],
-		taskStartSetupAvailability: {
-			githubCli: true,
-			linearMcp: true,
-		},
 		shortcuts: [],
 		clineProviderSettings: {
 			providerId: "anthropic",
@@ -116,6 +112,11 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 		openPrPromptTemplateDefault: "pr",
 		...overrides,
 	};
+}
+
+function createLegacyRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): RuntimeConfigResponse {
+	const { clineProviderSettings: _clineProviderSettings, ...legacyConfig } = createRuntimeConfig(overrides);
+	return legacyConfig as RuntimeConfigResponse;
 }
 
 const DEFAULT_WORKSPACE_GIT: RuntimeGitRepositoryInfo = {
@@ -383,6 +384,31 @@ describe("useHomeAgentSession", () => {
 			workspaceId: "workspace-1",
 			taskId: anthropicTaskId,
 		});
+		expect(startTaskSessionMutateMock).not.toHaveBeenCalled();
+	});
+
+	it("falls back to empty cline settings when older config shapes omit them", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					config={createLegacyRuntimeConfig({
+						selectedAgentId: "cline",
+						effectiveCommand: "cline",
+					})}
+					currentProjectId="workspace-1"
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await createFlushPromises();
+		});
+
+		const snapshot = requireSnapshot(latestSnapshot);
+		expect(snapshot.panelMode).toBe("chat");
+		expect(snapshot.taskId).toMatch(/^__home_agent__:workspace-1:cline:/);
 		expect(startTaskSessionMutateMock).not.toHaveBeenCalled();
 	});
 

@@ -9,6 +9,7 @@ import {
 	runClineProviderOauthLogin,
 	saveClineProviderSettings,
 } from "@/runtime/runtime-config-query";
+import { getRuntimeClineProviderSettings } from "@/runtime/native-agent";
 import type {
 	RuntimeAgentId,
 	RuntimeClineOauthProvider,
@@ -28,6 +29,13 @@ interface UseRuntimeSettingsClineControllerOptions {
 interface SaveResult {
 	ok: boolean;
 	message?: string;
+}
+
+interface SaveProviderSettingsOverrides {
+	providerId?: string;
+	modelId?: string | null;
+	apiKey?: string | null;
+	baseUrl?: string | null;
 }
 
 export interface UseRuntimeSettingsClineControllerResult {
@@ -52,7 +60,7 @@ export interface UseRuntimeSettingsClineControllerResult {
 	oauthAccountId: string;
 	oauthExpiresAt: string;
 	hasUnsavedChanges: boolean;
-	saveProviderSettings: () => Promise<SaveResult>;
+	saveProviderSettings: (overrides?: SaveProviderSettingsOverrides) => Promise<SaveResult>;
 	runOauthLogin: () => Promise<SaveResult>;
 }
 
@@ -64,11 +72,18 @@ function toManagedClineOauthProvider(value: string): RuntimeClineOauthProvider |
 	return null;
 }
 
+function normalizeBaseUrlForProvider(providerId: string, baseUrl: string | null | undefined): string {
+	if (toManagedClineOauthProvider(providerId)) {
+		return "";
+	}
+	return baseUrl ?? "";
+}
+
 function getEffectiveProviderSettings(
 	config: RuntimeConfigResponse | null,
 	override: RuntimeClineProviderSettings | null,
 ): RuntimeClineProviderSettings | null {
-	return override ?? config?.clineProviderSettings ?? null;
+	return override ?? getRuntimeClineProviderSettings(config);
 }
 
 export function useRuntimeSettingsClineController(
@@ -87,9 +102,10 @@ export function useRuntimeSettingsClineController(
 	const [isRunningOauthLogin, setIsRunningOauthLogin] = useState(false);
 
 	const effectiveProviderSettings = getEffectiveProviderSettings(config, providerSettingsOverride);
+	const configProviderSettings = getRuntimeClineProviderSettings(config);
 	const initialProviderId = effectiveProviderSettings?.providerId ?? effectiveProviderSettings?.oauthProvider ?? "";
 	const initialModelId = effectiveProviderSettings?.modelId ?? "";
-	const initialBaseUrl = effectiveProviderSettings?.baseUrl ?? "";
+	const initialBaseUrl = normalizeBaseUrlForProvider(initialProviderId, effectiveProviderSettings?.baseUrl);
 	const normalizedProviderId = providerId.trim().toLowerCase();
 	const managedOauthProvider = toManagedClineOauthProvider(normalizedProviderId);
 	const isOauthProviderSelected = managedOauthProvider !== null;
@@ -118,21 +134,22 @@ export function useRuntimeSettingsClineController(
 		if (!open) {
 			return;
 		}
-		setProviderId(config?.clineProviderSettings.providerId ?? config?.clineProviderSettings.oauthProvider ?? "");
-		setModelId(config?.clineProviderSettings.modelId ?? "");
+		const nextProviderId = configProviderSettings.providerId ?? configProviderSettings.oauthProvider ?? "";
+		setProviderId(nextProviderId);
+		setModelId(configProviderSettings.modelId ?? "");
 		setApiKey("");
-		setBaseUrl(config?.clineProviderSettings.baseUrl ?? "");
+		setBaseUrl(normalizeBaseUrlForProvider(nextProviderId, configProviderSettings.baseUrl));
 		setProviderSettingsOverride(null);
 	}, [
-		config?.clineProviderSettings.baseUrl,
-		config?.clineProviderSettings.modelId,
-		config?.clineProviderSettings.oauthProvider,
-		config?.clineProviderSettings.providerId,
+		configProviderSettings.baseUrl,
+		configProviderSettings.modelId,
+		configProviderSettings.oauthProvider,
+		configProviderSettings.providerId,
 		open,
 	]);
 
 	useEffect(() => {
-		if (!open || selectedAgentId !== "cline" || !workspaceId) {
+		if (!open || selectedAgentId !== "cline") {
 			setProviderCatalog([]);
 			setIsLoadingProviderCatalog(false);
 			return;
@@ -162,7 +179,7 @@ export function useRuntimeSettingsClineController(
 	}, [open, selectedAgentId, workspaceId]);
 
 	useEffect(() => {
-		if (!open || selectedAgentId !== "cline" || !workspaceId) {
+		if (!open || selectedAgentId !== "cline") {
 			setProviderModels([]);
 			setIsLoadingProviderModels(false);
 			return;
@@ -197,29 +214,35 @@ export function useRuntimeSettingsClineController(
 		};
 	}, [open, providerId, selectedAgentId, workspaceId]);
 
-	const saveProviderSettingsDraft = useCallback(async (): Promise<SaveResult> => {
-		if (!hasUnsavedChanges) {
+	const saveProviderSettingsDraft = useCallback(async (overrides?: SaveProviderSettingsOverrides): Promise<SaveResult> => {
+		if (!overrides && !hasUnsavedChanges) {
 			return { ok: true };
 		}
-		if (!workspaceId) {
-			return {
-				ok: false,
-				message: "Select a workspace before saving Cline provider settings.",
-			};
-		}
-		const trimmedProviderId = providerId.trim();
+		const trimmedProviderId = (overrides?.providerId ?? providerId).trim();
 		if (trimmedProviderId.length === 0) {
 			return {
 				ok: false,
 				message: "Choose a Cline provider before saving.",
 			};
 		}
-		const trimmedBaseUrl = baseUrl.trim() || null;
+		const trimmedBaseUrl = toManagedClineOauthProvider(trimmedProviderId)
+			? null
+			: overrides && "baseUrl" in overrides
+				? overrides.baseUrl?.trim() || null
+				: baseUrl.trim() || null;
+		const trimmedModelId =
+			overrides && "modelId" in overrides ? overrides.modelId?.trim() || null : modelId.trim() || null;
+		const trimmedApiKey =
+			overrides && "apiKey" in overrides
+				? overrides.apiKey?.trim() || null
+				: managedOauthProvider
+					? null
+					: apiKey.trim() || null;
 		try {
 			const savedSettings = await saveClineProviderSettings(workspaceId, {
 				providerId: trimmedProviderId,
-				modelId: modelId.trim() || null,
-				apiKey: managedOauthProvider ? null : apiKey.trim() || null,
+				modelId: trimmedModelId,
+				apiKey: trimmedApiKey,
 				baseUrl: trimmedBaseUrl,
 			});
 			setProviderId(savedSettings.providerId ?? savedSettings.oauthProvider ?? trimmedProviderId);
@@ -237,12 +260,6 @@ export function useRuntimeSettingsClineController(
 	}, [apiKey, baseUrl, hasUnsavedChanges, managedOauthProvider, modelId, providerId, workspaceId]);
 
 	const runOauthLogin = useCallback(async (): Promise<SaveResult> => {
-		if (!workspaceId) {
-			return {
-				ok: false,
-				message: "Select a workspace before running OAuth login.",
-			};
-		}
 		if (!managedOauthProvider) {
 			return {
 				ok: false,
@@ -253,7 +270,6 @@ export function useRuntimeSettingsClineController(
 		try {
 			const response = await runClineProviderOauthLogin(workspaceId, {
 				provider: managedOauthProvider,
-				baseUrl: baseUrl.trim() || null,
 			});
 			if (!response.ok) {
 				return {
@@ -278,7 +294,7 @@ export function useRuntimeSettingsClineController(
 		} finally {
 			setIsRunningOauthLogin(false);
 		}
-	}, [baseUrl, managedOauthProvider, providerId, workspaceId]);
+	}, [managedOauthProvider, providerId, workspaceId]);
 
 	return {
 		providerId,

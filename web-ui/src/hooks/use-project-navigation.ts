@@ -7,12 +7,43 @@ import { useRuntimeStateStream } from "@/runtime/use-runtime-state-stream";
 import { useWindowEvent } from "@/utils/react-use";
 
 const REMOVED_PROJECT_ERROR_PREFIX = "Project no longer exists on disk and was removed:";
+const DIRECTORY_PICKER_UNAVAILABLE_MARKERS = [
+	"could not open directory picker",
+	'install "zenity" or "kdialog"',
+	'install powershell ("powershell" or "pwsh")',
+	'command "osascript" is not available',
+] as const;
+const MANUAL_PROJECT_PATH_PROMPT_MESSAGE =
+	"Kanban could not open a directory picker on this runtime. Enter a project path to add:";
 
 export function parseRemovedProjectPathFromStreamError(streamError: string | null): string | null {
 	if (!streamError || !streamError.startsWith(REMOVED_PROJECT_ERROR_PREFIX)) {
 		return null;
 	}
 	return streamError.slice(REMOVED_PROJECT_ERROR_PREFIX.length).trim();
+}
+
+export function isDirectoryPickerUnavailableErrorMessage(message: string | null | undefined): boolean {
+	if (!message) {
+		return false;
+	}
+	const normalized = message.trim().toLowerCase();
+	if (!normalized) {
+		return false;
+	}
+	return DIRECTORY_PICKER_UNAVAILABLE_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+function promptForManualProjectPath(): string | null {
+	if (typeof window === "undefined") {
+		return null;
+	}
+	const rawValue = window.prompt(MANUAL_PROJECT_PATH_PROMPT_MESSAGE);
+	if (rawValue === null) {
+		return null;
+	}
+	const normalized = rawValue.trim();
+	return normalized || null;
 }
 
 interface UseProjectNavigationInput {
@@ -23,11 +54,14 @@ export interface UseProjectNavigationResult {
 	requestedProjectId: string | null;
 	navigationCurrentProjectId: string | null;
 	removingProjectId: string | null;
+	pendingGitInitializationPath: string | null;
+	isInitializingGitProject: boolean;
 	currentProjectId: string | null;
 	projects: ReturnType<typeof useRuntimeStateStream>["projects"];
 	workspaceState: ReturnType<typeof useRuntimeStateStream>["workspaceState"];
 	workspaceMetadata: ReturnType<typeof useRuntimeStateStream>["workspaceMetadata"];
 	latestTaskChatMessage: ReturnType<typeof useRuntimeStateStream>["latestTaskChatMessage"];
+	taskChatMessagesByTaskId: ReturnType<typeof useRuntimeStateStream>["taskChatMessagesByTaskId"];
 	latestTaskReadyForReview: ReturnType<typeof useRuntimeStateStream>["latestTaskReadyForReview"];
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
@@ -36,6 +70,8 @@ export interface UseProjectNavigationResult {
 	isProjectSwitching: boolean;
 	handleSelectProject: (projectId: string) => void;
 	handleAddProject: () => Promise<void>;
+	handleConfirmInitializeGitProject: () => Promise<void>;
+	handleCancelInitializeGitProject: () => void;
 	handleRemoveProject: (projectId: string) => Promise<boolean>;
 	resetProjectNavigationState: () => void;
 }
@@ -51,6 +87,8 @@ export function useProjectNavigation({
 	});
 	const [pendingAddedProjectId, setPendingAddedProjectId] = useState<string | null>(null);
 	const [removingProjectId, setRemovingProjectId] = useState<string | null>(null);
+	const [pendingGitInitializationPath, setPendingGitInitializationPath] = useState<string | null>(null);
+	const [isInitializingGitProject, setIsInitializingGitProject] = useState(false);
 
 	const {
 		currentProjectId,
@@ -58,6 +96,7 @@ export function useProjectNavigation({
 		workspaceState,
 		workspaceMetadata,
 		latestTaskChatMessage,
+		taskChatMessagesByTaskId,
 		latestTaskReadyForReview,
 		streamError,
 		isRuntimeDisconnected,
@@ -79,23 +118,55 @@ export function useProjectNavigation({
 		[currentProjectId, onProjectSwitchStart],
 	);
 
+	const addProjectByPath = useCallback(
+		async (path: string, initializeGit = false) => {
+			const trpcClient = getRuntimeTrpcClient(currentProjectId);
+			const added = await trpcClient.projects.add.mutate({
+				path,
+				initializeGit,
+			});
+			if (!added.ok || !added.project) {
+				if (added.requiresGitInitialization) {
+					setPendingGitInitializationPath(path);
+					return;
+				}
+				throw new Error(added.error ?? "Could not add project.");
+			}
+			setPendingGitInitializationPath(null);
+			setPendingAddedProjectId(added.project.id);
+			handleSelectProject(added.project.id);
+		},
+		[currentProjectId, handleSelectProject],
+	);
+
 	const handleAddProject = useCallback(async () => {
 		try {
 			const trpcClient = getRuntimeTrpcClient(currentProjectId);
 			const picked = await trpcClient.projects.pickDirectory.mutate();
-			if (!picked.ok || !picked.path) {
-				if (picked?.error && picked.error !== "No directory was selected.") {
-					throw new Error(picked.error);
+
+			let projectPath: string | null = null;
+			if (picked.ok && picked.path) {
+				projectPath = picked.path;
+			} else if (!picked.ok && picked.error === "No directory was selected.") {
+				return;
+			} else if (!picked.ok && isDirectoryPickerUnavailableErrorMessage(picked.error)) {
+				showAppToast({
+					intent: "warning",
+					icon: "warning-sign",
+					message: "Directory picker unavailable on this runtime. Enter the project path manually.",
+					timeout: 5000,
+				});
+				projectPath = promptForManualProjectPath();
+				if (!projectPath) {
+					return;
 				}
+			} else {
+				throw new Error(picked.error ?? "Could not pick project directory.");
+			}
+			if (!projectPath) {
 				return;
 			}
-
-			const added = await trpcClient.projects.add.mutate({ path: picked.path });
-			if (!added.ok || !added.project) {
-				throw new Error(added.error ?? "Could not add project.");
-			}
-			setPendingAddedProjectId(added.project.id);
-			handleSelectProject(added.project.id);
+			await addProjectByPath(projectPath);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			showAppToast({
@@ -105,7 +176,34 @@ export function useProjectNavigation({
 				timeout: 7000,
 			});
 		}
-	}, [currentProjectId, handleSelectProject]);
+	}, [addProjectByPath, currentProjectId]);
+
+	const handleConfirmInitializeGitProject = useCallback(async () => {
+		if (!pendingGitInitializationPath || isInitializingGitProject) {
+			return;
+		}
+		setIsInitializingGitProject(true);
+		try {
+			await addProjectByPath(pendingGitInitializationPath, true);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			showAppToast({
+				intent: "danger",
+				icon: "warning-sign",
+				message,
+				timeout: 7000,
+			});
+		} finally {
+			setIsInitializingGitProject(false);
+		}
+	}, [addProjectByPath, isInitializingGitProject, pendingGitInitializationPath]);
+
+	const handleCancelInitializeGitProject = useCallback(() => {
+		if (isInitializingGitProject) {
+			return;
+		}
+		setPendingGitInitializationPath(null);
+	}, [isInitializingGitProject]);
 
 	const handleRemoveProject = useCallback(
 		async (projectId: string): Promise<boolean> => {
@@ -200,17 +298,22 @@ export function useProjectNavigation({
 
 	const resetProjectNavigationState = useCallback(() => {
 		setRemovingProjectId(null);
+		setPendingGitInitializationPath(null);
+		setIsInitializingGitProject(false);
 	}, []);
 
 	return {
 		requestedProjectId,
 		navigationCurrentProjectId,
 		removingProjectId,
+		pendingGitInitializationPath,
+		isInitializingGitProject,
 		currentProjectId,
 		projects,
 		workspaceState,
 		workspaceMetadata,
 		latestTaskChatMessage,
+		taskChatMessagesByTaskId,
 		latestTaskReadyForReview,
 		streamError,
 		isRuntimeDisconnected,
@@ -219,6 +322,8 @@ export function useProjectNavigation({
 		isProjectSwitching,
 		handleSelectProject,
 		handleAddProject,
+		handleConfirmInitializeGitProject,
+		handleCancelInitializeGitProject,
 		handleRemoveProject,
 		resetProjectNavigationState,
 	};

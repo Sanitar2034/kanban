@@ -159,7 +159,7 @@ describe("useClineChatRuntimeActions", () => {
 		}
 
 		await act(async () => {
-			expect(await latestSnapshot?.sendTaskChatMessage("task-1", "hello")).toEqual({
+			expect(await latestSnapshot?.sendTaskChatMessage("task-1", "hello", { mode: "plan" })).toEqual({
 				ok: true,
 				chatMessage: {
 					id: "message-2",
@@ -183,6 +183,7 @@ describe("useClineChatRuntimeActions", () => {
 		expect(sendTaskChatMessageMutateMock).toHaveBeenCalledWith({
 			taskId: "task-1",
 			text: "hello",
+			mode: "plan",
 		});
 		expect(getTaskChatMessagesQueryMock).toHaveBeenCalledWith({ taskId: "task-1" });
 		expect(abortTaskChatTurnMutateMock).toHaveBeenCalledWith({ taskId: "task-1" });
@@ -191,6 +192,50 @@ describe("useClineChatRuntimeActions", () => {
 		expect(onSessionSummary).toHaveBeenNthCalledWith(1, summary);
 		expect(onSessionSummary).toHaveBeenNthCalledWith(2, summary);
 		expect(onSessionSummary).toHaveBeenNthCalledWith(3, summary);
+	});
+
+	it("forwards chat images to the runtime mutation", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					currentProjectId="project-1"
+					onSessionSummary={() => {}}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+		});
+
+		if (!latestSnapshot) {
+			throw new Error("Expected hook snapshot.");
+		}
+
+		await act(async () => {
+			await latestSnapshot?.sendTaskChatMessage("task-1", "hello", {
+				images: [
+					{
+						id: "img-1",
+						data: "abc123",
+						mimeType: "image/png",
+					},
+				],
+			});
+		});
+
+		expect(sendTaskChatMessageMutateMock).toHaveBeenCalledWith({
+			taskId: "task-1",
+			text: "hello",
+			images: [
+				{
+					id: "img-1",
+					data: "abc123",
+					mimeType: "image/png",
+				},
+			],
+		});
 	});
 
 	it("returns a no-project error without hitting the runtime client", async () => {

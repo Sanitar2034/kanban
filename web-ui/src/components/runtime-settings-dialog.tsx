@@ -14,11 +14,16 @@ import {
 	Settings,
 	X,
 } from "lucide-react";
-import { getRuntimeAgentCatalogEntry, RUNTIME_AGENT_CATALOG } from "@runtime-agent-catalog";
+import {
+	getRuntimeAgentCatalogEntry,
+	getRuntimeLaunchSupportedAgentCatalog,
+} from "@runtime-agent-catalog";
 import { areRuntimeProjectShortcutsEqual } from "@runtime-shortcuts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
+import { useRuntimeSettingsClineMcpController } from "@/hooks/use-runtime-settings-cline-mcp-controller";
+import { ClineSetupSection } from "@/components/shared/cline-setup-section";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
@@ -60,6 +65,9 @@ function quoteCommandPartForDisplay(part: string): string {
 }
 
 function buildDisplayedAgentCommand(agentId: RuntimeAgentId, binary: string, autonomousModeEnabled: boolean): string {
+	if (agentId === "cline") {
+		return "";
+	}
 	const args = autonomousModeEnabled ? (getRuntimeAgentCatalogEntry(agentId)?.autonomousArgs ?? []) : [];
 	return [binary, ...args.map(quoteCommandPartForDisplay)].join(" ");
 }
@@ -74,6 +82,8 @@ const GIT_PROMPT_VARIANT_OPTIONS: Array<{ value: TaskGitAction; label: string }>
 ];
 
 export type RuntimeSettingsSection = "shortcuts";
+
+const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["cline", "claude", "codex"];
 
 function getShortcutIconOption(icon: string | undefined): RuntimeShortcutIconOption {
 	return getRuntimeShortcutPickerOption(icon);
@@ -119,8 +129,9 @@ function AgentRow({
 	disabled: boolean;
 }): React.ReactElement {
 	const installUrl = getRuntimeAgentCatalogEntry(agent.id)?.installUrl;
+	const isNativeCline = agent.id === "cline";
 	const isInstalled = agent.installed === true;
-	const isInstallStatusPending = agent.installed === null;
+	const isInstallStatusPending = !isNativeCline && agent.installed === null;
 
 	return (
 		<div
@@ -148,7 +159,7 @@ function AgentRow({
 				<div className="min-w-0">
 					<div className="flex items-center gap-2">
 						<span className="text-[13px] text-text-primary">{agent.label}</span>
-						{isInstalled ? (
+						{!isNativeCline && isInstalled ? (
 							<span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-status-green/10 text-status-green">
 								Installed
 							</span>
@@ -165,7 +176,7 @@ function AgentRow({
 					) : null}
 				</div>
 			</div>
-			{agent.installed === false && installUrl ? (
+			{!isNativeCline && agent.installed === false && installUrl ? (
 				<a
 					href={installUrl}
 					target="_blank"
@@ -175,7 +186,7 @@ function AgentRow({
 				>
 					Install
 				</a>
-			) : agent.installed === false ? (
+			) : !isNativeCline && agent.installed === false ? (
 				<Button size="sm" disabled>Install</Button>
 			) : null}
 		</div>
@@ -332,15 +343,23 @@ export function RuntimeSettingsDialog({
 				id: agent.id,
 				label: agent.label,
 				binary: agent.binary,
-				installed: agent.installed,
+				installed: agent.id === "cline" ? true : agent.installed,
 			})) ??
-			RUNTIME_AGENT_CATALOG.map((agent) => ({
+			getRuntimeLaunchSupportedAgentCatalog().map((agent) => ({
 				id: agent.id,
 				label: agent.label,
 				binary: agent.binary,
-				installed: null,
+				installed: agent.id === "cline" ? true : null,
 			}));
-		return agents.map((agent) => ({
+		const orderIndexByAgentId = new Map(
+			SETTINGS_AGENT_ORDER.map((agentId, index) => [agentId, index] as const),
+		);
+		const orderedAgents = [...agents].sort((left, right) => {
+			const leftOrderIndex = orderIndexByAgentId.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+			const rightOrderIndex = orderIndexByAgentId.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+			return leftOrderIndex - rightOrderIndex;
+		});
+		return orderedAgents.map((agent) => ({
 			...agent,
 			command: buildDisplayedAgentCommand(agent.id, agent.binary, agentAutonomousModeEnabled),
 		}));
@@ -361,6 +380,11 @@ export function RuntimeSettingsDialog({
 		selectedAgentId,
 		config,
 	});
+	const clineMcpSettings = useRuntimeSettingsClineMcpController({
+		open,
+		workspaceId,
+		selectedAgentId,
+	});
 	const hasUnsavedChanges = useMemo(() => {
 		if (!config) {
 			return false;
@@ -375,6 +399,9 @@ export function RuntimeSettingsDialog({
 			return true;
 		}
 		if (clineSettings.hasUnsavedChanges) {
+			return true;
+		}
+		if (clineMcpSettings.hasUnsavedChanges) {
 			return true;
 		}
 		if (!areRuntimeProjectShortcutsEqual(shortcuts, initialShortcuts)) {
@@ -392,6 +419,7 @@ export function RuntimeSettingsDialog({
 		);
 	}, [
 		agentAutonomousModeEnabled,
+		clineMcpSettings.hasUnsavedChanges,
 		clineSettings.hasUnsavedChanges,
 		commitPromptTemplate,
 		config,
@@ -527,10 +555,17 @@ export function RuntimeSettingsDialog({
 			setSaveError("Choose a Cline provider before saving.");
 			return;
 		}
-		const clineSaveResult = await clineSettings.saveProviderSettings();
-		if (!clineSaveResult.ok) {
-			setSaveError(clineSaveResult.message ?? "Could not save Cline provider settings.");
-			return;
+		if (selectedAgentId === "cline") {
+			const clineProviderSaveResult = await clineSettings.saveProviderSettings();
+			if (!clineProviderSaveResult.ok) {
+				setSaveError(clineProviderSaveResult.message ?? "Could not save Cline provider settings.");
+				return;
+			}
+			const clineMcpSaveResult = await clineMcpSettings.saveMcpSettings();
+			if (!clineMcpSaveResult.ok) {
+				setSaveError(clineMcpSaveResult.message ?? "Could not save Cline MCP settings.");
+				return;
+			}
 		}
 		const saved = await save({
 			selectedAgentId,
@@ -569,7 +604,7 @@ export function RuntimeSettingsDialog({
 						}
 					}}
 				>
-					{config?.globalConfigPath ?? "~/.kanban/config.json"}
+					{config?.globalConfigPath ?? "~/.cline/kanban/config.json"}
 					{config?.globalConfigPath ? (
 						<ExternalLink size={12} className="inline ml-1.5 align-middle" />
 					) : null}
@@ -597,7 +632,7 @@ export function RuntimeSettingsDialog({
 						checked={agentAutonomousModeEnabled}
 						disabled={controlsDisabled}
 						onCheckedChange={(checked) => setAgentAutonomousModeEnabled(checked === true)}
-						className="flex h-4 w-4 items-center justify-center rounded border border-border bg-surface-2 data-[state=checked]:bg-accent data-[state=checked]:border-accent disabled:opacity-40"
+						className="flex h-4 w-4 cursor-pointer items-center justify-center rounded border border-border bg-surface-2 data-[state=checked]:bg-accent data-[state=checked]:border-accent disabled:cursor-default disabled:opacity-40"
 					>
 						<RadixCheckbox.Indicator>
 							<Check size={12} className="text-white" />
@@ -610,123 +645,12 @@ export function RuntimeSettingsDialog({
 				</p>
 
 				{selectedAgentId === "cline" ? (
-					<>
-						<h6 className="font-semibold text-text-primary mt-4 mb-2">Cline setup</h6>
-						<div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
-							<div className="min-w-0">
-								<p className="text-text-secondary text-[12px] mt-0 mb-1">Provider</p>
-								<select
-									value={clineSettings.providerId}
-									onChange={(event) => clineSettings.setProviderId(event.target.value)}
-									disabled={controlsDisabled || clineSettings.isLoadingProviderCatalog}
-									className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary focus:border-border-focus focus:outline-none"
-								>
-									<option value="">{clineSettings.isLoadingProviderCatalog ? "Loading providers..." : "Select provider"}</option>
-									{clineSettings.providerCatalog.map((provider) => (
-										<option key={provider.id} value={provider.id}>
-											{provider.name} {provider.oauthSupported ? "(OAuth)" : "(API key)"}
-										</option>
-									))}
-									{clineSettings.providerId.trim().length > 0 &&
-									!clineSettings.providerCatalog.some(
-										(provider) => provider.id.trim().toLowerCase() === clineSettings.normalizedProviderId,
-									) ? (
-										<option value={clineSettings.providerId}>{clineSettings.providerId} (custom)</option>
-									) : null}
-								</select>
-							</div>
-							<div className="min-w-0">
-								<p className="text-text-secondary text-[12px] mt-0 mb-1">Model</p>
-								<input
-									value={clineSettings.modelId}
-									onChange={(event) => clineSettings.setModelId(event.target.value)}
-									placeholder={clineSettings.isLoadingProviderModels ? "Loading models..." : "claude-sonnet-4-6"}
-									list="cline-model-options"
-									disabled={controlsDisabled}
-									className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
-								/>
-							</div>
-						</div>
-						<datalist id="cline-model-options">
-							{clineSettings.providerModels.map((model) => (
-								<option key={model.id} value={model.id}>
-									{model.name}
-								</option>
-							))}
-						</datalist>
-						{clineSettings.isLoadingProviderCatalog || clineSettings.isLoadingProviderModels ? (
-							<p className="text-text-secondary text-[12px] mt-1 mb-0">
-								{clineSettings.isLoadingProviderCatalog ? "Fetching Cline providers..." : "Fetching Cline models..."}
-							</p>
-						) : null}
-						<p className="text-text-secondary text-[12px] mt-2 mb-0">
-							Authentication: {clineSettings.isOauthProviderSelected ? "OAuth" : "API key"}
-						</p>
-						<div className="grid gap-2 mt-2" style={{ gridTemplateColumns: clineSettings.isOauthProviderSelected ? "1fr" : "1fr 1fr" }}>
-							{clineSettings.isOauthProviderSelected ? null : (
-								<div className="min-w-0">
-									<p className="text-text-secondary text-[12px] mt-0 mb-1">API key</p>
-									<input
-										type="password"
-										value={clineSettings.apiKey}
-										onChange={(event) => clineSettings.setApiKey(event.target.value)}
-										placeholder={clineSettings.apiKeyConfigured ? "Saved" : "Enter API key"}
-										disabled={controlsDisabled}
-										className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
-									/>
-								</div>
-							)}
-							<div className="min-w-0">
-								<p className="text-text-secondary text-[12px] mt-0 mb-1">Base URL</p>
-								<input
-									value={clineSettings.baseUrl}
-									onChange={(event) => clineSettings.setBaseUrl(event.target.value)}
-									placeholder="https://api.cline.bot"
-									disabled={controlsDisabled}
-									className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
-								/>
-							</div>
-						</div>
-						{clineSettings.isOauthProviderSelected ? (
-							<>
-								<p className="text-text-secondary text-[12px] mt-2 mb-0">
-									Status: {clineSettings.oauthConfigured ? "Signed in" : "Not signed in"}
-								</p>
-								{clineSettings.oauthAccountId ? (
-									<p className="text-text-secondary text-[12px] mt-1 mb-0">
-										Account ID: <span className="text-text-primary">{clineSettings.oauthAccountId}</span>
-									</p>
-								) : null}
-								{clineSettings.oauthExpiresAt ? (
-									<p className="text-text-secondary text-[12px] mt-1 mb-0">
-										Expiry: <span className="text-text-primary">{clineSettings.oauthExpiresAt}</span>
-									</p>
-								) : null}
-								<div className="mt-2">
-									<Button
-										variant="default"
-										size="sm"
-										disabled={controlsDisabled || clineSettings.isRunningOauthLogin}
-										onClick={() => {
-											void (async () => {
-												setSaveError(null);
-												const result = await clineSettings.runOauthLogin();
-												if (!result.ok) {
-													setSaveError(result.message ?? "OAuth login failed.");
-												}
-											})();
-										}}
-									>
-										{clineSettings.isRunningOauthLogin
-											? "Signing in..."
-											: clineSettings.oauthConfigured
-												? `Sign in again with ${clineSettings.managedOauthProvider ?? "OAuth"}`
-												: `Sign in with ${clineSettings.managedOauthProvider ?? "OAuth"}`}
-									</Button>
-								</div>
-							</>
-						) : null}
-					</>
+					<ClineSetupSection
+						controller={clineSettings}
+						mcpController={clineMcpSettings}
+						controlsDisabled={controlsDisabled}
+						onError={setSaveError}
+					/>
 				) : null}
 
 				<div className="flex items-center justify-between mt-4 mb-1">
@@ -816,7 +740,7 @@ export function RuntimeSettingsDialog({
 						}
 					}}
 				>
-					{config?.projectConfigPath ?? "<project>/.kanban/config.json"}
+					{config?.projectConfigPath ?? "<project>/.cline/kanban/config.json"}
 					{config?.projectConfigPath ? (
 						<ExternalLink size={12} className="inline ml-1.5 align-middle" />
 					) : null}
@@ -897,6 +821,7 @@ export function RuntimeSettingsDialog({
 							variant="ghost"
 							size="sm"
 							icon={<X size={14} />}
+							aria-label={`Remove shortcut ${shortcut.label}`}
 							onClick={() =>
 								setShortcuts((current) => current.filter((_, itemIndex) => itemIndex !== shortcutIndex))
 							}

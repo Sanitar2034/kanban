@@ -3,9 +3,8 @@ import { GitCompareArrows, Maximize2, Minimize2, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-
-import { ClineAgentChatPanel } from "@/components/detail-panels/cline-agent-chat-panel";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
+import { ClineAgentChatPanel, type ClineAgentChatPanelHandle } from "@/components/detail-panels/cline-agent-chat-panel";
 import { ColumnContextPanel } from "@/components/detail-panels/column-context-panel";
 import { type DiffLineComment, DiffViewerPanel } from "@/components/detail-panels/diff-viewer-panel";
 import { FileTreePanel } from "@/components/detail-panels/file-tree-panel";
@@ -13,7 +12,14 @@ import { ResizableBottomPane } from "@/components/resizable-bottom-pane";
 import { Button } from "@/components/ui/button";
 import type { ClineChatActionResult } from "@/hooks/use-cline-chat-runtime-actions";
 import type { ClineChatMessage } from "@/hooks/use-cline-chat-session";
-import type { RuntimeAgentId, RuntimeTaskSessionSummary, RuntimeWorkspaceChangesMode } from "@/runtime/types";
+import { isNativeClineAgentSelected } from "@/runtime/native-agent";
+import type {
+	RuntimeAgentId,
+	RuntimeConfigResponse,
+	RuntimeTaskSessionMode,
+	RuntimeTaskSessionSummary,
+	RuntimeWorkspaceChangesMode,
+} from "@/runtime/types";
 import { useRuntimeWorkspaceChanges } from "@/runtime/use-runtime-workspace-changes";
 import { useTaskWorkspaceStateVersionValue } from "@/stores/workspace-metadata-store";
 import { TERMINAL_THEME_COLORS } from "@/terminal/theme-colors";
@@ -36,9 +42,15 @@ function isTypingTarget(target: EventTarget | null): boolean {
 	return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
 }
 
+function isEventInsideDialog(target: EventTarget | null): boolean {
+	return target instanceof Element && target.closest("[role='dialog']") !== null;
+}
+
 function WorkspaceChangesLoadingPanel({ panelFlex }: { panelFlex: string }): React.ReactElement {
 	return (
-		<div style={{ display: "flex", flex: "1.6 1 0", minWidth: 0, minHeight: 0, background: "var(--color-surface-0)" }}>
+		<div
+			style={{ display: "flex", flex: "1.6 1 0", minWidth: 0, minHeight: 0, background: "var(--color-surface-0)" }}
+		>
 			<div
 				style={{
 					display: "flex",
@@ -56,26 +68,11 @@ function WorkspaceChangesLoadingPanel({ panelFlex }: { panelFlex: string }): Rea
 						<div className="kb-skeleton" style={{ height: 14, width: "62%", borderRadius: 3 }} />
 						<div className="kb-skeleton" style={{ height: 16, width: 42, borderRadius: 999 }} />
 					</div>
-					<div
-						className="kb-skeleton"
-						style={{ height: 13, width: "92%", borderRadius: 3, marginBottom: 7 }}
-					/>
-					<div
-						className="kb-skeleton"
-						style={{ height: 13, width: "84%", borderRadius: 3, marginBottom: 7 }}
-					/>
-					<div
-						className="kb-skeleton"
-						style={{ height: 13, width: "95%", borderRadius: 3, marginBottom: 7 }}
-					/>
-					<div
-						className="kb-skeleton"
-						style={{ height: 13, width: "79%", borderRadius: 3, marginBottom: 7 }}
-					/>
-					<div
-						className="kb-skeleton"
-						style={{ height: 13, width: "88%", borderRadius: 3, marginBottom: 7 }}
-					/>
+					<div className="kb-skeleton" style={{ height: 13, width: "92%", borderRadius: 3, marginBottom: 7 }} />
+					<div className="kb-skeleton" style={{ height: 13, width: "84%", borderRadius: 3, marginBottom: 7 }} />
+					<div className="kb-skeleton" style={{ height: 13, width: "95%", borderRadius: 3, marginBottom: 7 }} />
+					<div className="kb-skeleton" style={{ height: 13, width: "79%", borderRadius: 3, marginBottom: 7 }} />
+					<div className="kb-skeleton" style={{ height: 13, width: "88%", borderRadius: 3, marginBottom: 7 }} />
 					<div className="kb-skeleton" style={{ height: 13, width: "76%", borderRadius: 3 }} />
 				</div>
 				<div style={{ flex: "1 1 0" }} />
@@ -108,7 +105,9 @@ function WorkspaceChangesLoadingPanel({ panelFlex }: { panelFlex: string }): Rea
 
 function WorkspaceChangesEmptyPanel({ title }: { title: string }): React.ReactElement {
 	return (
-		<div style={{ display: "flex", flex: "1.6 1 0", minWidth: 0, minHeight: 0, background: "var(--color-surface-0)" }}>
+		<div
+			style={{ display: "flex", flex: "1.6 1 0", minWidth: 0, minHeight: 0, background: "var(--color-surface-0)" }}
+		>
 			<div className="kb-empty-state-center" style={{ flex: 1 }}>
 				<div className="flex flex-col items-center justify-center gap-3 py-12 text-text-tertiary">
 					<GitCompareArrows size={40} />
@@ -131,10 +130,7 @@ function DiffToolbar({
 	onToggleExpand: () => void;
 }): React.ReactElement {
 	return (
-		<div
-			className="flex items-center gap-1 px-2 py-1"
-			style={{ borderBottom: "1px solid var(--color-divider)" }}
-		>
+		<div className="flex items-center gap-1 px-2 py-1" style={{ borderBottom: "1px solid var(--color-divider)" }}>
 			{isExpanded ? (
 				<Button
 					variant="ghost"
@@ -151,7 +147,11 @@ function DiffToolbar({
 					size="sm"
 					onClick={() => onModeChange("working_copy")}
 					className="h-5 rounded-sm text-xs"
-					style={mode === "working_copy" ? { backgroundColor: "var(--color-surface-3)", color: "var(--color-text-primary)" } : undefined}
+					style={
+						mode === "working_copy"
+							? { backgroundColor: "var(--color-surface-3)", color: "var(--color-text-primary)" }
+							: undefined
+					}
 				>
 					All Changes
 				</Button>
@@ -160,7 +160,11 @@ function DiffToolbar({
 					size="sm"
 					onClick={() => onModeChange("last_turn")}
 					className="h-5 rounded-sm text-xs"
-					style={mode === "last_turn" ? { backgroundColor: "var(--color-surface-3)", color: "var(--color-text-primary)" } : undefined}
+					style={
+						mode === "last_turn"
+							? { backgroundColor: "var(--color-surface-3)", color: "var(--color-text-primary)" }
+							: undefined
+					}
 				>
 					Last Turn
 				</Button>
@@ -182,10 +186,10 @@ export function CardDetailView({
 	currentProjectId,
 	workspacePath,
 	selectedAgentId = null,
+	runtimeConfig = null,
 	sessionSummary,
 	taskSessions,
 	onSessionSummary,
-	onBack,
 	onCardSelect,
 	onTaskDragEnd,
 	onCreateTask,
@@ -213,9 +217,11 @@ export function CardDetailView({
 	onCancelClineChatTurn,
 	onLoadClineChatMessages,
 	latestClineChatMessage,
+	streamedClineChatMessages,
 	onMoveToTrash,
 	isMoveToTrashLoading,
 	gitHistoryPanel,
+	onCloseGitHistory,
 	bottomTerminalOpen,
 	bottomTerminalTaskId,
 	bottomTerminalSummary,
@@ -229,15 +235,16 @@ export function CardDetailView({
 	isBottomTerminalExpanded,
 	onBottomTerminalToggleExpand,
 	isDocumentVisible = true,
+	onClineSettingsSaved,
 }: {
 	selection: CardSelection;
 	currentProjectId: string | null;
 	workspacePath?: string | null;
 	selectedAgentId?: RuntimeAgentId | null;
+	runtimeConfig?: RuntimeConfigResponse | null;
 	sessionSummary: RuntimeTaskSessionSummary | null;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onSessionSummary: (summary: RuntimeTaskSessionSummary) => void;
-	onBack: () => void;
 	onCardSelect: (taskId: string) => void;
 	onTaskDragEnd: (result: DropResult) => void;
 	onCreateTask?: () => void;
@@ -261,13 +268,19 @@ export function CardDetailView({
 	moveToTrashLoadingById?: Record<string, boolean>;
 	onAddReviewComments?: (taskId: string, text: string) => void;
 	onSendReviewComments?: (taskId: string, text: string) => void;
-	onSendClineChatMessage?: (taskId: string, text: string) => Promise<ClineChatActionResult>;
+	onSendClineChatMessage?: (
+		taskId: string,
+		text: string,
+		options?: { mode?: RuntimeTaskSessionMode },
+	) => Promise<ClineChatActionResult>;
 	onCancelClineChatTurn?: (taskId: string) => Promise<{ ok: boolean; message?: string }>;
 	onLoadClineChatMessages?: (taskId: string) => Promise<ClineChatMessage[] | null>;
 	latestClineChatMessage?: ClineChatMessage | null;
+	streamedClineChatMessages?: ClineChatMessage[] | null;
 	onMoveToTrash: () => void;
 	isMoveToTrashLoading?: boolean;
 	gitHistoryPanel?: ReactNode;
+	onCloseGitHistory?: () => void;
 	bottomTerminalOpen: boolean;
 	bottomTerminalTaskId: string | null;
 	bottomTerminalSummary: RuntimeTaskSessionSummary | null;
@@ -281,6 +294,7 @@ export function CardDetailView({
 	isBottomTerminalExpanded?: boolean;
 	onBottomTerminalToggleExpand?: () => void;
 	isDocumentVisible?: boolean;
+	onClineSettingsSaved?: () => void;
 }): React.ReactElement {
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
 	const [diffComments, setDiffComments] = useState<Map<string, DiffLineComment>>(new Map());
@@ -291,6 +305,7 @@ export function CardDetailView({
 	const resizeDragRef = useRef<{ startX: number; startRatio: number; containerWidth: number } | null>(null);
 	const previousBodyStyleRef = useRef<{ userSelect: string; cursor: string } | null>(null);
 	const mainRowRef = useRef<HTMLDivElement | null>(null);
+	const clineAgentChatPanelRef = useRef<ClineAgentChatPanelHandle | null>(null);
 
 	const stopResize = useCallback(() => {
 		setIsResizing(false);
@@ -388,7 +403,7 @@ export function CardDetailView({
 	const fileTreePanelFlex = `0 0 ${isDiffExpanded ? EXPANDED_FILE_TREE_PANEL_BASIS : COLLAPSED_FILE_TREE_PANEL_BASIS}`;
 	const showMoveToTrashActions = selection.column.id === "review" || selection.column.id === "in_progress";
 	const isTaskTerminalEnabled = selection.column.id === "in_progress" || selection.column.id === "review";
-	const showClineAgentChatPanel = selectedAgentId === "cline";
+	const showClineAgentChatPanel = isNativeClineAgentSelected(selectedAgentId);
 	const availablePaths = useMemo(() => {
 		if (!runtimeFiles || runtimeFiles.length === 0) {
 			return [];
@@ -428,17 +443,23 @@ export function CardDetailView({
 		"keydown",
 		useCallback(
 			(event: KeyboardEvent) => {
-				if (event.key !== "Escape" || event.defaultPrevented || isTypingTarget(event.target)) {
+				if (event.key !== "Escape" || event.defaultPrevented || isEventInsideDialog(event.target)) {
 					return;
 				}
-				event.preventDefault();
+				if (gitHistoryPanel && onCloseGitHistory) {
+					event.preventDefault();
+					onCloseGitHistory();
+					return;
+				}
+				if (isTypingTarget(event.target)) {
+					return;
+				}
 				if (isDiffExpanded) {
+					event.preventDefault();
 					setIsDiffExpanded(false);
-					return;
 				}
-				onBack();
 			},
-			[isDiffExpanded, onBack],
+			[gitHistoryPanel, isDiffExpanded, onCloseGitHistory],
 		),
 	);
 
@@ -469,8 +490,48 @@ export function CardDetailView({
 		setDiffMode("working_copy");
 	}, [selection.card.id]);
 
+	const handleToggleDiffExpand = useCallback(() => {
+		if (!isDiffExpanded && bottomTerminalOpen) {
+			onBottomTerminalClose();
+		}
+		setIsDiffExpanded((previous) => !previous);
+	}, [bottomTerminalOpen, isDiffExpanded, onBottomTerminalClose]);
+
+	const handleAddDiffComments = useCallback(
+		(formatted: string) => {
+			if (showClineAgentChatPanel) {
+				clineAgentChatPanelRef.current?.appendToDraft(formatted);
+				setIsDiffExpanded(false);
+				return;
+			}
+			onAddReviewComments?.(selection.card.id, formatted);
+		},
+		[onAddReviewComments, selection.card.id, showClineAgentChatPanel],
+	);
+
+	const handleSendDiffComments = useCallback(
+		(formatted: string) => {
+			if (showClineAgentChatPanel) {
+				void clineAgentChatPanelRef.current?.sendText(formatted);
+				setIsDiffExpanded(false);
+				return;
+			}
+			onSendReviewComments?.(selection.card.id, formatted);
+			setIsDiffExpanded(false);
+		},
+		[onSendReviewComments, selection.card.id, showClineAgentChatPanel],
+	);
+
 	return (
-		<div style={{ display: "flex", flex: "1 1 0", minHeight: 0, overflow: "hidden", background: "var(--color-surface-0)" }}>
+		<div
+			style={{
+				display: "flex",
+				flex: "1 1 0",
+				minHeight: 0,
+				overflow: "hidden",
+				background: "var(--color-surface-0)",
+			}}
+		>
 			{!isDiffExpanded ? (
 				<ColumnContextPanel
 					selection={selection}
@@ -509,17 +570,24 @@ export function CardDetailView({
 				) : (
 					<>
 						<div ref={mainRowRef} style={{ display: "flex", flex: "1 1 0", minHeight: 0, overflow: "hidden" }}>
-							{!isDiffExpanded ? (
-								<div style={{ display: "flex", width: agentPanelPercent, minWidth: 0, minHeight: 0 }}>
+							<div
+								style={{ display: isDiffExpanded ? "none" : "flex", width: agentPanelPercent, minWidth: 0, minHeight: 0 }}
+							>
 									{showClineAgentChatPanel ? (
 										<ClineAgentChatPanel
+											ref={clineAgentChatPanelRef}
 											taskId={selection.card.id}
 											summary={sessionSummary}
-											taskColumnId={selection.column.id}
+														taskColumnId={selection.column.id}
+											defaultMode={selection.card.startInPlanMode ? "plan" : "act"}
+											workspaceId={currentProjectId}
+											runtimeConfig={runtimeConfig}
+											onClineSettingsSaved={onClineSettingsSaved}
 											onSendMessage={onSendClineChatMessage}
-									onCancelTurn={onCancelClineChatTurn}
+											onCancelTurn={onCancelClineChatTurn}
 											onLoadMessages={onLoadClineChatMessages}
-									incomingMessage={latestClineChatMessage}
+											incomingMessages={streamedClineChatMessages}
+											incomingMessage={latestClineChatMessage}
 											onCommit={onAgentCommitTask ? () => onAgentCommitTask(selection.card.id) : undefined}
 											onOpenPr={onAgentOpenPrTask ? () => onAgentOpenPrTask(selection.card.id) : undefined}
 											isCommitLoading={agentCommitTaskLoadingById?.[selection.card.id] ?? false}
@@ -564,12 +632,13 @@ export function CardDetailView({
 													? getTaskAutoReviewActionLabel(selection.card.autoReviewMode)
 													: null
 											}
+											panelBackgroundColor={TERMINAL_THEME_COLORS.surfacePrimary}
+											terminalBackgroundColor={TERMINAL_THEME_COLORS.surfacePrimary}
 											showRightBorder={false}
 											taskColumnId={selection.column.id}
 										/>
 									)}
 								</div>
-							) : null}
 							{!isDiffExpanded ? (
 								<div
 									role="separator"
@@ -584,6 +653,7 @@ export function CardDetailView({
 								>
 									<div
 										onMouseDown={handleSeparatorMouseDown}
+										className="hover:bg-accent/30"
 										style={{
 											position: "absolute",
 											left: -2,
@@ -605,13 +675,13 @@ export function CardDetailView({
 								}}
 							>
 								{isRuntimeAvailable ? (
-									<DiffToolbar
-										mode={diffMode}
-										onModeChange={setDiffMode}
-										isExpanded={isDiffExpanded}
-										onToggleExpand={() => setIsDiffExpanded((previous) => !previous)}
-									/>
-								) : null}
+								<DiffToolbar
+									mode={diffMode}
+									onModeChange={setDiffMode}
+									isExpanded={isDiffExpanded}
+									onToggleExpand={handleToggleDiffExpand}
+								/>
+							) : null}
 								<div style={{ display: "flex", flex: "1 1 0", minHeight: 0 }}>
 									{isWorkspaceChangesPending ? (
 										<WorkspaceChangesLoadingPanel panelFlex={fileTreePanelFlex} />
@@ -624,20 +694,9 @@ export function CardDetailView({
 												selectedPath={selectedPath}
 												onSelectedPathChange={setSelectedPath}
 												viewMode={isDiffExpanded ? "split" : "unified"}
-												onAddToTerminal={
-													onAddReviewComments
-														? (formatted) => onAddReviewComments(selection.card.id, formatted)
-														: undefined
-												}
-												onSendToTerminal={
-													onSendReviewComments
-														? (formatted) => {
-															onSendReviewComments(selection.card.id, formatted);
-															setIsDiffExpanded(false);
-														}
-														: undefined
-												}
-												comments={diffComments}
+												onAddToTerminal={onAddReviewComments || showClineAgentChatPanel ? handleAddDiffComments : undefined}
+											onSendToTerminal={onSendReviewComments || showClineAgentChatPanel ? handleSendDiffComments : undefined}
+											comments={diffComments}
 												onCommentsChange={setDiffComments}
 											/>
 											<FileTreePanel

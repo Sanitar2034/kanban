@@ -1,4 +1,5 @@
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
+import * as RadixSwitch from "@radix-ui/react-switch";
 import {
 	ArrowBigUp,
 	ArrowLeft,
@@ -11,7 +12,7 @@ import {
 	Plus,
 	X,
 } from "lucide-react";
-import type { ReactElement } from "react";
+import type { Dispatch, ReactElement, SetStateAction } from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
@@ -20,7 +21,9 @@ import { BranchSelectDropdown } from "@/components/branch-select-dropdown";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
-import type { TaskAutoReviewMode } from "@/types";
+import type { TaskAutoReviewMode, TaskImage } from "@/types";
+import { pasteShortcutLabel } from "@/utils/platform";
+
 
 const AUTO_REVIEW_MODE_OPTIONS: Array<{ value: TaskAutoReviewMode; label: string }> = [
 	{ value: "commit", label: "Make commit" },
@@ -66,6 +69,8 @@ export function TaskCreateDialog({
 	onOpenChange,
 	prompt,
 	onPromptChange,
+	images,
+	onImagesChange,
 	onCreate,
 	onCreateAndStart,
 	onCreateMultiple,
@@ -86,10 +91,12 @@ export function TaskCreateDialog({
 	onOpenChange: (open: boolean) => void;
 	prompt: string;
 	onPromptChange: (value: string) => void;
-	onCreate: () => void;
-	onCreateAndStart?: () => void;
-	onCreateMultiple: (prompts: string[]) => void;
-	onCreateAndStartMultiple?: (prompts: string[]) => void;
+	images: TaskImage[];
+	onImagesChange: Dispatch<SetStateAction<TaskImage[]>>;
+	onCreate: (options?: { keepDialogOpen?: boolean }) => string | null;
+	onCreateAndStart?: (options?: { keepDialogOpen?: boolean }) => string | null;
+	onCreateMultiple: (prompts: string[], options?: { keepDialogOpen?: boolean }) => string[];
+	onCreateAndStartMultiple?: (prompts: string[], options?: { keepDialogOpen?: boolean }) => string[];
 	startInPlanMode: boolean;
 	onStartInPlanModeChange: (value: boolean) => void;
 	autoReviewEnabled: boolean;
@@ -103,11 +110,14 @@ export function TaskCreateDialog({
 	onBranchRefChange: (value: string) => void;
 }): ReactElement {
 	const [mode, setMode] = useState<"single" | "multi">("single");
+	const [createMore, setCreateMore] = useState(false);
+	const [composerResetKey, setComposerResetKey] = useState(0);
 	const [taskPrompts, setTaskPrompts] = useState<string[]>([]);
 	const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 	const nextFocusIndexRef = useRef<number | null>(null);
 	const startInPlanModeId = useId();
 	const autoReviewEnabledId = useId();
+	const createMoreId = useId();
 
 	const detectedItems = useMemo(() => parseListItems(prompt), [prompt]);
 	const validTaskCount = useMemo(
@@ -119,6 +129,8 @@ export function TaskCreateDialog({
 	useEffect(() => {
 		if (!open) {
 			setMode("single");
+			setCreateMore(false);
+			setComposerResetKey(0);
 			setTaskPrompts([]);
 			inputRefs.current = [];
 			nextFocusIndexRef.current = null;
@@ -184,21 +196,51 @@ export function TaskCreateDialog({
 		return taskPrompts.filter((p) => p.trim());
 	}, [taskPrompts]);
 
+	const resetForCreateMore = useCallback(() => {
+		onPromptChange("");
+		onImagesChange([]);
+		setMode("single");
+		setTaskPrompts([]);
+		inputRefs.current = [];
+		nextFocusIndexRef.current = null;
+		setComposerResetKey((current) => current + 1);
+	}, [onImagesChange, onPromptChange]);
+
+	const handleCreateSingle = useCallback(() => {
+		const createdTaskId = onCreate({ keepDialogOpen: createMore });
+		if (createMore && createdTaskId) {
+			resetForCreateMore();
+		}
+	}, [createMore, onCreate, resetForCreateMore]);
+
+	const handleCreateAndStartSingle = useCallback(() => {
+		const createdTaskId = onCreateAndStart?.({ keepDialogOpen: createMore });
+		if (createMore && createdTaskId) {
+			resetForCreateMore();
+		}
+	}, [createMore, onCreateAndStart, resetForCreateMore]);
+
 	const handleCreateAll = useCallback(() => {
 		const validPrompts = getValidPrompts();
 		if (validPrompts.length === 0) {
 			return;
 		}
-		onCreateMultiple(validPrompts);
-	}, [getValidPrompts, onCreateMultiple]);
+		const createdTaskIds = onCreateMultiple(validPrompts, { keepDialogOpen: createMore });
+		if (createMore && createdTaskIds.length > 0) {
+			resetForCreateMore();
+		}
+	}, [createMore, getValidPrompts, onCreateMultiple, resetForCreateMore]);
 
 	const handleCreateAndStartAll = useCallback(() => {
 		const validPrompts = getValidPrompts();
 		if (validPrompts.length === 0) {
 			return;
 		}
-		onCreateAndStartMultiple?.(validPrompts);
-	}, [getValidPrompts, onCreateAndStartMultiple]);
+		const createdTaskIds = onCreateAndStartMultiple?.(validPrompts, { keepDialogOpen: createMore }) ?? [];
+		if (createMore && createdTaskIds.length > 0) {
+			resetForCreateMore();
+		}
+	}, [createMore, getValidPrompts, onCreateAndStartMultiple, resetForCreateMore]);
 
 	const handleInputKeyDown = useCallback(
 		(index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -241,10 +283,10 @@ export function TaskCreateDialog({
 				return;
 			}
 			if (event.shiftKey) {
-				onCreateAndStart?.();
+				handleCreateAndStartSingle();
 				return;
 			}
-			onCreate();
+			handleCreateSingle();
 		},
 		{
 			enabled: open,
@@ -260,7 +302,7 @@ export function TaskCreateDialog({
 			},
 			preventDefault: true,
 		},
-		[open, mode, onCreate, onCreateAndStart, handleCreateAll, handleCreateAndStartAll],
+		[open, mode, handleCreateAll, handleCreateAndStartAll, handleCreateAndStartSingle, handleCreateSingle],
 	);
 
 	const dialogTitle = mode === "multi"
@@ -276,17 +318,21 @@ export function TaskCreateDialog({
 				{mode === "single" ? (
 					<div>
 						<TaskPromptComposer
+							key={composerResetKey}
 							value={prompt}
 							onValueChange={onPromptChange}
-							onSubmit={onCreate}
-							onSubmitAndStart={onCreateAndStart}
+							images={images}
+							onImagesChange={onImagesChange}
+							onSubmit={handleCreateSingle}
+							onSubmitAndStart={handleCreateAndStartSingle}
 							placeholder="Describe the task..."
 							autoFocus
 							workspaceId={workspaceId}
+							showAttachImageButton={false}
 						/>
 						<div className="flex items-center justify-between mt-1.5">
 							<p className="text-[11px] text-text-tertiary">
-								Use <code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">@file</code> to reference files.
+								Use <code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">@file</code> to reference files, and <code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">{pasteShortcutLabel}</code> to paste images.
 							</p>
 							<button
 								type="button"
@@ -359,7 +405,7 @@ export function TaskCreateDialog({
 							checked={startInPlanMode}
 							onCheckedChange={(checked) => onStartInPlanModeChange(checked === true)}
 							disabled={startInPlanModeDisabled}
-							className="flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent disabled:opacity-40"
+							className="flex h-3.5 w-3.5 cursor-pointer items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent disabled:cursor-default disabled:opacity-40"
 						>
 							<RadixCheckbox.Indicator>
 								<Check size={10} className="text-white" />
@@ -389,7 +435,7 @@ export function TaskCreateDialog({
 								id={autoReviewEnabledId}
 								checked={autoReviewEnabled}
 								onCheckedChange={(checked) => onAutoReviewEnabledChange(checked === true)}
-								className="flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent"
+								className="flex h-3.5 w-3.5 cursor-pointer items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent"
 							>
 								<RadixCheckbox.Indicator>
 									<Check size={10} className="text-white" />
@@ -419,14 +465,25 @@ export function TaskCreateDialog({
 				</div>
 			</DialogBody>
 			<DialogFooter>
+				<label
+					htmlFor={createMoreId}
+					className="mr-auto flex items-center gap-2 text-[12px] text-text-primary cursor-pointer select-none"
+				>
+					<RadixSwitch.Root
+						id={createMoreId}
+						checked={createMore}
+						onCheckedChange={setCreateMore}
+						className="relative h-5 w-9 rounded-full bg-surface-4 data-[state=checked]:bg-accent cursor-pointer"
+					>
+						<RadixSwitch.Thumb className="block h-4 w-4 rounded-full bg-white shadow-sm transition-transform translate-x-0.5 data-[state=checked]:translate-x-[18px]" />
+					</RadixSwitch.Root>
+					<span>Create more</span>
+				</label>
 				{mode === "single" ? (
 					<>
-						<Button variant="default" size="sm" onClick={() => onOpenChange(false)} className="mr-auto">
-							Cancel (esc)
-						</Button>
 						<Button
 							size="sm"
-							onClick={onCreate}
+							onClick={handleCreateSingle}
 							disabled={!prompt.trim() || !branchRef}
 						>
 							<span className="inline-flex items-center">
@@ -438,7 +495,7 @@ export function TaskCreateDialog({
 							<Button
 								variant="primary"
 								size="sm"
-								onClick={onCreateAndStart}
+								onClick={handleCreateAndStartSingle}
 								disabled={!prompt.trim() || !branchRef}
 							>
 								<span className="inline-flex items-center">
@@ -450,9 +507,6 @@ export function TaskCreateDialog({
 					</>
 				) : (
 					<>
-						<Button variant="default" size="sm" onClick={() => onOpenChange(false)} className="mr-auto">
-							Cancel (esc)
-						</Button>
 						<Button
 							size="sm"
 							onClick={handleCreateAll}

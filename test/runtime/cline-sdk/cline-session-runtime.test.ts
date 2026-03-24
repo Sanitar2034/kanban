@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createInMemoryClineSessionRuntime } from "../../../src/cline-sdk/cline-session-runtime.js";
 
+function createNoopMcpRuntimeService() {
+	return {
+		createToolBundle: vi.fn(async () => ({
+			tools: [],
+			warnings: [],
+			dispose: async () => {},
+		})),
+		getAuthStatuses: vi.fn(async () => []),
+		authorizeServer: vi.fn(),
+	};
+}
+
 function createDeferred<T>() {
 	let resolve: (value: T) => void = () => {};
 	let reject: (error: unknown) => void = () => {};
@@ -43,6 +55,7 @@ describe("InMemoryClineSessionRuntime", () => {
 
 		const runtime = createInMemoryClineSessionRuntime({
 			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
 			onTaskEvent,
 		});
 
@@ -120,6 +133,7 @@ describe("InMemoryClineSessionRuntime", () => {
 
 		const runtime = createInMemoryClineSessionRuntime({
 			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
 			onTaskEvent,
 		});
 
@@ -127,6 +141,13 @@ describe("InMemoryClineSessionRuntime", () => {
 			taskId: "task-1",
 			cwd: "/tmp/worktree",
 			prompt: "Investigate startup",
+			images: [
+				{
+					id: "img-1",
+					data: "abc123",
+					mimeType: "image/png",
+				},
+			],
 			providerId: "anthropic",
 			modelId: "claude-sonnet-4-6",
 			systemPrompt: "You are a helpful coding assistant.",
@@ -135,10 +156,17 @@ describe("InMemoryClineSessionRuntime", () => {
 		expect(startResult.sessionId).toBe("resolved-session-1");
 		expect(runtime.getTaskSessionId("task-1")).toBe("resolved-session-1");
 
-		await runtime.sendTaskSessionInput("task-1", "Continue");
+		await runtime.sendTaskSessionInput("task-1", "Continue", undefined, [
+			{
+				id: "img-2",
+				data: "def456",
+				mimeType: "image/jpeg",
+			},
+		]);
 		expect(fakeHost.send).toHaveBeenCalledWith({
 			sessionId: "resolved-session-1",
 			prompt: "Continue",
+			userImages: ["data:image/jpeg;base64,def456"],
 		});
 
 		if (!subscribedListener) {
@@ -164,6 +192,14 @@ describe("InMemoryClineSessionRuntime", () => {
 			}),
 		);
 		expect(requestedSessionId).not.toBe("resolved-session-1");
+		expect(fakeHost.start).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userImages: ["data:image/png;base64,abc123"],
+				config: expect.objectContaining({
+					maxConsecutiveMistakes: 3,
+				}),
+			}),
+		);
 	});
 
 	it("reads persisted task history by scanning task-prefixed SDK session ids", async () => {
@@ -208,6 +244,7 @@ describe("InMemoryClineSessionRuntime", () => {
 
 		const runtime = createInMemoryClineSessionRuntime({
 			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
 		});
 
 		const snapshot = await runtime.readPersistedTaskSession("task-1");
@@ -220,6 +257,50 @@ describe("InMemoryClineSessionRuntime", () => {
 			},
 		]);
 		expect(fakeHost.readMessages).toHaveBeenCalledWith("task-1-newer");
+	});
+
+	it("rebinds a task id to the latest persisted SDK session before resuming sends", async () => {
+		const fakeHost = {
+			start: vi.fn(async (input: { config?: { sessionId?: string } }) => ({
+				sessionId: input.config?.sessionId ?? "session-1",
+				result: {},
+			})),
+			send: vi.fn(async () => ({})),
+			stop: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+			dispose: vi.fn(async () => {}),
+			get: vi.fn(async () => undefined),
+			list: vi.fn(async () => [
+				{
+					sessionId: "task-1-newer",
+					status: "completed",
+					startedAt: "2026-03-17T10:10:00.000Z",
+					updatedAt: "2026-03-17T10:15:00.000Z",
+				},
+			]),
+			readMessages: vi.fn(async () => [
+				{
+					role: "assistant" as const,
+					content: "Recovered response",
+				},
+			]),
+			subscribe: vi.fn(() => () => {}),
+		};
+
+		const runtime = createInMemoryClineSessionRuntime({
+			createSessionHost: async () => fakeHost,
+		});
+
+		const snapshot = await runtime.resumeTaskSession("task-1");
+
+		expect(snapshot?.record.sessionId).toBe("task-1-newer");
+		expect(runtime.getTaskSessionId("task-1")).toBe("task-1-newer");
+
+		await runtime.sendTaskSessionInput("task-1", "Continue");
+		expect(fakeHost.send).toHaveBeenCalledWith({
+			sessionId: "task-1-newer",
+			prompt: "Continue",
+		});
 	});
 
 	it("disposes the shared host and clears task mappings", async () => {
@@ -240,6 +321,7 @@ describe("InMemoryClineSessionRuntime", () => {
 
 		const runtime = createInMemoryClineSessionRuntime({
 			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
 		});
 
 		await runtime.startTaskSession({

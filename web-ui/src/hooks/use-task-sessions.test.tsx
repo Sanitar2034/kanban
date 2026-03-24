@@ -151,4 +151,82 @@ describe("useTaskSessions", () => {
 
 		expect(trackTaskResumedFromTrashMock).not.toHaveBeenCalled();
 	});
+
+	it("forwards start-in-plan-mode from the task card when starting a task", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+		});
+
+		if (latestSnapshot === null) {
+			throw new Error("Expected a hook snapshot.");
+		}
+
+		await act(async () => {
+			await latestSnapshot?.startTaskSession({
+				...createTask(),
+				startInPlanMode: true,
+			});
+		});
+
+		expect(startTaskSessionMutateMock).toHaveBeenCalledWith({
+			taskId: "task-1",
+			prompt: "Resume me",
+			startInPlanMode: true,
+			resumeFromTrash: undefined,
+			baseRef: "main",
+			cols: 120,
+			rows: 40,
+		});
+	});
+
+	it("forwards task images when starting a task", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+		});
+
+		if (latestSnapshot === null) {
+			throw new Error("Expected a hook snapshot.");
+		}
+
+		await act(async () => {
+			await latestSnapshot?.startTaskSession({
+				...createTask(),
+				images: [
+					{
+						id: "img-1",
+						data: "abc123",
+						mimeType: "image/png",
+					},
+				],
+			});
+		});
+
+		expect(startTaskSessionMutateMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				images: [
+					{
+						id: "img-1",
+						data: "abc123",
+						mimeType: "image/png",
+					},
+				],
+			}),
+		);
+	});
 });

@@ -8,6 +8,12 @@ import { z } from "zod";
 import type {
 	RuntimeClineOauthLoginRequest,
 	RuntimeClineOauthLoginResponse,
+	RuntimeClineMcpAuthStatusResponse,
+	RuntimeClineMcpOAuthRequest,
+	RuntimeClineMcpOAuthResponse,
+	RuntimeClineMcpSettingsResponse,
+	RuntimeClineMcpSettingsSaveRequest,
+	RuntimeClineMcpSettingsSaveResponse,
 	RuntimeClineProviderCatalogResponse,
 	RuntimeClineProviderModelsRequest,
 	RuntimeClineProviderModelsResponse,
@@ -59,6 +65,7 @@ import type {
 	RuntimeWorkspaceFileSearchRequest,
 	RuntimeWorkspaceFileSearchResponse,
 	RuntimeWorkspaceStateResponse,
+	RuntimeWorkspaceStateNotifyResponse,
 	RuntimeWorkspaceStateSaveRequest,
 	RuntimeWorktreeDeleteRequest,
 	RuntimeWorktreeDeleteResponse,
@@ -68,6 +75,12 @@ import type {
 import {
 	runtimeClineOauthLoginRequestSchema,
 	runtimeClineOauthLoginResponseSchema,
+	runtimeClineMcpAuthStatusResponseSchema,
+	runtimeClineMcpOAuthRequestSchema,
+	runtimeClineMcpOAuthResponseSchema,
+	runtimeClineMcpSettingsResponseSchema,
+	runtimeClineMcpSettingsSaveRequestSchema,
+	runtimeClineMcpSettingsSaveResponseSchema,
 	runtimeClineProviderCatalogResponseSchema,
 	runtimeClineProviderModelsRequestSchema,
 	runtimeClineProviderModelsResponseSchema,
@@ -119,6 +132,7 @@ import {
 	runtimeWorkspaceFileSearchRequestSchema,
 	runtimeWorkspaceFileSearchResponseSchema,
 	runtimeWorkspaceStateResponseSchema,
+	runtimeWorkspaceStateNotifyResponseSchema,
 	runtimeWorkspaceStateSaveRequestSchema,
 	runtimeWorktreeDeleteRequestSchema,
 	runtimeWorktreeDeleteResponseSchema,
@@ -135,10 +149,13 @@ export interface RuntimeTrpcContext {
 	requestedWorkspaceId: string | null;
 	workspaceScope: RuntimeTrpcWorkspaceScope | null;
 	runtimeApi: {
-		loadConfig: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeConfigResponse>;
-		saveConfig: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeConfigSaveRequest) => Promise<RuntimeConfigResponse>;
+		loadConfig: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeConfigResponse>;
+		saveConfig: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+			input: RuntimeConfigSaveRequest,
+		) => Promise<RuntimeConfigResponse>;
 		saveClineProviderSettings: (
-			scope: RuntimeTrpcWorkspaceScope,
+			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeClineProviderSettingsSaveRequest,
 		) => Promise<RuntimeClineProviderSettingsSaveResponse>;
 		startTaskSession: (
@@ -169,15 +186,27 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatCancelRequest,
 		) => Promise<RuntimeTaskChatCancelResponse>;
-		getClineProviderCatalog: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeClineProviderCatalogResponse>;
+		getClineProviderCatalog: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineProviderCatalogResponse>;
 		getClineProviderModels: (
-			scope: RuntimeTrpcWorkspaceScope,
+			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeClineProviderModelsRequest,
 		) => Promise<RuntimeClineProviderModelsResponse>;
 		runClineProviderOAuthLogin: (
-			scope: RuntimeTrpcWorkspaceScope,
+			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeClineOauthLoginRequest,
 		) => Promise<RuntimeClineOauthLoginResponse>;
+		getClineMcpAuthStatuses: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+		) => Promise<RuntimeClineMcpAuthStatusResponse>;
+		runClineMcpServerOAuth: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+			input: RuntimeClineMcpOAuthRequest,
+		) => Promise<RuntimeClineMcpOAuthResponse>;
+		getClineMcpSettings: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineMcpSettingsResponse>;
+		saveClineMcpSettings: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+			input: RuntimeClineMcpSettingsSaveRequest,
+		) => Promise<RuntimeClineMcpSettingsSaveResponse>;
 		startShellSession: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeShellSessionStartRequest,
@@ -237,6 +266,7 @@ export interface RuntimeTrpcContext {
 			input: { filePath: string; content: string },
 		) => Promise<{ ok: boolean; error?: string }>;
 		loadState: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateResponse>;
+		notifyStateUpdated: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateNotifyResponse>;
 		saveState: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeWorkspaceStateSaveRequest,
@@ -325,16 +355,16 @@ const gitSyncActionInputSchema = z.object({
 
 export const runtimeAppRouter = t.router({
 	runtime: t.router({
-		getConfig: workspaceProcedure.output(runtimeConfigResponseSchema).query(async ({ ctx }) => {
+		getConfig: t.procedure.output(runtimeConfigResponseSchema).query(async ({ ctx }) => {
 			return await ctx.runtimeApi.loadConfig(ctx.workspaceScope);
 		}),
-		saveConfig: workspaceProcedure
+		saveConfig: t.procedure
 			.input(runtimeConfigSaveRequestSchema)
 			.output(runtimeConfigResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.saveConfig(ctx.workspaceScope, input);
 			}),
-		saveClineProviderSettings: workspaceProcedure
+		saveClineProviderSettings: t.procedure
 			.input(runtimeClineProviderSettingsSaveRequestSchema)
 			.output(runtimeClineProviderSettingsSaveResponseSchema)
 			.mutation(async ({ ctx, input }) => {
@@ -382,18 +412,40 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.cancelTaskChatTurn(ctx.workspaceScope, input);
 			}),
-		getClineProviderCatalog: workspaceProcedure
+		getClineProviderCatalog: t.procedure
 			.output(runtimeClineProviderCatalogResponseSchema)
 			.query(async ({ ctx }) => {
 				return await ctx.runtimeApi.getClineProviderCatalog(ctx.workspaceScope);
 			}),
-		getClineProviderModels: workspaceProcedure
+		getClineProviderModels: t.procedure
 			.input(runtimeClineProviderModelsRequestSchema)
 			.output(runtimeClineProviderModelsResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.getClineProviderModels(ctx.workspaceScope, input);
 			}),
-		runClineProviderOAuthLogin: workspaceProcedure
+		getClineMcpAuthStatuses: t.procedure
+			.output(runtimeClineMcpAuthStatusResponseSchema)
+			.query(async ({ ctx }) => {
+				return await ctx.runtimeApi.getClineMcpAuthStatuses(ctx.workspaceScope);
+			}),
+		runClineMcpServerOAuth: t.procedure
+			.input(runtimeClineMcpOAuthRequestSchema)
+			.output(runtimeClineMcpOAuthResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.runClineMcpServerOAuth(ctx.workspaceScope, input);
+			}),
+		getClineMcpSettings: t.procedure
+			.output(runtimeClineMcpSettingsResponseSchema)
+			.query(async ({ ctx }) => {
+				return await ctx.runtimeApi.getClineMcpSettings(ctx.workspaceScope);
+			}),
+		saveClineMcpSettings: t.procedure
+			.input(runtimeClineMcpSettingsSaveRequestSchema)
+			.output(runtimeClineMcpSettingsSaveResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.saveClineMcpSettings(ctx.workspaceScope, input);
+			}),
+		runClineProviderOAuthLogin: t.procedure
 			.input(runtimeClineOauthLoginRequestSchema)
 			.output(runtimeClineOauthLoginResponseSchema)
 			.mutation(async ({ ctx, input }) => {
@@ -484,6 +536,11 @@ export const runtimeAppRouter = t.router({
 		getState: workspaceProcedure.output(runtimeWorkspaceStateResponseSchema).query(async ({ ctx }) => {
 			return await ctx.workspaceApi.loadState(ctx.workspaceScope);
 		}),
+		notifyStateUpdated: workspaceProcedure
+			.output(runtimeWorkspaceStateNotifyResponseSchema)
+			.mutation(async ({ ctx }) => {
+				return await ctx.workspaceApi.notifyStateUpdated(ctx.workspaceScope);
+			}),
 		saveState: workspaceProcedure
 			.input(runtimeWorkspaceStateSaveRequestSchema)
 			.output(runtimeWorkspaceStateResponseSchema)

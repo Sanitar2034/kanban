@@ -1,22 +1,53 @@
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { ChevronDown, ChevronUp, Heart, Plus, Trash2 } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-
 import { Button } from "@/components/ui/button";
+import { ClineIcon } from "@/components/ui/cline-icon";
 import { cn } from "@/components/ui/cn";
+import { useUnmount, useWindowEvent } from "@/utils/react-use";
 import {
 	AlertDialog,
 	AlertDialogAction,
+	AlertDialogBody,
 	AlertDialogCancel,
 	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import type { RuntimeProjectSummary } from "@/runtime/types";
 import { formatPathForDisplay } from "@/utils/path-display";
+import { isMacPlatform, modifierKeyLabel } from "@/utils/platform";
 
-const GITHUB_URL = "https://github.com/cline/kanban";
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 600;
+const SIDEBAR_DEFAULT_WIDTH = 280;
+const SIDEBAR_WIDTH_STORAGE_KEY = "kb-sidebar-width";
+
+function loadSidebarWidth(): number {
+	try {
+		const stored = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+		if (stored) {
+			const parsed = Number(stored);
+			if (Number.isFinite(parsed)) {
+				return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, parsed));
+			}
+		}
+	} catch {
+		// ignore
+	}
+	return SIDEBAR_DEFAULT_WIDTH;
+}
+
+function saveSidebarWidth(width: number): void {
+	try {
+		localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+	} catch {
+		// ignore
+	}
+}
 
 interface TaskCountBadge {
 	id: string;
@@ -52,6 +83,8 @@ export function ProjectNavigationPanel({
 	onAddProject: () => void;
 }): React.ReactElement {
 	const sortedProjects = [...projects].sort((a, b) => a.path.localeCompare(b.path));
+
+
 	const [pendingProjectRemoval, setPendingProjectRemoval] = useState<RuntimeProjectSummary | null>(null);
 	const isProjectRemovalPending = pendingProjectRemoval !== null && removingProjectId === pendingProjectRemoval.id;
 	const pendingProjectTaskCount = pendingProjectRemoval
@@ -155,17 +188,10 @@ export function ProjectNavigationPanel({
 			<div onMouseDown={startDrag} className="absolute top-0 right-0 bottom-0 w-1.5 cursor-ew-resize z-10 hover:bg-accent/20" />
 			<div style={{ padding: "12px 12px 8px" }}>
 				<div>
-					<div className="font-semibold text-base">
+					<div className="font-semibold text-base flex items-baseline gap-1.5">
+						<ClineIcon size={18} className="text-text-primary shrink-0 self-center" />
 						Cline <span className="text-text-secondary font-normal text-xs">v{__APP_VERSION__}</span>
 					</div>
-					<a
-						href={GITHUB_URL}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="text-accent-hover text-xs hover:underline"
-					>
-						View on GitHub
-					</a>
 				</div>
 				<div className="mt-2 rounded-md bg-surface-2 p-1">
 					<div className="grid grid-cols-2 gap-1">
@@ -193,42 +219,30 @@ export function ProjectNavigationPanel({
 								!canShowAgentSection ? "cursor-not-allowed opacity-50" : null,
 							)}
 						>
-							Agent
+							Kanban Agent
 						</button>
 					</div>
 				</div>
+				{activeSection === "agent" ? (
+					<p className="text-text-tertiary text-xs" style={{ padding: "8px 12px 0" }}>
+						Add tasks, link dependencies, break work down, and manage your board. Try asking to
+						create and link some tasks to get started.
+					</p>
+				) : null}
 			</div>
 
 			{activeSection === "projects" ? (
 				<>
-					<div className="flex items-center justify-between" style={{ padding: "4px 12px" }}>
-						<span className="text-text-tertiary text-xs font-medium uppercase tracking-wide">Projects</span>
-						<Button
-							variant="ghost"
-							size="sm"
-							icon={<Plus size={14} />}
-							onClick={onAddProject}
-							aria-label="Add project"
-							disabled={removingProjectId !== null}
-						/>
-					</div>
-
 					<div
 						className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-1"
-						style={{ padding: "4px 0" }}
+						style={{ padding: "4px 12px" }}
 					>
-						{sortedProjects.length === 0 ? (
-							isLoadingProjects ? (
-								<div style={{ padding: "4px 0" }}>
-									{Array.from({ length: 3 }).map((_, index) => (
-										<ProjectRowSkeleton key={`project-skeleton-${index}`} />
-									))}
-								</div>
-							) : (
-								<div className="text-center" style={{ padding: "24px 12px" }}>
-									<span className="text-text-secondary">No projects yet</span>
-								</div>
-							)
+						{sortedProjects.length === 0 && isLoadingProjects ? (
+							<div style={{ padding: "4px 0" }}>
+								{Array.from({ length: 3 }).map((_, index) => (
+									<ProjectRowSkeleton key={`project-skeleton-${index}`} />
+								))}
+							</div>
 						) : null}
 
 						{sortedProjects.map((project) => (
@@ -247,8 +261,30 @@ export function ProjectNavigationPanel({
 								}}
 							/>
 						))}
+
+						{!isLoadingProjects ? (
+							<button
+								type="button"
+								className="kb-project-row flex cursor-pointer items-center gap-1.5 rounded-md text-text-secondary hover:text-text-primary"
+								style={{ padding: "6px 8px" }}
+								onClick={onAddProject}
+								disabled={removingProjectId !== null}
+							>
+								<Plus size={14} className="shrink-0" />
+								<span className="text-sm">Add project</span>
+							</button>
+						) : null}
 					</div>
 					<ShortcutsCard />
+					<a
+						href="https://cline.bot"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="text-text-tertiary hover:text-text-primary text-center block text-xs"
+						style={{ padding: "6px 12px" }}
+					>
+						Made with <Heart size={10} fill="currentColor" className="inline-block" /> by Cline
+					</a>
 				</>
 			) : (
 				<div className="flex flex-1 min-h-0 flex-col">
@@ -261,15 +297,6 @@ export function ProjectNavigationPanel({
 					</div>
 				</div>
 			)}
-			<a
-				href="https://cline.bot"
-				target="_blank"
-				rel="noopener noreferrer"
-				className="text-text-tertiary hover:text-text-primary text-center block text-xs"
-				style={{ padding: "6px 12px" }}
-			>
-				Made with <Heart size={10} fill="currentColor" className="inline-block" /> by Cline
-			</a>
 			<AlertDialog
 				open={pendingProjectRemoval !== null}
 				onOpenChange={(open) => {
@@ -278,22 +305,22 @@ export function ProjectNavigationPanel({
 					}
 				}}
 			>
-				<AlertDialogTitle className="text-sm font-semibold text-text-primary mb-2">
-					Delete project permanently?
-				</AlertDialogTitle>
-				<AlertDialogDescription asChild>
-					<div>
-						<p className="text-text-secondary mb-2">
-							{pendingProjectRemoval ? pendingProjectRemoval.name : "This project"}
-						</p>
-						<p className="text-text-primary mb-2">
-							This will delete all project tasks ({pendingProjectTaskCount}), remove task workspaces/worktrees,
-							and stop any running processes for this project.
-						</p>
-						<p className="text-text-primary">This action cannot be undone.</p>
-					</div>
-				</AlertDialogDescription>
-				<div className="flex justify-end gap-2 mt-4">
+				<AlertDialogHeader>
+					<AlertDialogTitle>Remove Project</AlertDialogTitle>
+				</AlertDialogHeader>
+				<AlertDialogBody>
+					<AlertDialogDescription asChild>
+						<div className="flex flex-col gap-3">
+							<p>{pendingProjectRemoval ? pendingProjectRemoval.name : "This project"}</p>
+							<p className="text-text-primary">
+								This will delete all project tasks ({pendingProjectTaskCount}), remove task
+								workspaces/worktrees, and stop any running processes for this project.
+							</p>
+							<p className="text-text-primary">This action cannot be undone.</p>
+						</div>
+					</AlertDialogDescription>
+				</AlertDialogBody>
+				<AlertDialogFooter>
 					<AlertDialogCancel asChild>
 						<Button
 							variant="default"
@@ -324,38 +351,34 @@ export function ProjectNavigationPanel({
 							{isProjectRemovalPending ? (
 								<>
 									<Spinner size={14} />
-									Deleting...
+									Removing...
 								</>
 							) : (
-								"Delete Project"
+								"Remove Project"
 							)}
 						</Button>
 					</AlertDialogAction>
-				</div>
+				</AlertDialogFooter>
 			</AlertDialog>
 		</aside>
 	);
 }
 
-const isMac =
-	typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-const MOD = isMac ? "\u2318" : "Ctrl";
+const MOD = isMacPlatform ? "⌘" : modifierKeyLabel;
 
 const ESSENTIAL_SHORTCUTS = [
 	{ keys: ["C"], label: "New task" },
-	{ keys: [MOD, "\u23CE"], label: "Create task" },
-	{ keys: [MOD, "Shift", "\u23CE"], label: "Create & start" },
+	{ keys: [MOD, "B"], label: "Start backlog tasks" },
+	{ keys: [MOD, "Shift", "S"], label: "Settings (Select Agent)" },
+	{ keys: ["Click", MOD], label: "Hold to link tasks" },
+	{ keys: [MOD, "G"], label: "Toggle git view" },
 	{ keys: [MOD, "J"], label: "Toggle terminal" },
-	{ keys: [MOD], label: "Hold to link tasks" },
 ];
 
 const MORE_SHORTCUTS = [
-	{ keys: ["\u2191"], label: "Previous card" },
-	{ keys: ["\u2193"], label: "Next card" },
+	{ keys: [MOD, "Shift", "A"], label: "Toggle plan / act" },
 	{ keys: [MOD, "M"], label: "Expand terminal" },
-	{ keys: ["Esc"], label: "Cancel / back" },
-	{ keys: ["\u2191"], label: "Previous commit" },
-	{ keys: ["\u2193"], label: "Next commit" },
+	{ keys: ["Esc"], label: "Close / back" },
 ];
 
 function ShortcutHint({ keys, label }: { keys: string[]; label: string }): React.ReactElement {
@@ -376,7 +399,7 @@ function ShortcutsCard(): React.ReactElement {
 
 	return (
 		<div style={{ padding: "8px 12px" }}>
-			<div className="rounded-md p-2.5">
+			<div style={{ padding: "0 8px" }}>
 				<div className="flex flex-col gap-0.5">
 					{ESSENTIAL_SHORTCUTS.map((s) => (
 						<ShortcutHint key={s.label} keys={s.keys} label={s.label} />
@@ -408,7 +431,7 @@ function ShortcutsCard(): React.ReactElement {
 function ProjectRowSkeleton(): React.ReactElement {
 	return (
 		<div
-			className="flex items-center gap-1.5 mx-2"
+			className="flex items-center gap-1.5"
 			style={{
 				padding: "6px 8px",
 			}}
@@ -500,7 +523,7 @@ function ProjectRow({
 					onSelect(project.id);
 				}
 			}}
-			className={cn("kb-project-row cursor-pointer rounded-md mx-2", isCurrent && "kb-project-row-selected")}
+			className={cn("kb-project-row cursor-pointer rounded-md", isCurrent && "kb-project-row-selected")}
 			style={{
 				display: "flex",
 				alignItems: "center",

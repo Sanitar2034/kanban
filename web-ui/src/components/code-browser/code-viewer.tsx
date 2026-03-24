@@ -181,8 +181,6 @@ function ensureTheme(monaco: Parameters<OnMount>[1]) {
 export interface EditorSettings {
 	fontSize: number;
 	wordWrap: boolean;
-	minimap: boolean;
-	lineNumbers: boolean;
 }
 
 interface FileContent {
@@ -273,6 +271,13 @@ export function CodeViewer({
 			editorRef.current = editor;
 			ensureTheme(monaco);
 			monaco.editor.setTheme(THEME_NAME);
+
+			// Disable all TypeScript/JavaScript diagnostics — this is a read-mostly
+			// code browser, not an IDE, so module-resolution errors are noise.
+			const noValidation = { noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true };
+			monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(noValidation);
+			monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(noValidation);
+
 			// ⌘S / Ctrl+S → save
 			editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
 				void saveFile();
@@ -337,10 +342,10 @@ export function CodeViewer({
 					onMount={handleEditorMount}
 					onChange={handleEditorChange}
 					options={{
-						minimap: { enabled: editorSettings?.minimap ?? true },
+						minimap: { enabled: false },
 						scrollBeyondLastLine: false,
-						fontSize: editorSettings?.fontSize ?? 10,
-						lineNumbers: (editorSettings?.lineNumbers ?? true) ? "on" : "off",
+						fontSize: editorSettings?.fontSize ?? 12,
+						lineNumbers: "on",
 						renderLineHighlight: "line",
 						folding: true,
 						wordWrap: (editorSettings?.wordWrap ?? false) ? "on" : "off",

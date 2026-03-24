@@ -1,17 +1,19 @@
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
 import { ArrowBigUp, Check, ChevronDown, Command, CornerDownLeft } from "lucide-react";
-import type { ReactElement } from "react";
+import { useCallback, useRef, useState, type Dispatch, type ReactElement, type SetStateAction } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { BranchSelectDropdown, type BranchSelectOption } from "@/components/branch-select-dropdown";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
-import type { TaskAutoReviewMode } from "@/types";
-import { useMeasure } from "@/utils/react-use";
+import type { TaskAutoReviewMode, TaskImage } from "@/types";
+import { pasteShortcutLabel } from "@/utils/platform";
+import { useDocumentEvent, useMeasure } from "@/utils/react-use";
 
 export type TaskInlineCardMode = "create" | "edit";
 
 export type TaskBranchOption = BranchSelectOption;
+
 
 const AUTO_REVIEW_MODE_OPTIONS: Array<{ value: TaskAutoReviewMode; label: string }> = [
 	{ value: "commit", label: "Make commit" },
@@ -42,6 +44,8 @@ function ButtonShortcut({ includeShift = false }: { includeShift?: boolean }): R
 export function TaskInlineCreateCard({
 	prompt,
 	onPromptChange,
+	images,
+	onImagesChange,
 	onCreate,
 	onCreateAndStart,
 	onCancel,
@@ -62,9 +66,11 @@ export function TaskInlineCreateCard({
 }: {
 	prompt: string;
 	onPromptChange: (value: string) => void;
+	images?: TaskImage[];
+	onImagesChange?: Dispatch<SetStateAction<TaskImage[]>>;
 	onCreate: () => void;
 	onCreateAndStart?: () => void;
-	onCancel: () => void;
+	onCancel?: () => void;
 	startInPlanMode: boolean;
 	onStartInPlanModeChange: (value: boolean) => void;
 	autoReviewEnabled: boolean;
@@ -86,7 +92,18 @@ export function TaskInlineCreateCard({
 	const autoReviewModeId = `${idPrefix}-auto-review-mode-select`;
 	const branchSelectId = `${idPrefix}-branch-select`;
 	const actionLabel = mode === "edit" ? "Save" : "Create";
-	const [cardRef, cardRect] = useMeasure<HTMLDivElement>();
+	const [measureRef, cardRect] = useMeasure<HTMLDivElement>();
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const [isBranchPopoverOpen, setIsBranchPopoverOpen] = useState(false);
+	const setCardRef = useCallback(
+		(node: HTMLDivElement | null) => {
+			containerRef.current = node;
+			if (node) {
+				measureRef(node);
+			}
+		},
+		[measureRef],
+	);
 	const isCompactActions = cardRect.width > 0 && cardRect.width < COMPACT_ACTIONS_WIDTH_THRESHOLD_PX;
 	const hideCancelShortcut = isCompactActions;
 	const hideCreateShortcut = mode === "create" && isCompactActions;
@@ -94,26 +111,47 @@ export function TaskInlineCreateCard({
 	const cardMarginBottom = mode === "create" ? 6 : 0;
 
 	useHotkeys(
-		"esc",
+		"escape",
 		(event) => {
+			if (!onCancel) {
+				return;
+			}
 			if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
 				return;
 			}
 			onCancel();
 		},
 		{
-			enabled,
+			enabled: enabled && Boolean(onCancel),
 			enableOnFormTags: true,
 			enableOnContentEditable: true,
 			ignoreEventWhen: (event) => event.defaultPrevented,
 			preventDefault: true,
 		},
-		[enabled, onCancel],
+		[enabled, mode, onCancel],
+	);
+
+	useDocumentEvent(
+		"pointerdown",
+		(event) => {
+			if (!enabled || mode !== "edit" || isBranchPopoverOpen) {
+				return;
+			}
+			const container = containerRef.current;
+			if (!container) {
+				return;
+			}
+			if (event.target instanceof Node && container.contains(event.target)) {
+				return;
+			}
+			onCreate();
+		},
+		true,
 	);
 
 	return (
 		<div
-			ref={cardRef}
+			ref={setCardRef}
 			className="rounded-md border border-border-bright bg-surface-2 p-3"
 			style={{ flexShrink: 0, marginBottom: cardMarginBottom, fontSize: 12 }}
 		>
@@ -122,16 +160,21 @@ export function TaskInlineCreateCard({
 					id={promptId}
 					value={prompt}
 					onValueChange={onPromptChange}
+					images={images}
+					onImagesChange={onImagesChange}
 					onSubmit={onCreate}
 					onSubmitAndStart={onCreateAndStart}
-					placeholder="Describe the task"
+					onEscape={onCancel}
+					placeholder="Describe the task..."
 					enabled={enabled}
 					autoFocus
 					workspaceId={workspaceId}
+					showAttachImageButton={false}
 				/>
 				<p className="text-[11px] text-text-tertiary mt-1 mb-0">
 					Use <code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">@file</code> to reference
-					files.
+					files, and <code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">{pasteShortcutLabel}</code> to paste
+					images.
 				</p>
 			</div>
 
@@ -146,7 +189,7 @@ export function TaskInlineCreateCard({
 						checked={startInPlanMode}
 						onCheckedChange={(checked) => onStartInPlanModeChange(checked === true)}
 						disabled={startInPlanModeDisabled || !enabled}
-						className="flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent disabled:opacity-40"
+						className="flex h-3.5 w-3.5 cursor-pointer items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent disabled:cursor-default disabled:opacity-40"
 					>
 						<RadixCheckbox.Indicator>
 							<Check size={10} className="text-white" />
@@ -162,6 +205,7 @@ export function TaskInlineCreateCard({
 						options={branchOptions}
 						selectedValue={branchRef}
 						onSelect={onBranchRefChange}
+						onPopoverOpenChange={setIsBranchPopoverOpen}
 						fill
 						size="sm"
 						emptyText="No branches detected"
@@ -178,7 +222,7 @@ export function TaskInlineCreateCard({
 							aria-label="Enable automatic review action"
 							checked={autoReviewEnabled}
 							onCheckedChange={(checked) => onAutoReviewEnabledChange(checked === true)}
-							className="flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent"
+							className="flex h-3.5 w-3.5 cursor-pointer items-center justify-center rounded-sm border border-border-bright bg-surface-3 data-[state=checked]:bg-accent data-[state=checked]:border-accent"
 						>
 							<RadixCheckbox.Indicator>
 								<Check size={10} className="text-white" />
@@ -211,10 +255,12 @@ export function TaskInlineCreateCard({
 				</div>
 			</div>
 
-			<div className="flex justify-between gap-2 mt-3">
-				<Button variant="default" size="sm" className="whitespace-nowrap" onClick={onCancel}>
-					{cancelLabel}
-				</Button>
+			<div className={`flex gap-2 mt-3 ${mode === "edit" ? "justify-end" : "justify-between"}`}>
+				{mode === "create" && onCancel ? (
+					<Button variant="default" size="sm" className="whitespace-nowrap" onClick={onCancel}>
+						{cancelLabel}
+					</Button>
+				) : null}
 				<div className="flex gap-2">
 					<Button
 						size="sm"

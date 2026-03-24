@@ -1,7 +1,7 @@
 // Stores the Kanban-side view of native Cline chat state.
 // It combines live in-memory updates with hydration from persisted SDK
 // session artifacts so the rest of the backend can read one repository shape.
-import type { RuntimeTaskSessionSummary, RuntimeTaskTurnCheckpoint } from "../core/api-contract.js";
+import type { RuntimeTaskImage, RuntimeTaskSessionSummary, RuntimeTaskTurnCheckpoint } from "../core/api-contract.js";
 import type { ClinePersistedTaskSessionSnapshot } from "./cline-session-runtime.js";
 import type { ClineSdkPersistedMessage } from "./sdk-runtime-boundary.js";
 import {
@@ -141,6 +141,24 @@ export function createInMemoryClineMessageRepository(): ClineMessageRepository {
 	return new InMemoryClineMessageRepository();
 }
 
+export function createTaskEntryFromPersistedSession(
+	taskId: string,
+	messages: ClineSdkPersistedMessage[],
+	summaryPatch: Partial<RuntimeTaskSessionSummary> = {},
+): ClineTaskSessionEntry {
+	const entry = createHydrationEntry(taskId);
+	for (const message of messages) {
+		hydratePersistedMessage(entry, taskId, message);
+	}
+	entry.summary = {
+		...entry.summary,
+		...summaryPatch,
+		taskId,
+		updatedAt: Date.now(),
+	};
+	return entry;
+}
+
 function hydratePersistedSessionMessages(taskId: string, messages: ClineSdkPersistedMessage[]): ClineTaskMessage[] {
 	const entry = createHydrationEntry(taskId);
 	for (const message of messages) {
@@ -165,15 +183,72 @@ function hydratePersistedMessage(
 	taskId: string,
 	message: ClineSdkPersistedMessage,
 ): void {
+	const record =
+		message && typeof message === "object" ? (message as Record<string, unknown>) : null;
+	const persistedMetadata =
+		record?.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
+			? (record.metadata as Record<string, unknown>)
+			: null;
+	const persistedDisplayRole =
+		typeof persistedMetadata?.displayRole === "string" ? persistedMetadata.displayRole.trim().toLowerCase() : "";
+	const persistedReason =
+		typeof persistedMetadata?.reason === "string" ? persistedMetadata.reason.trim() : null;
+	const persistedMessageKind =
+		typeof persistedMetadata?.kind === "string" ? persistedMetadata.kind.trim() : null;
+	const hydratedRole =
+		persistedDisplayRole === "system" || persistedDisplayRole === "status"
+			? (persistedDisplayRole as "system" | "status")
+			: message.role;
+
 	if (typeof message.content === "string") {
-		appendPersistedTextMessage(entry, taskId, message.role, message.content);
+		appendPersistedTextMessage(entry, taskId, hydratedRole, message.content, persistedMetadata, persistedReason, persistedMessageKind);
 		return;
 	}
+
+	const textParts: string[] = [];
+	const images: RuntimeTaskImage[] = [];
+	const flushRichMessage = () => {
+		if (textParts.length === 0 && images.length === 0) {
+			return;
+		}
+		appendPersistedTextMessage(
+			entry,
+			taskId,
+			hydratedRole,
+			textParts.join("\n"),
+			persistedMetadata,
+			persistedReason,
+			persistedMessageKind,
+			images,
+		);
+		textParts.length = 0;
+		images.length = 0;
+	};
+
 	for (const block of message.content) {
 		if (block.type === "text") {
-			appendPersistedTextMessage(entry, taskId, message.role, block.text);
+			textParts.push(block.text);
 			continue;
 		}
+		if (block.type === "file") {
+			textParts.push(`Attached file: ${block.path}`);
+			continue;
+		}
+		if (block.type === "image") {
+			if (typeof block.data === "string" && typeof block.mediaType === "string") {
+				images.push({
+					id: `${taskId}-image-${images.length}-${Date.now()}`,
+					data: block.data,
+					mimeType: block.mediaType,
+				});
+			} else if (typeof block.mediaType === "string") {
+				textParts.push(`Attached image: ${block.mediaType}`);
+			}
+			continue;
+		}
+
+		flushRichMessage();
+
 		if (block.type === "thinking") {
 			appendPersistedReasoningMessage(entry, taskId, block.thinking);
 			continue;
@@ -199,28 +274,35 @@ function hydratePersistedMessage(
 				error: block.is_error ? resultText : null,
 				durationMs: null,
 			});
-			continue;
-		}
-		if (block.type === "file") {
-			appendPersistedTextMessage(entry, taskId, message.role, `Attached file: ${block.path}`);
-			continue;
-		}
-		if (block.type === "image") {
-			appendPersistedTextMessage(entry, taskId, message.role, `Attached image: ${block.mediaType}`);
 		}
 	}
+
+	flushRichMessage();
 }
 
 function appendPersistedTextMessage(
 	entry: ClineTaskSessionEntry,
 	taskId: string,
-	role: "user" | "assistant",
+	role: "user" | "assistant" | "system" | "status",
 	content: string,
+	metadata?: Record<string, unknown> | null,
+	reason?: string | null,
+	messageKind?: string | null,
+	images?: RuntimeTaskImage[],
 ): void {
-	if (content.trim().length === 0) {
+	if (content.trim().length === 0 && (!images || images.length === 0)) {
 		return;
 	}
-	entry.messages.push(createMessage(taskId, role, content));
+	const meta =
+		metadata || reason || messageKind
+			? {
+					hookEventName: metadata ? "history_notice" : null,
+					messageKind: messageKind ?? null,
+					displayRole: typeof metadata?.displayRole === "string" ? metadata.displayRole : null,
+					reason: reason ?? null,
+			  }
+			: null;
+	entry.messages.push(meta ? createMessageWithMeta(taskId, role, content, meta, images) : createMessage(taskId, role, content, images));
 }
 
 function appendPersistedReasoningMessage(entry: ClineTaskSessionEntry, taskId: string, content: string): void {

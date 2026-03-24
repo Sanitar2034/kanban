@@ -4,13 +4,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
 import closeWithGrace from "close-with-grace";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import packageJson from "../package.json" with { type: "json" };
 
 import { registerHooksCommand } from "./commands/hooks.js";
 import { registerTaskCommand } from "./commands/task.js";
-import { loadRuntimeConfig, updateRuntimeConfig } from "./config/runtime-config.js";
-import type { RuntimeAgentId, RuntimeCommandRunResponse } from "./core/api-contract.js";
+import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config.js";
+import type { RuntimeCommandRunResponse } from "./core/api-contract.js";
 import { createGitProcessEnv } from "./core/git-process-env.js";
 import {
 	buildKanbanRuntimeUrl,
@@ -29,28 +29,11 @@ import type { TerminalSessionManager } from "./terminal/session-manager.js";
 interface CliOptions {
 	noOpen: boolean;
 	skipShutdownCleanup: boolean;
-	agent: RuntimeAgentId | null;
 	host: string | null;
 	port: { mode: "fixed"; value: number } | { mode: "auto" } | null;
 }
 
-const CLI_AGENT_IDS: readonly RuntimeAgentId[] = ["claude", "codex", "gemini", "opencode", "droid", "cline"];
 const KANBAN_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.1.0";
-
-function parseCliAgentId(value: string): RuntimeAgentId {
-	const normalized = value.trim().toLowerCase();
-	if (
-		normalized === "claude" ||
-		normalized === "codex" ||
-		normalized === "gemini" ||
-		normalized === "opencode" ||
-		normalized === "droid" ||
-		normalized === "cline"
-	) {
-		return normalized;
-	}
-	throw new Error(`Invalid agent: ${value}. Expected one of: ${CLI_AGENT_IDS.join(", ")}`);
-}
 
 function parseCliPortValue(rawValue: string): { mode: "fixed"; value: number } | { mode: "auto" } {
 	const normalized = rawValue.trim().toLowerCase();
@@ -68,11 +51,49 @@ function parseCliPortValue(rawValue: string): { mode: "fixed"; value: number } |
 }
 
 interface RootCommandOptions {
-	agent?: RuntimeAgentId;
 	host?: string;
 	port?: { mode: "fixed"; value: number } | { mode: "auto" };
 	open?: boolean;
 	skipShutdownCleanup?: boolean;
+}
+
+/**
+ * Decide whether this CLI invocation should auto-open a browser tab.
+ *
+ * This uses a positive allowlist for app-launch shapes like `kanban`,
+ * `kanban --agent codex`, and `kanban --port 3484`. Any subcommand or
+ * unexpected argument is treated as a command-style invocation instead.
+ */
+function shouldAutoOpenBrowserTabForInvocation(argv: string[]): boolean {
+	const launchFlags = new Set(["--open", "--no-open", "--skip-shutdown-cleanup"]);
+	const launchOptionsWithValues = new Set(["--host", "--port", "--agent"]);
+
+	for (let index = 0; index < argv.length; index += 1) {
+		const arg = argv[index];
+		if (!arg) {
+			continue;
+		}
+		if (!arg.startsWith("-")) {
+			return false;
+		}
+		if (launchFlags.has(arg)) {
+			continue;
+		}
+		const optionName = arg.split("=", 1)[0] ?? arg;
+		if (!launchOptionsWithValues.has(optionName)) {
+			return false;
+		}
+		if (arg.includes("=")) {
+			continue;
+		}
+		const optionValue = argv[index + 1];
+		if (!optionValue) {
+			return false;
+		}
+		index += 1;
+	}
+
+	return true;
 }
 
 async function isPortAvailable(port: number): Promise<boolean> {
@@ -109,15 +130,6 @@ async function applyRuntimePortOption(portOption: CliOptions["port"]): Promise<n
 	const autoPort = await findAvailableRuntimePort(DEFAULT_KANBAN_RUNTIME_PORT);
 	setKanbanRuntimePort(autoPort);
 	return autoPort;
-}
-
-async function persistCliAgentSelection(cwd: string, selectedAgentId: RuntimeAgentId): Promise<boolean> {
-	const currentRuntimeConfig = await loadRuntimeConfig(cwd);
-	if (currentRuntimeConfig.selectedAgentId === selectedAgentId) {
-		return false;
-	}
-	await updateRuntimeConfig(cwd, { selectedAgentId });
-	return true;
 }
 
 async function assertPathIsDirectory(path: string): Promise<void> {
@@ -179,7 +191,7 @@ async function canReachKanbanServer(workspaceId: string | null): Promise<boolean
 	}
 }
 
-async function tryOpenExistingServer(noOpen: boolean): Promise<boolean> {
+async function tryOpenExistingServer(options: { noOpen: boolean; shouldAutoOpenBrowser: boolean }): Promise<boolean> {
 	let workspaceId: string | null = null;
 	if (hasGitRepository(process.cwd())) {
 		const { loadWorkspaceContext } = await import("./state/workspace-state.js");
@@ -194,7 +206,7 @@ async function tryOpenExistingServer(noOpen: boolean): Promise<boolean> {
 		? buildKanbanRuntimeUrl(`/${encodeURIComponent(workspaceId)}`)
 		: getKanbanRuntimeOrigin();
 	console.log(`Kanban already running at ${getKanbanRuntimeOrigin()}`);
-	if (!noOpen) {
+	if (!options.noOpen && options.shouldAutoOpenBrowser) {
 		try {
 			const { openInBrowser } = await import("./server/browser.js");
 			openInBrowser(projectUrl, {
@@ -306,6 +318,7 @@ async function startServer(): Promise<{
 	let runtimeStateHub: RuntimeStateHub | undefined;
 	const workspaceRegistry = await createWorkspaceRegistry({
 		cwd: process.cwd(),
+		loadGlobalRuntimeConfig,
 		loadRuntimeConfig,
 		hasGitRepository,
 		pathIsDirectory,
@@ -393,7 +406,7 @@ async function startServerWithAutoPortRetry(options: CliOptions): Promise<Awaite
 	}
 }
 
-async function runMainCommand(options: CliOptions): Promise<void> {
+async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolean): Promise<void> {
 	if (options.host) {
 		setKanbanRuntimeHost(options.host);
 		console.log(`Binding to host ${options.host}.`);
@@ -413,13 +426,6 @@ async function runMainCommand(options: CliOptions): Promise<void> {
 		currentVersion: KANBAN_VERSION,
 	});
 
-	if (options.agent) {
-		const didChange = await persistCliAgentSelection(process.cwd(), options.agent);
-		if (didChange) {
-			console.log(`Default agent set to ${options.agent}.`);
-		}
-	}
-
 	let runtime: Awaited<ReturnType<typeof startServer>>;
 	try {
 		runtime = await startServerWithAutoPortRetry(options);
@@ -427,14 +433,14 @@ async function runMainCommand(options: CliOptions): Promise<void> {
 		if (
 			options.port?.mode !== "auto" &&
 			isAddressInUseError(error) &&
-			(await tryOpenExistingServer(options.noOpen))
+			(await tryOpenExistingServer({ noOpen: options.noOpen, shouldAutoOpenBrowser }))
 		) {
 			return;
 		}
 		throw error;
 	}
 	console.log(`Kanban running at ${runtime.url}`);
-	if (!options.noOpen) {
+	if (!options.noOpen && shouldAutoOpenBrowser) {
 		try {
 			openInBrowser(runtime.url, {
 				warn: (message) => {
@@ -488,19 +494,24 @@ async function runMainCommand(options: CliOptions): Promise<void> {
 	);
 }
 
-function createProgram(): Command {
+function createProgram(invocationArgs: string[]): Command {
+	const shouldAutoOpenBrowser = shouldAutoOpenBrowserTabForInvocation(invocationArgs);
 	const program = new Command();
 	program
 		.name("kanban")
 		.description("Local orchestration board for coding agents.")
 		.version(KANBAN_VERSION, "-v, --version", "Output the version number")
-		.option("--agent <id>", `Default agent ID (${CLI_AGENT_IDS.join(", ")}).`, parseCliAgentId)
 		.option("--host <ip>", "Host IP to bind the server to (default: 127.0.0.1).")
 		.option("--port <number|auto>", "Runtime port (1-65535) or auto.", parseCliPortValue)
 		.option("--no-open", "Do not open browser automatically.")
 		.option("--skip-shutdown-cleanup", "Do not move sessions to trash or delete task worktrees on shutdown.")
 		.showHelpAfterError()
-		.addHelpText("after", `\nRuntime URL: ${getKanbanRuntimeOrigin()}\nAgent IDs: ${CLI_AGENT_IDS.join(", ")}`);
+		.addHelpText("after", `\nRuntime URL: ${getKanbanRuntimeOrigin()}`);
+
+	program.addOption(
+		new Option("--agent <id>", "Deprecated compatibility flag. Ignored.")
+			.hideHelp(),
+	);
 
 	registerTaskCommand(program);
 	registerHooksCommand(program);
@@ -514,12 +525,11 @@ function createProgram(): Command {
 
 	program.action(async (options: RootCommandOptions) => {
 		await runMainCommand({
-			agent: options.agent ?? null,
 			host: options.host ?? null,
 			port: options.port ?? null,
 			noOpen: options.open === false,
 			skipShutdownCleanup: options.skipShutdownCleanup === true,
-		});
+		}, shouldAutoOpenBrowser);
 	});
 
 	return program;
@@ -527,7 +537,7 @@ function createProgram(): Command {
 
 async function run(): Promise<void> {
 	const argv = process.argv.slice(2);
-	const program = createProgram();
+	const program = createProgram(argv);
 	await program.parseAsync(argv, { from: "user" });
 }
 

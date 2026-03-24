@@ -3,15 +3,20 @@
 // switches so chat surfaces can stay reactive without duplicating logic.
 import { useCallback, useEffect, useState } from "react";
 import type { ClineChatActionResult } from "@/hooks/use-cline-chat-runtime-actions";
-import type { RuntimeTaskChatMessage } from "@/runtime/types";
+import type { RuntimeTaskChatMessage, RuntimeTaskImage, RuntimeTaskSessionMode } from "@/runtime/types";
 
 export type ClineChatMessage = RuntimeTaskChatMessage;
 
 interface UseClineChatSessionInput {
 	taskId: string;
-	onSendMessage?: (taskId: string, text: string) => Promise<ClineChatActionResult>;
+	onSendMessage?: (
+		taskId: string,
+		text: string,
+		options?: { mode?: RuntimeTaskSessionMode; images?: RuntimeTaskImage[] },
+	) => Promise<ClineChatActionResult>;
 	onCancelTurn?: (taskId: string) => Promise<{ ok: boolean; message?: string }>;
 	onLoadMessages?: (taskId: string) => Promise<ClineChatMessage[] | null>;
+	incomingMessages?: ClineChatMessage[] | null;
 	incomingMessage?: ClineChatMessage | null;
 }
 
@@ -20,7 +25,7 @@ interface UseClineChatSessionResult {
 	isSending: boolean;
 	isCanceling: boolean;
 	error: string | null;
-	sendMessage: (text: string) => Promise<boolean>;
+	sendMessage: (text: string, options?: { mode?: RuntimeTaskSessionMode; images?: RuntimeTaskImage[] }) => Promise<boolean>;
 	cancelTurn: () => Promise<boolean>;
 }
 
@@ -62,6 +67,7 @@ export function useClineChatSession({
 	onSendMessage,
 	onCancelTurn,
 	onLoadMessages,
+	incomingMessages = null,
 	incomingMessage = null,
 }: UseClineChatSessionInput): UseClineChatSessionResult {
 	const [messages, setMessages] = useState<ClineChatMessage[]>([]);
@@ -108,6 +114,13 @@ export function useClineChatSession({
 	}, [onLoadMessages, taskId]);
 
 	useEffect(() => {
+		if (!incomingMessages || incomingMessages.length === 0) {
+			return;
+		}
+		setMessages((currentMessages) => mergeMessages(currentMessages, incomingMessages));
+	}, [incomingMessages]);
+
+	useEffect(() => {
 		if (!incomingMessage) {
 			return;
 		}
@@ -137,9 +150,10 @@ export function useClineChatSession({
 	}, [isCanceling, onCancelTurn, taskId]);
 
 	const sendMessage = useCallback(
-		async (text: string): Promise<boolean> => {
+		async (text: string, options?: { mode?: RuntimeTaskSessionMode; images?: RuntimeTaskImage[] }): Promise<boolean> => {
 			const trimmed = text.trim();
-			if (!trimmed || !onSendMessage) {
+			const hasImages = Boolean(options?.images && options.images.length > 0);
+			if ((!trimmed && !hasImages) || !onSendMessage) {
 				return false;
 			}
 
@@ -147,7 +161,9 @@ export function useClineChatSession({
 			setIsSending(true);
 
 			try {
-				const result = await onSendMessage(taskId, trimmed);
+				const result = options
+					? await onSendMessage(taskId, trimmed, options)
+					: await onSendMessage(taskId, trimmed);
 				if (!result.ok) {
 					const message = result.message ?? "Could not send message.";
 					setError(message);

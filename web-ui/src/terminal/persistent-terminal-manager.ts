@@ -14,12 +14,13 @@ import type {
 } from "@/runtime/types";
 import { clearTerminalGeometry, reportTerminalGeometry } from "@/terminal/terminal-geometry-registry";
 import { createKanbanTerminalOptions } from "@/terminal/terminal-options";
+import { appendTerminalHeuristicText, hasInterruptAcknowledgement, hasLikelyShellPrompt } from "@/terminal/terminal-prompt-heuristics";
+import { isMacPlatform } from "@/utils/platform";
 
 const SHIFT_ENTER_SEQUENCE = "\n";
 const RESIZE_DEBOUNCE_MS = 50;
+const INTERRUPT_IDLE_SETTLE_MS = 250;
 const PARKING_ROOT_ID = "kb-persistent-terminal-parking-root";
-const isMacPlatform =
-	typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 
 interface PersistentTerminalAppearance {
 	cursorColor: string;
@@ -30,6 +31,7 @@ interface PersistentTerminalSubscriber {
 	onConnectionReady?: (taskId: string) => void;
 	onLastError?: (message: string | null) => void;
 	onSummary?: (summary: RuntimeTaskSessionSummary) => void;
+	onOutputText?: (text: string) => void;
 }
 
 interface MountPersistentTerminalOptions {
@@ -56,6 +58,16 @@ function getTerminalControlWebSocketUrl(taskId: string, workspaceId: string): st
 	url.searchParams.set("taskId", taskId);
 	url.searchParams.set("workspaceId", workspaceId);
 	return url.toString();
+}
+
+function decodeTerminalSocketChunk(decoder: TextDecoder, data: string | ArrayBuffer | Blob): string {
+	if (typeof data === "string") {
+		return data;
+	}
+	if (data instanceof ArrayBuffer) {
+		return decoder.decode(new Uint8Array(data), { stream: true });
+	}
+	return "";
 }
 
 function isCopyShortcut(event: KeyboardEvent): boolean {
@@ -109,6 +121,7 @@ class PersistentTerminal {
 	private controlSocket: WebSocket | null = null;
 	private attachAddon: AttachAddon | null = null;
 	private connectionReady = false;
+	private outputTextDecoder = new TextDecoder();
 	private disposed = false;
 
 	constructor(
@@ -183,6 +196,12 @@ class PersistentTerminal {
 		}
 	}
 
+	private notifyOutputText(text: string): void {
+		for (const subscriber of this.subscribers) {
+			subscriber.onOutputText?.(text);
+		}
+	}
+
 	private notifyConnectionReady(): void {
 		this.connectionReady = true;
 		for (const subscriber of this.subscribers) {
@@ -220,6 +239,17 @@ class PersistentTerminal {
 
 	private connectIo(): void {
 		const ioSocket = new WebSocket(getTerminalIoWebSocketUrl(this.taskId, this.workspaceId));
+		ioSocket.binaryType = "arraybuffer";
+		ioSocket.addEventListener("message", (event) => {
+			if (this.disposed || this.ioSocket !== ioSocket) {
+				return;
+			}
+			const decoded = decodeTerminalSocketChunk(this.outputTextDecoder, event.data);
+			if (!decoded) {
+				return;
+			}
+			this.notifyOutputText(decoded);
+		});
 		this.ioSocket = ioSocket;
 		ioSocket.onopen = () => {
 			if (this.disposed || this.ioSocket !== ioSocket) {
@@ -244,6 +274,7 @@ class PersistentTerminal {
 				return;
 			}
 			this.ioSocket = null;
+			this.outputTextDecoder = new TextDecoder();
 			if (this.attachAddon) {
 				this.attachAddon.dispose();
 				this.attachAddon = null;
@@ -426,6 +457,62 @@ class PersistentTerminal {
 
 	clear(): void {
 		this.terminal.clear();
+	}
+
+	waitForLikelyPrompt(timeoutMs: number): Promise<boolean> {
+		if (timeoutMs <= 0) {
+			return Promise.resolve(false);
+		}
+
+		return new Promise((resolve) => {
+			let buffer = "";
+			let sawInterruptAcknowledgement = false;
+			let settled = false;
+			let idleTimer: number | null = null;
+
+			const cleanup = (result: boolean) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				window.clearTimeout(timeoutId);
+				if (idleTimer !== null) {
+					window.clearTimeout(idleTimer);
+				}
+				unsubscribe();
+				resolve(result);
+			};
+
+			const scheduleIdleCompletion = () => {
+				if (!sawInterruptAcknowledgement) {
+					return;
+				}
+				if (idleTimer !== null) {
+					window.clearTimeout(idleTimer);
+				}
+				idleTimer = window.setTimeout(() => {
+					cleanup(true);
+				}, INTERRUPT_IDLE_SETTLE_MS);
+			};
+
+			const unsubscribe = this.subscribe({
+				onOutputText: (text) => {
+					buffer = appendTerminalHeuristicText(buffer, text);
+					if (hasLikelyShellPrompt(buffer)) {
+						cleanup(true);
+						return;
+					}
+					if (hasInterruptAcknowledgement(buffer)) {
+						sawInterruptAcknowledgement = true;
+					}
+					scheduleIdleCompletion();
+				},
+			});
+
+			const timeoutId = window.setTimeout(() => {
+				cleanup(false);
+			}, timeoutMs);
+		});
 	}
 
 	async stop(): Promise<void> {

@@ -67,12 +67,21 @@ export type RuntimeBoardColumnId = z.infer<typeof runtimeBoardColumnIdSchema>;
 export const runtimeTaskAutoReviewModeSchema = z.enum(["commit", "pr", "move_to_trash"]);
 export type RuntimeTaskAutoReviewMode = z.infer<typeof runtimeTaskAutoReviewModeSchema>;
 
+export const runtimeTaskImageSchema = z.object({
+	id: z.string(),
+	data: z.string(),
+	mimeType: z.string(),
+	name: z.string().optional(),
+});
+export type RuntimeTaskImage = z.infer<typeof runtimeTaskImageSchema>;
+
 export const runtimeBoardCardSchema = z.object({
 	id: z.string(),
 	prompt: z.string(),
 	startInPlanMode: z.boolean(),
 	autoReviewEnabled: z.boolean().optional(),
 	autoReviewMode: runtimeTaskAutoReviewModeSchema.optional(),
+	images: z.array(runtimeTaskImageSchema).optional(),
 	baseRef: z.string(),
 	createdAt: z.number(),
 	updatedAt: z.number(),
@@ -162,6 +171,9 @@ export type RuntimeGitDiscardResponse = z.infer<typeof runtimeGitDiscardResponse
 export const runtimeTaskSessionStateSchema = z.enum(["idle", "running", "awaiting_review", "failed", "interrupted"]);
 export type RuntimeTaskSessionState = z.infer<typeof runtimeTaskSessionStateSchema>;
 
+export const runtimeTaskSessionModeSchema = z.enum(["act", "plan"]);
+export type RuntimeTaskSessionMode = z.infer<typeof runtimeTaskSessionModeSchema>;
+
 export const runtimeTaskSessionReviewReasonSchema = z
 	.enum(["attention", "exit", "error", "interrupted", "hook"])
 	.nullable();
@@ -170,6 +182,7 @@ export type RuntimeTaskSessionReviewReason = z.infer<typeof runtimeTaskSessionRe
 export const runtimeTaskHookActivitySchema = z.object({
 	activityText: z.string().nullable().default(null),
 	toolName: z.string().nullable().default(null),
+	toolInputSummary: z.string().nullable().default(null),
 	finalMessage: z.string().nullable().default(null),
 	hookEventName: z.string().nullable().default(null),
 	notificationType: z.string().nullable().default(null),
@@ -198,6 +211,7 @@ export const runtimeTaskSessionSummarySchema = z.object({
 	exitCode: z.number().nullable(),
 	lastHookAt: z.number().nullable().default(null),
 	latestHookActivity: runtimeTaskHookActivitySchema.nullable().default(null),
+	warningMessage: z.string().nullable().optional(),
 	latestTurnCheckpoint: runtimeTaskTurnCheckpointSchema.nullable().optional(),
 	previousTurnCheckpoint: runtimeTaskTurnCheckpointSchema.nullable().optional(),
 });
@@ -225,6 +239,11 @@ export const runtimeWorkspaceStateConflictResponseSchema = z.object({
 	currentRevision: z.number(),
 });
 export type RuntimeWorkspaceStateConflictResponse = z.infer<typeof runtimeWorkspaceStateConflictResponseSchema>;
+
+export const runtimeWorkspaceStateNotifyResponseSchema = z.object({
+	ok: z.boolean(),
+});
+export type RuntimeWorkspaceStateNotifyResponse = z.infer<typeof runtimeWorkspaceStateNotifyResponseSchema>;
 
 export const runtimeProjectTaskCountsSchema = z.object({
 	backlog: z.number(),
@@ -347,12 +366,14 @@ export type RuntimeProjectsResponse = z.infer<typeof runtimeProjectsResponseSche
 
 export const runtimeProjectAddRequestSchema = z.object({
 	path: z.string(),
+	initializeGit: z.boolean().optional(),
 });
 export type RuntimeProjectAddRequest = z.infer<typeof runtimeProjectAddRequestSchema>;
 
 export const runtimeProjectAddResponseSchema = z.object({
 	ok: z.boolean(),
 	project: runtimeProjectSummarySchema.nullable(),
+	requiresGitInitialization: z.boolean().optional(),
 	error: z.string().optional(),
 });
 export type RuntimeProjectAddResponse = z.infer<typeof runtimeProjectAddResponseSchema>;
@@ -387,6 +408,7 @@ export const runtimeWorktreeEnsureResponseSchema = z.union([
 		path: z.string(),
 		baseRef: z.string(),
 		baseCommit: z.string(),
+		warning: z.string().optional(),
 		error: z.string().optional(),
 	}),
 	z.object({
@@ -509,6 +531,85 @@ export type RuntimeClineProviderSettingsSaveRequest = z.infer<typeof runtimeClin
 export const runtimeClineProviderSettingsSaveResponseSchema = runtimeClineProviderSettingsSchema;
 export type RuntimeClineProviderSettingsSaveResponse = z.infer<typeof runtimeClineProviderSettingsSaveResponseSchema>;
 
+export const runtimeClineMcpServerStdioTransportSchema = z.object({
+	type: z.literal("stdio"),
+	command: z.string(),
+	args: z.array(z.string()).optional(),
+	cwd: z.string().optional(),
+	env: z.record(z.string(), z.string()).optional(),
+});
+export type RuntimeClineMcpServerStdioTransport = z.infer<typeof runtimeClineMcpServerStdioTransportSchema>;
+
+export const runtimeClineMcpServerSseTransportSchema = z.object({
+	type: z.literal("sse"),
+	url: z.string().url(),
+	headers: z.record(z.string(), z.string()).optional(),
+});
+export type RuntimeClineMcpServerSseTransport = z.infer<typeof runtimeClineMcpServerSseTransportSchema>;
+
+export const runtimeClineMcpServerStreamableHttpTransportSchema = z.object({
+	type: z.literal("streamableHttp"),
+	url: z.string().url(),
+	headers: z.record(z.string(), z.string()).optional(),
+});
+export type RuntimeClineMcpServerStreamableHttpTransport = z.infer<
+	typeof runtimeClineMcpServerStreamableHttpTransportSchema
+>;
+
+export const runtimeClineMcpServerTransportSchema = z.discriminatedUnion("type", [
+	runtimeClineMcpServerStdioTransportSchema,
+	runtimeClineMcpServerSseTransportSchema,
+	runtimeClineMcpServerStreamableHttpTransportSchema,
+]);
+export type RuntimeClineMcpServerTransport = z.infer<typeof runtimeClineMcpServerTransportSchema>;
+
+export const runtimeClineMcpServerSchema = z.object({
+	name: z.string(),
+	disabled: z.boolean(),
+	transport: runtimeClineMcpServerTransportSchema,
+});
+export type RuntimeClineMcpServer = z.infer<typeof runtimeClineMcpServerSchema>;
+
+export const runtimeClineMcpSettingsResponseSchema = z.object({
+	path: z.string(),
+	servers: z.array(runtimeClineMcpServerSchema),
+});
+export type RuntimeClineMcpSettingsResponse = z.infer<typeof runtimeClineMcpSettingsResponseSchema>;
+
+export const runtimeClineMcpSettingsSaveRequestSchema = z.object({
+	servers: z.array(runtimeClineMcpServerSchema),
+});
+export type RuntimeClineMcpSettingsSaveRequest = z.infer<typeof runtimeClineMcpSettingsSaveRequestSchema>;
+
+export const runtimeClineMcpSettingsSaveResponseSchema = runtimeClineMcpSettingsResponseSchema;
+export type RuntimeClineMcpSettingsSaveResponse = z.infer<typeof runtimeClineMcpSettingsSaveResponseSchema>;
+
+export const runtimeClineMcpServerAuthStatusSchema = z.object({
+	serverName: z.string(),
+	oauthSupported: z.boolean(),
+	oauthConfigured: z.boolean(),
+	lastError: z.string().nullable(),
+	lastAuthenticatedAt: z.number().nullable(),
+});
+export type RuntimeClineMcpServerAuthStatus = z.infer<typeof runtimeClineMcpServerAuthStatusSchema>;
+
+export const runtimeClineMcpAuthStatusResponseSchema = z.object({
+	statuses: z.array(runtimeClineMcpServerAuthStatusSchema),
+});
+export type RuntimeClineMcpAuthStatusResponse = z.infer<typeof runtimeClineMcpAuthStatusResponseSchema>;
+
+export const runtimeClineMcpOAuthRequestSchema = z.object({
+	serverName: z.string(),
+});
+export type RuntimeClineMcpOAuthRequest = z.infer<typeof runtimeClineMcpOAuthRequestSchema>;
+
+export const runtimeClineMcpOAuthResponseSchema = z.object({
+	serverName: z.string(),
+	authorized: z.literal(true),
+	message: z.string(),
+});
+export type RuntimeClineMcpOAuthResponse = z.infer<typeof runtimeClineMcpOAuthResponseSchema>;
+
 export const runtimeCommandRunRequestSchema = z.object({
 	command: z.string(),
 });
@@ -534,23 +635,16 @@ export const runtimeAgentDefinitionSchema = z.object({
 });
 export type RuntimeAgentDefinition = z.infer<typeof runtimeAgentDefinitionSchema>;
 
-export const runtimeTaskStartSetupAvailabilitySchema = z.object({
-	githubCli: z.boolean(),
-	linearMcp: z.boolean(),
-});
-export type RuntimeTaskStartSetupAvailability = z.infer<typeof runtimeTaskStartSetupAvailabilitySchema>;
-
 export const runtimeConfigResponseSchema = z.object({
 	selectedAgentId: runtimeAgentIdSchema,
 	selectedShortcutLabel: z.string().nullable(),
 	agentAutonomousModeEnabled: z.boolean(),
 	effectiveCommand: z.string().nullable(),
 	globalConfigPath: z.string(),
-	projectConfigPath: z.string(),
+	projectConfigPath: z.string().nullable(),
 	readyForReviewNotificationsEnabled: z.boolean(),
 	detectedCommands: z.array(z.string()),
 	agents: z.array(runtimeAgentDefinitionSchema),
-	taskStartSetupAvailability: runtimeTaskStartSetupAvailabilitySchema,
 	shortcuts: z.array(runtimeProjectShortcutSchema),
 	clineProviderSettings: runtimeClineProviderSettingsSchema,
 	commitPromptTemplate: z.string(),
@@ -574,7 +668,9 @@ export type RuntimeConfigSaveRequest = z.infer<typeof runtimeConfigSaveRequestSc
 export const runtimeTaskSessionStartRequestSchema = z.object({
 	taskId: z.string(),
 	prompt: z.string(),
+	images: z.array(runtimeTaskImageSchema).optional(),
 	startInPlanMode: z.boolean().optional(),
+	mode: runtimeTaskSessionModeSchema.optional(),
 	resumeFromTrash: z.boolean().optional(),
 	baseRef: z.string(),
 	cols: z.number().int().positive().optional(),
@@ -619,6 +715,7 @@ export const runtimeTaskChatMessageSchema = z.object({
 	id: z.string(),
 	role: z.enum(["user", "assistant", "system", "tool", "reasoning", "status"]),
 	content: z.string(),
+	images: z.array(runtimeTaskImageSchema).optional(),
 	createdAt: z.number(),
 	meta: z
 		.object({
@@ -626,6 +723,9 @@ export const runtimeTaskChatMessageSchema = z.object({
 			hookEventName: z.string().nullable().optional(),
 			toolCallId: z.string().nullable().optional(),
 			streamType: z.string().nullable().optional(),
+			messageKind: z.string().nullable().optional(),
+			displayRole: z.string().nullable().optional(),
+			reason: z.string().nullable().optional(),
 		})
 		.nullable()
 		.optional(),
@@ -647,6 +747,8 @@ export type RuntimeTaskChatMessagesResponse = z.infer<typeof runtimeTaskChatMess
 export const runtimeTaskChatSendRequestSchema = z.object({
 	taskId: z.string(),
 	text: z.string(),
+	images: z.array(runtimeTaskImageSchema).optional(),
+	mode: runtimeTaskSessionModeSchema.optional(),
 });
 export type RuntimeTaskChatSendRequest = z.infer<typeof runtimeTaskChatSendRequestSchema>;
 

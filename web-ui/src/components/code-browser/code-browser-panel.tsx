@@ -14,7 +14,7 @@ const MAX_SIDEBAR_WIDTH = 500;
 
 interface TabInfo { path: string; isDirty: boolean; }
 
-const DEFAULT_EDITOR_SETTINGS: EditorSettings = { fontSize: 10, wordWrap: false, minimap: true, lineNumbers: true };
+const DEFAULT_EDITOR_SETTINGS: EditorSettings = { fontSize: 10, wordWrap: false };
 
 function getFileName(path: string): string { return path.slice(path.lastIndexOf("/") + 1) || path; }
 
@@ -109,9 +109,7 @@ function EditorSettingsPopover({ settings, onChange }: { settings: EditorSetting
 				<div className="fixed z-50 bg-surface-2 border border-border rounded-lg shadow-xl p-3 w-[200px]" style={{ top: pos.top, right: pos.right }}>
 					<div className="text-[11px] font-semibold text-text-tertiary mb-2 uppercase">Editor</div>
 					<label className="flex items-center justify-between text-xs text-text-secondary mb-2">Font Size<input type="number" min={8} max={28} value={settings.fontSize} onChange={(e) => onChange({ ...settings, fontSize: Math.max(8, Math.min(28, Number(e.target.value))) })} className="w-12 bg-surface-0 border border-border rounded px-1.5 py-0.5 text-xs text-text-primary text-center" /></label>
-					<label className="flex items-center justify-between text-xs text-text-secondary mb-1.5 cursor-pointer">Word Wrap<input type="checkbox" checked={settings.wordWrap} onChange={() => onChange({ ...settings, wordWrap: !settings.wordWrap })} /></label>
-					<label className="flex items-center justify-between text-xs text-text-secondary mb-1.5 cursor-pointer">Minimap<input type="checkbox" checked={settings.minimap} onChange={() => onChange({ ...settings, minimap: !settings.minimap })} /></label>
-					<label className="flex items-center justify-between text-xs text-text-secondary cursor-pointer">Line Numbers<input type="checkbox" checked={settings.lineNumbers} onChange={() => onChange({ ...settings, lineNumbers: !settings.lineNumbers })} /></label>
+					<label className="flex items-center justify-between text-xs text-text-secondary cursor-pointer">Word Wrap<input type="checkbox" checked={settings.wordWrap} onChange={() => onChange({ ...settings, wordWrap: !settings.wordWrap })} /></label>
 				</div>
 			</>)}
 		</div>

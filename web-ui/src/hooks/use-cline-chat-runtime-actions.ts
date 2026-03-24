@@ -4,12 +4,17 @@
 import { useCallback } from "react";
 
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
-import type { RuntimeTaskChatMessage, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeTaskChatMessage, RuntimeTaskImage, RuntimeTaskSessionMode, RuntimeTaskSessionSummary } from "@/runtime/types";
 
 export interface ClineChatActionResult {
 	ok: boolean;
 	message?: string;
 	chatMessage?: RuntimeTaskChatMessage | null;
+}
+
+export interface SendClineChatMessageOptions {
+	mode?: RuntimeTaskSessionMode;
+	images?: RuntimeTaskImage[];
 }
 
 interface UseClineChatRuntimeActionsInput {
@@ -18,7 +23,11 @@ interface UseClineChatRuntimeActionsInput {
 }
 
 interface UseClineChatRuntimeActionsResult {
-	sendTaskChatMessage: (taskId: string, text: string) => Promise<ClineChatActionResult>;
+	sendTaskChatMessage: (
+		taskId: string,
+		text: string,
+		options?: SendClineChatMessageOptions,
+	) => Promise<ClineChatActionResult>;
 	loadTaskChatMessages: (taskId: string) => Promise<RuntimeTaskChatMessage[] | null>;
 	abortTaskChatTurn: (taskId: string) => Promise<ClineChatActionResult>;
 	cancelTaskChatTurn: (taskId: string) => Promise<ClineChatActionResult>;
@@ -33,7 +42,7 @@ export function useClineChatRuntimeActions({
 	onSessionSummary,
 }: UseClineChatRuntimeActionsInput): UseClineChatRuntimeActionsResult {
 	const sendTaskChatMessage = useCallback(
-		async (taskId: string, text: string): Promise<ClineChatActionResult> => {
+		async (taskId: string, text: string, options?: SendClineChatMessageOptions): Promise<ClineChatActionResult> => {
 			if (!currentProjectId) {
 				return { ok: false, message: "No project selected." };
 			}
@@ -41,6 +50,8 @@ export function useClineChatRuntimeActions({
 				const payload = await getRuntimeTrpcClient(currentProjectId).runtime.sendTaskChatMessage.mutate({
 					taskId,
 					text,
+					...(options?.images && options.images.length > 0 ? { images: options.images } : {}),
+					...(options?.mode ? { mode: options.mode } : {}),
 				});
 				if (!payload.ok) {
 					return { ok: false, message: payload.error ?? "Task chat message failed." };

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardCard } from "@/components/board-card";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import type { ReviewTaskWorkspaceSnapshot } from "@/types";
 
 let mockWorkspaceSnapshot: ReviewTaskWorkspaceSnapshot | undefined;
@@ -85,6 +86,29 @@ function createCard(overrides?: Partial<Parameters<typeof BoardCard>[0]["card"]>
 		baseRef: "main",
 		createdAt: 1,
 		updatedAt: 1,
+		...overrides,
+	};
+}
+
+function createSummary(
+	state: RuntimeTaskSessionSummary["state"],
+	overrides?: Partial<RuntimeTaskSessionSummary>,
+): RuntimeTaskSessionSummary {
+	return {
+		taskId: "task-1",
+		state,
+		agentId: "cline",
+		workspacePath: "/tmp/worktree",
+		pid: null,
+		startedAt: 1,
+		updatedAt: 1,
+		lastOutputAt: 1,
+		reviewReason: null,
+		exitCode: null,
+		lastHookAt: 1,
+		latestHookActivity: null,
+		latestTurnCheckpoint: null,
+		previousTurnCheckpoint: null,
 		...overrides,
 	};
 }
@@ -192,7 +216,9 @@ describe("BoardCard", () => {
 			"Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau final hidden segment";
 
 		await act(async () => {
-			root.render(<BoardCard card={createCard({ prompt: `Task title||${description}` })} index={0} columnId="backlog" />);
+			root.render(
+				<BoardCard card={createCard({ prompt: `Task title||${description}` })} index={0} columnId="backlog" />,
+			);
 		});
 
 		const findButton = (label: string) =>
@@ -235,7 +261,139 @@ describe("BoardCard", () => {
 			);
 		});
 
-		expect(container.textContent).toContain("~/.kanban/worktrees/trash-task-1/kanban");
+		expect(container.textContent).toContain("~/.cline/worktrees/trash-task-1/kanban");
+	});
+
+	it("shows tool input details in the session preview text", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard()}
+					index={0}
+					columnId="in_progress"
+						sessionSummary={{
+							taskId: "task-1",
+							state: "running",
+						agentId: "cline",
+						workspacePath: "/tmp/worktree",
+						pid: null,
+						startedAt: Date.now(),
+						updatedAt: Date.now(),
+						lastOutputAt: Date.now(),
+						reviewReason: null,
+						exitCode: null,
+						lastHookAt: Date.now(),
+						latestHookActivity: {
+							activityText: "Using Read",
+							toolName: "Read",
+							toolInputSummary: "src/index.ts",
+							finalMessage: null,
+							hookEventName: "tool_call",
+							notificationType: null,
+							source: "cline-sdk",
+						},
+						latestTurnCheckpoint: null,
+						previousTurnCheckpoint: null,
+					}}
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Read(src/index.ts)");
+		expect(container.textContent).not.toContain("Using Read");
+	});
+
+	it("shows non-cline tool activity in the compact tool label format", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard()}
+					index={0}
+					columnId="in_progress"
+					sessionSummary={createSummary("running", {
+						agentId: "claude",
+						latestHookActivity: {
+							activityText: "Completed Read: src/index.ts",
+							toolName: "Read",
+							toolInputSummary: null,
+							finalMessage: null,
+							hookEventName: "PostToolUse",
+							notificationType: null,
+							source: "claude",
+						},
+					})}
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Read(src/index.ts)");
+		expect(container.textContent).not.toContain("Completed Read");
+	});
+
+	it("parses codex tool activity into the compact tool label format", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard()}
+					index={0}
+					columnId="in_progress"
+					sessionSummary={createSummary("running", {
+						agentId: "codex",
+						latestHookActivity: {
+							activityText: "Calling Read: src/index.ts",
+							toolName: null,
+							toolInputSummary: null,
+							finalMessage: null,
+							hookEventName: "raw_response_item",
+							notificationType: null,
+							source: "codex",
+						},
+					})}
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Read(src/index.ts)");
+		expect(container.textContent).not.toContain("Calling Read");
+	});
+
+	it("keeps showing the last cline tool label during assistant streaming", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard()}
+					index={0}
+					columnId="in_progress"
+					sessionSummary={{
+						taskId: "task-1",
+						state: "running",
+						agentId: "cline",
+						workspacePath: "/tmp/worktree",
+						pid: null,
+						startedAt: Date.now(),
+						updatedAt: Date.now(),
+						lastOutputAt: Date.now(),
+						reviewReason: null,
+						exitCode: null,
+						lastHookAt: Date.now(),
+							latestHookActivity: {
+								activityText: "Agent active",
+								toolName: "Read",
+								toolInputSummary: "src/index.ts",
+								finalMessage: "Looking at the file now",
+								hookEventName: "assistant_delta",
+								notificationType: null,
+								source: "cline-sdk",
+						},
+						latestTurnCheckpoint: null,
+						previousTurnCheckpoint: null,
+					}}
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Read(src/index.ts)");
+		expect(container.textContent).not.toContain("Thinking...");
 	});
 
 	it("renders a new card description before the async measure observer reports width", async () => {
@@ -253,5 +411,58 @@ describe("BoardCard", () => {
 		});
 
 		expect(container.textContent).toContain("Freshly created task description");
+	});
+
+	it("shows the latest assistant preview on active task cards", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard()}
+					index={0}
+					columnId="in_progress"
+						sessionSummary={createSummary("running", {
+							latestHookActivity: {
+								activityText: "Reviewing the final diff",
+								toolName: null,
+								toolInputSummary: null,
+								finalMessage: "Reviewing the final diff",
+								hookEventName: "assistant_delta",
+								notificationType: null,
+							source: "cline-sdk",
+						},
+					})}
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Reviewing the final diff");
+		expect(container.textContent).not.toContain("Thinking...");
+	});
+
+	it("shows normal agent messages without the agent prefix", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard()}
+					index={0}
+					columnId="in_progress"
+					sessionSummary={createSummary("running", {
+						agentId: "codex",
+						latestHookActivity: {
+							activityText: "Agent: checking the next file",
+							toolName: null,
+							toolInputSummary: null,
+							finalMessage: null,
+							hookEventName: "agent_message",
+							notificationType: null,
+							source: "codex",
+						},
+					})}
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("checking the next file");
+		expect(container.textContent).not.toContain("Agent:");
 	});
 });

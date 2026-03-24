@@ -3,14 +3,18 @@
 // workspace actions, but detailed Cline, terminal, and config behavior
 // should stay in focused services instead of accumulating here.
 import { TRPCError } from "@trpc/server";
+import { createClineMcpRuntimeService } from "../cline-sdk/cline-mcp-runtime-service.js";
+import { createClineMcpSettingsService } from "../cline-sdk/cline-mcp-settings-service.js";
 import type { ClineTaskSessionService } from "../cline-sdk/cline-task-session-service.js";
 import { createClineProviderService } from "../cline-sdk/cline-provider-service.js";
 import type { RuntimeConfigState } from "../config/runtime-config.js";
 import { isHomeAgentSessionId } from "../core/home-agent-session.js";
-import { updateRuntimeConfig } from "../config/runtime-config.js";
+import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config.js";
 import type { RuntimeCommandRunResponse } from "../core/api-contract.js";
 import {
+	parseClineMcpOAuthRequest,
 	parseClineOauthLoginRequest,
+	parseClineMcpSettingsSaveRequest,
 	parseClineProviderModelsRequest,
 	parseClineProviderSettingsSaveRequest,
 	parseCommandRunRequest,
@@ -24,6 +28,7 @@ import {
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
 } from "../core/api-validation.js";
+import { openInBrowser } from "../server/browser.js";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry.js";
 import type { TerminalSessionManager } from "../terminal/session-manager.js";
 import { resolveTaskCwd } from "../workspace/task-worktree.js";
@@ -32,6 +37,7 @@ import type { RuntimeTrpcContext, RuntimeTrpcWorkspaceScope } from "./app-router
 
 export interface CreateRuntimeApiDependencies {
 	getActiveWorkspaceId: () => string | null;
+	getActiveRuntimeConfig?: () => RuntimeConfigState;
 	loadScopedRuntimeConfig: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeConfigState>;
 	setActiveRuntimeConfig: (config: RuntimeConfigState) => void;
 	getScopedTerminalManager: (scope: RuntimeTrpcWorkspaceScope) => Promise<TerminalSessionManager>;
@@ -64,19 +70,47 @@ async function resolveExistingTaskCwdOrEnsure(options: {
 
 export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrpcContext["runtimeApi"] {
 	const clineProviderService = createClineProviderService();
+	const clineMcpSettingsService = createClineMcpSettingsService();
+	const clineMcpRuntimeService = createClineMcpRuntimeService();
 
 	const buildConfigResponse = (runtimeConfig: RuntimeConfigState) =>
 		buildRuntimeConfigResponse(runtimeConfig, clineProviderService.getProviderSettingsSummary());
 
 	return {
 		loadConfig: async (workspaceScope) => {
-			const scopedRuntimeConfig = await deps.loadScopedRuntimeConfig(workspaceScope);
+			const activeRuntimeConfig = deps.getActiveRuntimeConfig?.();
+			if (!workspaceScope && !activeRuntimeConfig) {
+				throw new Error("No active runtime config provider is available.");
+			}
+			let scopedRuntimeConfig: RuntimeConfigState;
+			if (workspaceScope) {
+				scopedRuntimeConfig = await deps.loadScopedRuntimeConfig(workspaceScope);
+			} else if (activeRuntimeConfig) {
+				scopedRuntimeConfig = activeRuntimeConfig;
+			} else {
+				throw new Error("No active runtime config provider is available.");
+			}
 			return buildConfigResponse(scopedRuntimeConfig);
 		},
 		saveConfig: async (workspaceScope, input) => {
 			const parsed = parseRuntimeConfigSaveRequest(input);
-			const nextRuntimeConfig = await updateRuntimeConfig(workspaceScope.workspacePath, parsed);
-			if (workspaceScope.workspaceId === deps.getActiveWorkspaceId()) {
+			let nextRuntimeConfig: RuntimeConfigState;
+			if (workspaceScope) {
+				nextRuntimeConfig = await updateRuntimeConfig(workspaceScope.workspacePath, parsed);
+			} else {
+				const activeRuntimeConfig = deps.getActiveRuntimeConfig?.();
+				if (!activeRuntimeConfig) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No active runtime config is available.",
+					});
+				}
+				nextRuntimeConfig = await updateGlobalRuntimeConfig(activeRuntimeConfig, parsed);
+			}
+			if (workspaceScope && workspaceScope.workspaceId === deps.getActiveWorkspaceId()) {
+				deps.setActiveRuntimeConfig(nextRuntimeConfig);
+			}
+			if (!workspaceScope) {
 				deps.setActiveRuntimeConfig(nextRuntimeConfig);
 			}
 			return buildConfigResponse(nextRuntimeConfig);
@@ -88,6 +122,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		startTaskSession: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskSessionStartRequest(input);
+				const requestedTaskMode = body.mode ?? (body.startInPlanMode ? "plan" : "act");
 				const scopedRuntimeConfig = await deps.loadScopedRuntimeConfig(workspaceScope);
 				const taskCwd = isHomeAgentSessionId(body.taskId)
 					? workspaceScope.workspacePath
@@ -105,9 +140,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						taskId: body.taskId,
 						cwd: taskCwd,
 						prompt: body.prompt,
+						images: body.images,
 						resumeFromTrash: body.resumeFromTrash,
 						providerId: clineLaunchConfig.providerId,
 						modelId: clineLaunchConfig.modelId,
+						mode: requestedTaskMode,
 						apiKey: clineLaunchConfig.apiKey,
 						baseUrl: clineLaunchConfig.baseUrl,
 					});
@@ -327,6 +364,28 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			const body = parseClineProviderModelsRequest(input);
 			return await clineProviderService.getProviderModels(body.providerId);
 		},
+		getClineMcpAuthStatuses: async (_workspaceScope) => {
+			const statuses = await clineMcpRuntimeService.getAuthStatuses();
+			return {
+				statuses,
+			};
+		},
+		runClineMcpServerOAuth: async (_workspaceScope, input) => {
+			const body = parseClineMcpOAuthRequest(input);
+			return await clineMcpRuntimeService.authorizeServer({
+				serverName: body.serverName,
+			onAuthorizationUrl: (url: string) => {
+					openInBrowser(url);
+				},
+			});
+		},
+		getClineMcpSettings: async (_workspaceScope) => {
+			return clineMcpSettingsService.loadSettings();
+		},
+		saveClineMcpSettings: async (_workspaceScope, input) => {
+			const body = parseClineMcpSettingsSaveRequest(input);
+			return await clineMcpSettingsService.saveSettings(body);
+		},
 		runClineProviderOAuthLogin: async (_workspaceScope, input) => {
 			const body = parseClineOauthLoginRequest(input);
 			return await clineProviderService.runOauthLogin({
@@ -337,26 +396,36 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		sendTaskChatMessage: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatSendRequest(input);
+				const requestedMode = body.mode ?? "act";
 				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				let summary = await clineTaskSessionService.sendTaskSessionInput(body.taskId, body.text);
+				let summary = await clineTaskSessionService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
 				if (!summary) {
 					if (!isHomeAgentSessionId(body.taskId)) {
-						return {
-							ok: false,
-							summary: null,
-							error: "Task chat session is not running.",
-						};
+						const reboundSummary = await clineTaskSessionService.rebindPersistedTaskSession(body.taskId);
+						if (reboundSummary) {
+							summary = await clineTaskSessionService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
+						}
+						if (!summary) {
+							return {
+								ok: false,
+								summary: null,
+								error: "Task chat session is not running.",
+							};
+						}
+					} else {
+						const clineLaunchConfig = await clineProviderService.resolveLaunchConfig();
+						summary = await clineTaskSessionService.startTaskSession({
+							taskId: body.taskId,
+							cwd: workspaceScope.workspacePath,
+							prompt: body.text,
+							images: body.images,
+							providerId: clineLaunchConfig.providerId,
+							modelId: clineLaunchConfig.modelId,
+							mode: requestedMode,
+							apiKey: clineLaunchConfig.apiKey,
+							baseUrl: clineLaunchConfig.baseUrl,
+						});
 					}
-					const clineLaunchConfig = await clineProviderService.resolveLaunchConfig();
-					summary = await clineTaskSessionService.startTaskSession({
-						taskId: body.taskId,
-						cwd: workspaceScope.workspacePath,
-						prompt: body.text,
-						providerId: clineLaunchConfig.providerId,
-						modelId: clineLaunchConfig.modelId,
-						apiKey: clineLaunchConfig.apiKey,
-						baseUrl: clineLaunchConfig.baseUrl,
-					});
 				}
 				const latestMessage = clineTaskSessionService.listMessages(body.taskId).at(-1) ?? null;
 				return {

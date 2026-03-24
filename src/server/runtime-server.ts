@@ -125,7 +125,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		if (!service) {
 			service = createInMemoryClineTaskSessionService();
 			clineTaskSessionServiceByWorkspaceId.set(scope.workspaceId, service);
-			deps.runtimeStateHub.trackClineTaskSessionService(scope.workspaceId, service);
+			deps.runtimeStateHub.trackClineTaskSessionService(scope.workspaceId, scope.workspacePath, service);
 		}
 		return service;
 	};
@@ -146,15 +146,17 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			workspaceScope: scope.workspaceScope,
 			runtimeApi: createRuntimeApi({
 				getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
+				getActiveRuntimeConfig: deps.workspaceRegistry.getActiveRuntimeConfig,
 				loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
 				setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
 				getScopedTerminalManager,
-					getScopedClineTaskSessionService,
+				getScopedClineTaskSessionService,
 				resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
 				runCommand: deps.runCommand,
 			}),
 			workspaceApi: createWorkspaceApi({
 				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
+				getScopedClineTaskSessionService,
 				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
 				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
 				buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
