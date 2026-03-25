@@ -181,7 +181,6 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				commitLockCoordinator,
 				runCommand: deps.runCommand,
 				prepareForStateReset,
-				warn: deps.warn,
 			}),
 			workspaceApi: createWorkspaceApi({
 				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
