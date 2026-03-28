@@ -43,6 +43,7 @@ export function SearchSelectDropdown({
 	dropdownStyle,
 	menuStyle,
 	onPopoverOpenChange,
+	allowCustomValue = false,
 }: {
 	options: readonly SearchSelectOption[];
 	selectedValue?: string | null;
@@ -68,6 +69,8 @@ export function SearchSelectDropdown({
 	dropdownStyle?: CSSProperties;
 	menuStyle?: CSSProperties;
 	onPopoverOpenChange?: (isOpen: boolean) => void;
+	/** When true, the user can type a custom value that is not in the options list and select it. */
+	allowCustomValue?: boolean;
 }): ReactElement {
 	const [isOpen, setIsOpen] = useState(false);
 	const [query, setQuery] = useState("");
@@ -124,6 +127,25 @@ export function SearchSelectDropdown({
 		return fuzzyMatches.map((entry) => entry.item);
 	}, [fuzzyMatches, orderedOptions, query, recommendedOptionValueSet]);
 	const isSearching = query.trim().length > 0;
+	// When allowCustomValue is enabled and the user has typed a query that doesn't
+	// exactly match any existing option, we synthesize a "Use <query>" entry so the
+	// user can commit free-text (e.g. a model ID not in the catalog).
+	const customValueOption = useMemo((): SearchSelectOption | null => {
+		if (!allowCustomValue) {
+			return null;
+		}
+		const trimmedQuery = query.trim();
+		if (trimmedQuery.length === 0) {
+			return null;
+		}
+		const hasExactMatch = orderedOptions.some(
+			(option) => option.value.toLowerCase() === trimmedQuery.toLowerCase(),
+		);
+		if (hasExactMatch) {
+			return null;
+		}
+		return { value: trimmedQuery, label: `Use "${trimmedQuery}"` };
+	}, [allowCustomValue, orderedOptions, query]);
 	const showRecommendedSection = !isSearching && recommendedOptionValueSet.size > 0;
 	const recommendedItems = useMemo(
 		() => filteredItems.filter((item) => recommendedOptionValueSet.has(item.value)),
@@ -184,8 +206,21 @@ export function SearchSelectDropdown({
 		}
 	}, [isOpen]);
 
+	const handleSelectCustomValue = useCallback(() => {
+		if (!customValueOption) {
+			return;
+		}
+		onSelect(customValueOption.value);
+		handleOpenChange(false);
+	}, [customValueOption, handleOpenChange, onSelect]);
+
 	const handleSearchInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
 		if (filteredItems.length === 0) {
+			if (event.key === "Enter" && customValueOption) {
+				event.preventDefault();
+				handleSelectCustomValue();
+				return;
+			}
 			if (event.key === "Escape") {
 				event.preventDefault();
 				handleOpenChange(false);
@@ -317,7 +352,19 @@ export function SearchSelectDropdown({
 					</div>
 					<div ref={menuRef} className="max-h-[250px] overflow-y-auto overscroll-contain p-1" style={menuStyle}>
 						{filteredItems.length === 0 ? (
-							<div className="px-2.5 py-1.5 text-[13px] text-text-tertiary">{noResultsText}</div>
+							<>
+								{customValueOption ? (
+									<button
+										type="button"
+										className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[13px] rounded-md text-left bg-surface-3 text-text-primary"
+										onClick={handleSelectCustomValue}
+									>
+										<span className="flex-1 break-all">{customValueOption.label}</span>
+									</button>
+								) : (
+									<div className="px-2.5 py-1.5 text-[13px] text-text-tertiary">{noResultsText}</div>
+								)}
+							</>
 						) : (
 							<>
 								{showRecommendedSection && recommendedItems.length > 0 ? (
@@ -335,6 +382,18 @@ export function SearchSelectDropdown({
 									</>
 								) : null}
 								{showRecommendedSection && otherItems.length > 0 ? otherItems.map((option) => renderOptionButton(option)) : null}
+								{customValueOption ? (
+									<>
+										<div className="my-1 border-t border-border" />
+										<button
+											type="button"
+											className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[13px] rounded-md text-left text-text-secondary hover:bg-surface-3 hover:text-text-primary"
+											onClick={handleSelectCustomValue}
+										>
+											<span className="flex-1 break-all">{customValueOption.label}</span>
+										</button>
+									</>
+								) : null}
 							</>
 						)}
 					</div>

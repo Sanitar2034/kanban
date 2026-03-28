@@ -677,4 +677,190 @@ describe("useRuntimeSettingsClineController", () => {
 		});
 		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("");
 	});
+
+	it("selects openai-compatible provider with no catalog models and isOauthProviderSelected false", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openai-compatible",
+			oauthProvider: null,
+			modelId: "meta-llama/Llama-3.1-8B-Instruct",
+			baseUrl: "http://localhost:8000/v1",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+		fetchClineProviderCatalogMock.mockResolvedValue([
+			{
+				id: "cline",
+				name: "Cline",
+				oauthSupported: true,
+				enabled: false,
+				defaultModelId: "claude-sonnet-4-6",
+			},
+			{
+				id: "openai-compatible",
+				name: "OpenAI Compatible",
+				oauthSupported: false,
+				enabled: true,
+				defaultModelId: null,
+			},
+		]);
+		fetchClineProviderModelsMock.mockResolvedValue([]);
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		await act(async () => {
+			await flushAsyncWork();
+		});
+
+		expect(fetchClineProviderCatalogMock).toHaveBeenCalledWith("workspace-1");
+		expect(fetchClineProviderModelsMock).toHaveBeenCalledWith("workspace-1", "openai-compatible");
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("openai-compatible");
+		expect(requireSnapshot(latestSnapshot).modelId).toBe("meta-llama/Llama-3.1-8B-Instruct");
+		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("http://localhost:8000/v1");
+		expect(requireSnapshot(latestSnapshot).isOauthProviderSelected).toBe(false);
+		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual([]);
+		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
+	});
+
+	it("saves openai-compatible settings with baseUrl, modelId, and optional apiKey", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openai-compatible",
+			oauthProvider: null,
+			modelId: "",
+			baseUrl: "",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+		fetchClineProviderCatalogMock.mockResolvedValue([
+			{
+				id: "openai-compatible",
+				name: "OpenAI Compatible",
+				oauthSupported: false,
+				enabled: true,
+				defaultModelId: null,
+			},
+		]);
+		fetchClineProviderModelsMock.mockResolvedValue([]);
+		saveClineProviderSettingsMock.mockResolvedValue({
+			providerId: "openai-compatible",
+			modelId: "meta-llama/Llama-3.1-8B-Instruct",
+			baseUrl: "http://localhost:8000/v1",
+			reasoningEffort: null,
+			apiKeyConfigured: false,
+			oauthProvider: null,
+			oauthAccessTokenConfigured: false,
+			oauthRefreshTokenConfigured: false,
+			oauthAccountId: null,
+			oauthExpiresAt: null,
+		});
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setModelId("meta-llama/Llama-3.1-8B-Instruct");
+			requireSnapshot(latestSnapshot).setBaseUrl("http://localhost:8000/v1");
+			await flushAsyncWork();
+		});
+
+		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(true);
+
+		await act(async () => {
+			expect(await requireSnapshot(latestSnapshot).saveProviderSettings()).toEqual({ ok: true });
+		});
+
+		expect(saveClineProviderSettingsMock).toHaveBeenCalledWith("workspace-1", {
+			providerId: "openai-compatible",
+			modelId: "meta-llama/Llama-3.1-8B-Instruct",
+			apiKey: null,
+			baseUrl: "http://localhost:8000/v1",
+			reasoningEffort: null,
+		});
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("openai-compatible");
+		expect(requireSnapshot(latestSnapshot).modelId).toBe("meta-llama/Llama-3.1-8B-Instruct");
+		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("http://localhost:8000/v1");
+		expect(requireSnapshot(latestSnapshot).apiKeyConfigured).toBe(false);
+		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
+	});
+
+	it("switches to openai-compatible from cline and resets model to the provider default (empty)", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "cline",
+			oauthProvider: "cline",
+			modelId: "claude-sonnet-4-6",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+		fetchClineProviderCatalogMock.mockResolvedValue([
+			{
+				id: "cline",
+				name: "Cline",
+				oauthSupported: true,
+				enabled: true,
+				defaultModelId: "claude-sonnet-4-6",
+			},
+			{
+				id: "openai-compatible",
+				name: "OpenAI Compatible",
+				oauthSupported: false,
+				enabled: false,
+				defaultModelId: null,
+			},
+		]);
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		await act(async () => {
+			await flushAsyncWork();
+		});
+
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("cline");
+		expect(requireSnapshot(latestSnapshot).isOauthProviderSelected).toBe(true);
+
+		// Switch to openai-compatible
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setProviderId("openai-compatible");
+			requireSnapshot(latestSnapshot).setModelId("");
+			await flushAsyncWork();
+		});
+
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("openai-compatible");
+		expect(requireSnapshot(latestSnapshot).isOauthProviderSelected).toBe(false);
+		expect(requireSnapshot(latestSnapshot).modelId).toBe("");
+		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(true);
+	});
 });

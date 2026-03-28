@@ -80,6 +80,7 @@ export function ClineSetupSection({
 		[controller.providerId, controller.providerModels],
 	);
 	const clineModelOptions = modelPickerOptions.options;
+	const isOpenAiCompatible = controller.normalizedProviderId === "openai-compatible";
 
 	const handleAddMcpServer = () => {
 		if (!mcpController) {
@@ -212,7 +213,7 @@ export function ClineSetupSection({
 								type="password"
 								value={controller.apiKey}
 								onChange={(event) => controller.setApiKey(event.target.value)}
-								placeholder={controller.apiKeyConfigured ? "Saved" : "Enter API key"}
+								placeholder={controller.apiKeyConfigured ? "Saved" : isOpenAiCompatible ? "API key (optional for local endpoints)" : "Enter API key"}
 								disabled={controlsDisabled}
 								className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
 							/>
@@ -224,7 +225,7 @@ export function ClineSetupSection({
 							<input
 								value={controller.baseUrl}
 								onChange={(event) => controller.setBaseUrl(event.target.value)}
-								placeholder="https://api.cline.bot"
+								placeholder={isOpenAiCompatible ? "http://localhost:8000/v1" : "https://api.cline.bot"}
 								disabled={controlsDisabled}
 								className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
 							/>
@@ -282,14 +283,16 @@ export function ClineSetupSection({
 								controller.isLoadingProviderModels
 									? "Loading models..."
 									: clineModelOptions.find((option) => option.value === controller.modelId)?.label
+										?? (isOpenAiCompatible && controller.modelId.trim() ? controller.modelId : undefined)
 							}
-							emptyText="Select model"
+							emptyText={isOpenAiCompatible ? "Enter model ID" : "Select model"}
 							noResultsText="No matching models"
-							placeholder="Search models..."
+							placeholder={isOpenAiCompatible ? "Type a model ID..." : "Search models..."}
 							showSelectedIndicator
 							pinSelectedToTop={modelPickerOptions.shouldPinSelectedModelToTop}
 							recommendedOptionValues={modelPickerOptions.recommendedModelIds}
 							recommendedHeading="Recommended models"
+							allowCustomValue={isOpenAiCompatible}
 						/>
 					</div>
 					{controller.selectedModelSupportsReasoningEffort ? (
@@ -315,6 +318,11 @@ export function ClineSetupSection({
 				</div>
 				{controller.isLoadingProviderModels ? (
 					<p className="text-text-secondary text-[12px] mt-1 mb-0">Fetching Cline models...</p>
+				) : null}
+				{isOpenAiCompatible ? (
+					<p className="text-text-secondary text-[12px] mt-2 mb-0">
+						Enter the base URL and model ID served by your OpenAI-compatible endpoint.
+					</p>
 				) : null}
 			</div>
 
