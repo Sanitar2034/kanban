@@ -623,6 +623,139 @@ describe("useRuntimeSettingsClineController", () => {
 		expect(requireSnapshot(latestSnapshot).selectedModelSupportsReasoningEffort).toBe(true);
 	});
 
+	it("rejects save for openai-compatible when base url is empty", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openai-compatible",
+			oauthProvider: null,
+			modelId: "llama-3.1-8b",
+			baseUrl: null,
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("openai-compatible");
+		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("");
+
+		let saveResult: { ok: boolean; message?: string } | null = null;
+		await act(async () => {
+			saveResult = await requireSnapshot(latestSnapshot).saveProviderSettings();
+		});
+
+		expect(saveResult).toEqual({
+			ok: false,
+			message: expect.stringContaining("Base URL is required"),
+		});
+		expect(saveClineProviderSettingsMock).not.toHaveBeenCalled();
+	});
+
+	it("rejects save for openai-compatible when model id is empty", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openai-compatible",
+			oauthProvider: null,
+			modelId: null,
+			baseUrl: "http://localhost:8000/v1",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("openai-compatible");
+		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("http://localhost:8000/v1");
+
+		let saveResult: { ok: boolean; message?: string } | null = null;
+		await act(async () => {
+			saveResult = await requireSnapshot(latestSnapshot).saveProviderSettings();
+		});
+
+		expect(saveResult).toEqual({
+			ok: false,
+			message: expect.stringContaining("Model ID is required"),
+		});
+		expect(saveClineProviderSettingsMock).not.toHaveBeenCalled();
+	});
+
+	it("allows save for openai-compatible when both base url and model id are set", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openai-compatible",
+			oauthProvider: null,
+			modelId: "llama-3.1-8b",
+			baseUrl: "http://localhost:8000/v1",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+		saveClineProviderSettingsMock.mockResolvedValue({
+			providerId: "openai-compatible",
+			modelId: "llama-3.1-8b",
+			baseUrl: "http://localhost:8000/v1",
+			reasoningEffort: null,
+			apiKeyConfigured: false,
+			oauthProvider: null,
+			oauthAccessTokenConfigured: false,
+			oauthRefreshTokenConfigured: false,
+			oauthAccountId: null,
+			oauthExpiresAt: null,
+		});
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		// Set API key to trigger hasUnsavedChanges
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setApiKey("test-key");
+			await flushAsyncWork();
+		});
+
+		let saveResult: { ok: boolean; message?: string } | null = null;
+		await act(async () => {
+			saveResult = await requireSnapshot(latestSnapshot).saveProviderSettings();
+		});
+
+		expect(saveResult).toEqual({ ok: true });
+		expect(saveClineProviderSettingsMock).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+			providerId: "openai-compatible",
+			modelId: "llama-3.1-8b",
+			baseUrl: "http://localhost:8000/v1",
+		}));
+	});
+
 	it("clears base url when saving an OAuth provider", async () => {
 		const config = createRuntimeConfigResponse({
 			providerId: "openrouter",

@@ -334,6 +334,13 @@ ref,
 			if (isSavingModel) {
 				return;
 			}
+			const normalizedSendProviderId = clineSettings.providerId.trim().toLowerCase();
+			if (normalizedSendProviderId === "openai-compatible" && !clineSettings.baseUrl.trim()) {
+				setComposerError(
+					"Set a Base URL for your OpenAI-compatible endpoint in Settings before starting a task.",
+				);
+				return;
+			}
 			if (clineSettings.hasUnsavedChanges) {
 				const saved = await persistClineModelSettings();
 				if (!saved) {
@@ -342,7 +349,7 @@ ref,
 			}
 			await handleSendText(text, mode);
 		},
-		[clineSettings.hasUnsavedChanges, handleSendText, isSavingModel, mode, persistClineModelSettings],
+		[clineSettings.baseUrl, clineSettings.hasUnsavedChanges, clineSettings.providerId, handleSendText, isSavingModel, mode, persistClineModelSettings],
 	);
 
 	useImperativeHandle(

@@ -281,10 +281,29 @@ export function useRuntimeSettingsClineController(
 	}, [open, providerId, selectedAgentId, workspaceId]);
 
 	const saveProviderSettingsDraft = useCallback(async (overrides?: SaveProviderSettingsOverrides): Promise<SaveResult> => {
-		if (!overrides && !hasUnsavedChanges) {
+		const trimmedProviderId = (overrides?.providerId ?? providerId).trim();
+		if (!overrides && !hasUnsavedChanges && trimmedProviderId.length > 0) {
+			// Even when nothing is dirty, validate required fields for providers
+			// that need additional configuration (e.g. openai-compatible).
+			const normalizedEarlyProviderId = trimmedProviderId.toLowerCase();
+			if (normalizedEarlyProviderId === "openai-compatible") {
+				if (!baseUrl.trim()) {
+					return {
+						ok: false,
+						message:
+							"Base URL is required for the OpenAI Compatible provider. Enter the URL of your endpoint (e.g., http://localhost:8000/v1).",
+					};
+				}
+				if (!modelId.trim()) {
+					return {
+						ok: false,
+						message:
+							"Model ID is required for the OpenAI Compatible provider. Enter the model name served by your endpoint.",
+					};
+				}
+			}
 			return { ok: true };
 		}
-		const trimmedProviderId = (overrides?.providerId ?? providerId).trim();
 		if (trimmedProviderId.length === 0) {
 			return {
 				ok: false,
@@ -298,6 +317,21 @@ export function useRuntimeSettingsClineController(
 				: baseUrl.trim() || null;
 		const trimmedModelId =
 			overrides && "modelId" in overrides ? overrides.modelId?.trim() || null : modelId.trim() || null;
+		const normalizedSaveProviderId = trimmedProviderId.toLowerCase();
+		if (normalizedSaveProviderId === "openai-compatible" && !trimmedBaseUrl) {
+			return {
+				ok: false,
+				message:
+					"Base URL is required for the OpenAI Compatible provider. Enter the URL of your endpoint (e.g., http://localhost:8000/v1).",
+			};
+		}
+		if (normalizedSaveProviderId === "openai-compatible" && !trimmedModelId) {
+			return {
+				ok: false,
+				message:
+					"Model ID is required for the OpenAI Compatible provider. Enter the model name served by your endpoint.",
+			};
+		}
 		const trimmedApiKey =
 			overrides && "apiKey" in overrides
 				? overrides.apiKey?.trim() || null

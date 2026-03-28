@@ -436,7 +436,12 @@ export function createClineProviderService() {
 				: resolveVisibleApiKey(resolvedSettings);
 			if (normalizedProviderId === "openai-compatible" && !resolvedSettings.baseUrl?.trim()) {
 				throw new Error(
-					"The openai-compatible provider requires a Base URL. Open Settings and enter the endpoint URL for your OpenAI-compatible service.",
+					"Base URL is required for the OpenAI Compatible provider. Enter the URL of your endpoint in Settings (e.g., http://localhost:8000/v1).",
+				);
+			}
+			if (normalizedProviderId === "openai-compatible" && !resolvedSettings.model?.trim()) {
+				throw new Error(
+					"Model ID is required for the OpenAI Compatible provider. Enter the model name served by your endpoint in Settings.",
 				);
 			}
 			return {

@@ -93,6 +93,25 @@ function toErrorMessage(error: unknown): string {
 	return "Unknown error";
 }
 
+const CONNECTION_ERROR_PATTERNS = [
+	/ECONNREFUSED/i,
+	/ECONNRESET/i,
+	/ENOTFOUND/i,
+	/ETIMEDOUT/i,
+	/fetch failed/i,
+	/network error/i,
+	/socket hang up/i,
+];
+
+function formatConnectionError(rawMessage: string, baseUrl: string | null | undefined): string {
+	const isConnectionError = CONNECTION_ERROR_PATTERNS.some((pattern) => pattern.test(rawMessage));
+	if (!isConnectionError) {
+		return rawMessage;
+	}
+	const endpoint = baseUrl?.trim() || "the configured endpoint";
+	return `Could not connect to your endpoint at ${endpoint}. Make sure the server is running.`;
+}
+
 function readAgentResultText(result: unknown): string | null {
 	if (!result || typeof result !== "object") {
 		return null;
@@ -154,8 +173,9 @@ export class InMemoryClineTaskSessionService implements ClineTaskSessionService 
 		entry: ClineTaskSessionEntry,
 		context: "start" | "send",
 		error: unknown,
+		baseUrl?: string | null,
 	): void {
-		const errorMessage = toErrorMessage(error);
+		const errorMessage = formatConnectionError(toErrorMessage(error), baseUrl);
 		const systemMessage = createMessage(
 			taskId,
 			"system",
@@ -339,7 +359,7 @@ export class InMemoryClineTaskSessionService implements ClineTaskSessionService 
 					this.emitMessage(request.taskId, agentMessage);
 				}
 			} catch (error) {
-				this.emitTaskFailure(request.taskId, entry, "start", error);
+				this.emitTaskFailure(request.taskId, entry, "start", error, request.baseUrl);
 			}
 		})();
 
