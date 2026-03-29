@@ -24,6 +24,13 @@ import {
 import { formatClineToolCallLabel, getClineToolCallDisplay } from "./cline-tool-call-display";
 import type { ClineSdkAgentEvent, ClineSdkSessionEvent } from "./sdk-runtime-boundary";
 
+interface UsageSummaryUI {
+	status: "done" | "failed";
+	iterations: number;
+	token: { input: number; output: number };
+	cache: { input: number; output: number };
+}
+
 function normalizePreviewText(value: string | null | undefined): string | null {
 	if (typeof value !== "string") {
 		return null;
@@ -159,6 +166,37 @@ function extractAgentErrorMessage(error: unknown): string | null {
 	return null;
 }
 
+function buildUsageSummaryPayload(
+	status: "done" | "failed",
+	iterations: number,
+	usage:
+		| {
+				inputTokens: number;
+				outputTokens: number;
+				cacheReadTokens?: number;
+				cacheWriteTokens?: number;
+				cost?: number;
+		  }
+		| null
+		| undefined,
+): string | null {
+	if (!usage) {
+		return null;
+	}
+	return JSON.stringify({
+		status,
+		iterations,
+		token: {
+			input: usage.inputTokens ?? 0,
+			output: usage.outputTokens ?? 0,
+		},
+		cache: {
+			input: usage.cacheReadTokens ?? 0,
+			output: usage.cacheWriteTokens ?? 0,
+		},
+	} satisfies UsageSummaryUI);
+}
+
 export function extractClineSessionId(event: unknown): string | null {
 	const record = asRecord(event);
 	if (!record) {
@@ -265,8 +303,34 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 		return;
 	}
 
+	if (agentEvent?.type === "usage") {
+		entry.turnUsageSummary = buildUsageSummaryPayload("done", 0, {
+			inputTokens: agentEvent.inputTokens,
+			outputTokens: agentEvent.outputTokens,
+			cacheReadTokens: agentEvent.cacheReadTokens,
+			cacheWriteTokens: agentEvent.cacheWriteTokens,
+			cost: agentEvent.cost,
+		});
+		return;
+	}
+
 	if (agentEvent?.type === "done") {
 		const finalText = typeof agentEvent.text === "string" ? agentEvent.text.trim() : "";
+		const iterations =
+			typeof agentEvent.iterations === "number" && Number.isFinite(agentEvent.iterations)
+				? agentEvent.iterations
+				: 0;
+		const doneReason = typeof agentEvent.reason === "string" ? agentEvent.reason : "completed";
+		const usageStatus: "done" | "failed" = doneReason === "error" ? "failed" : "done";
+		const usageSummary =
+			buildUsageSummaryPayload(usageStatus, iterations, agentEvent.usage) ??
+			(entry.turnUsageSummary
+				? JSON.stringify({
+						...(JSON.parse(entry.turnUsageSummary) as UsageSummaryUI),
+						status: usageStatus,
+						iterations,
+					} satisfies UsageSummaryUI)
+				: null);
 		if (finalText) {
 			const message = setOrCreateAssistantMessage(entry, taskId, finalText);
 			if (message) {
@@ -277,9 +341,27 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 				input.emitMessage(taskId, assistantMessage);
 			}
 		}
+		if (iterations > 0 || usageSummary) {
+			const statusMessage = createMessage(
+				taskId,
+				"status",
+				usageSummary ??
+					JSON.stringify({
+						status: usageStatus,
+						iterations,
+						token: { input: 0, output: 0 },
+						cache: { input: 0, output: 0 },
+					} satisfies UsageSummaryUI),
+			);
+			statusMessage.meta = {
+				messageKind: "usage_summary",
+			};
+			entry.messages.push(statusMessage);
+			input.emitMessage(taskId, statusMessage);
+		}
 
-		const doneReason = typeof agentEvent.reason === "string" ? agentEvent.reason : "completed";
 		if (doneReason === "aborted" && input.pendingTurnCancelTaskIds.has(taskId)) {
+			entry.turnUsageSummary = null;
 			emitTurnCanceled(input);
 			return;
 		}
@@ -310,6 +392,7 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 		}
 
 		clearActiveTurnState(entry);
+		entry.turnUsageSummary = null;
 		emitSummary(input, summaryPatch);
 		return;
 	}

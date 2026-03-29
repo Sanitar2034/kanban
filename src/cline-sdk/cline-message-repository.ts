@@ -175,6 +175,7 @@ function createHydrationEntry(taskId: string): ClineTaskSessionEntry {
 		activeReasoningMessageId: null,
 		toolMessageIdByToolCallId: new Map<string, string>(),
 		toolInputByToolCallId: new Map<string, unknown>(),
+		turnUsageSummary: null,
 	};
 }
 

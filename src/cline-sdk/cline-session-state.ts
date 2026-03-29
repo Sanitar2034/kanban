@@ -13,6 +13,7 @@ export interface ClineTaskSessionEntry {
 	activeReasoningMessageId: string | null;
 	toolMessageIdByToolCallId: Map<string, string>;
 	toolInputByToolCallId: Map<string, unknown>;
+	turnUsageSummary: string | null;
 }
 
 export interface ClineTaskMessage {

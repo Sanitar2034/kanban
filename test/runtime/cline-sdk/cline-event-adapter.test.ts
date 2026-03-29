@@ -15,6 +15,7 @@ function createEntry(taskId: string): ClineTaskSessionEntry {
 		activeReasoningMessageId: null,
 		toolMessageIdByToolCallId: new Map<string, string>(),
 		toolInputByToolCallId: new Map<string, unknown>(),
+		turnUsageSummary: null,
 	};
 }
 
@@ -293,6 +294,63 @@ describe("applyClineSessionEvent", () => {
 		expect(result.entry.summary.latestHookActivity?.finalMessage).toBe("Done. Added the comment.");
 		expect(result.messages[0]?.role).toBe("assistant");
 		expect(result.messages[0]?.content).toBe("Done. Added the comment.");
+	});
+
+	it("adds a turn usage status message when usage arrives before the done event", () => {
+		const entry = createEntry("task-1");
+		entry.summary.state = "running";
+
+		applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "usage",
+						inputTokens: 120,
+						outputTokens: 45,
+						cacheReadTokens: 20,
+						cacheWriteTokens: 10,
+						cost: 0.0123,
+						totalInputTokens: 120,
+						totalOutputTokens: 45,
+					},
+				},
+			},
+		});
+
+		const result = applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "done",
+						reason: "completed",
+						text: "Applied the change.",
+						iterations: 3,
+					},
+				},
+			},
+		});
+
+		expect(result.messages).toHaveLength(2);
+		expect(result.messages[1]?.role).toBe("status");
+		expect(result.messages[1]?.meta?.messageKind).toBe("usage_summary");
+		expect(JSON.parse(result.messages[1]?.content ?? "")).toEqual({
+			status: "done",
+			iterations: 3,
+			token: {
+				input: 120,
+				output: 45,
+			},
+			cache: {
+				input: 20,
+				output: 10,
+			},
+		});
 	});
 
 	it("keeps the previous preview when done events have no final text", () => {

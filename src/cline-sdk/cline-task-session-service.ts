@@ -257,6 +257,7 @@ export class InMemoryClineTaskSessionService implements ClineTaskSessionService 
 						activeReasoningMessageId: null,
 						toolMessageIdByToolCallId: new Map<string, string>(),
 						toolInputByToolCallId: new Map<string, unknown>(),
+						turnUsageSummary: null,
 					} satisfies ClineTaskSessionEntry);
 		this.messageRepository.setTaskEntry(request.taskId, entry);
 		this.pendingTurnCancelTaskIds.delete(request.taskId);
@@ -268,6 +269,7 @@ export class InMemoryClineTaskSessionService implements ClineTaskSessionService 
 			const message = createMessage(request.taskId, "user", normalizedPrompt, request.images);
 			entry.messages.push(message);
 			this.emitMessage(request.taskId, message);
+			entry.turnUsageSummary = null;
 			const runningSummary = updateSummary(entry, {
 				state: "running",
 				reviewReason: null,
@@ -453,6 +455,7 @@ export class InMemoryClineTaskSessionService implements ClineTaskSessionService 
 			entry.messages.push(message);
 			this.emitMessage(taskId, message);
 			clearActiveTurnState(entry);
+			entry.turnUsageSummary = null;
 			const queueDelivery = entry.summary.state === "running";
 			const waitingSummary = updateSummary(entry, {
 				state: "running",

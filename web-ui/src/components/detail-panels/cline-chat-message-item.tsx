@@ -13,6 +13,53 @@ import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import type { ClineChatMessage } from "@/hooks/use-cline-chat-session";
 
+interface UsageSummaryUI {
+	status: "done" | "failed";
+	iterations: number;
+	token: { input: number; output: number };
+	cache: { input: number; output: number };
+}
+
+function parseUsageSummary(message: ClineChatMessage): UsageSummaryUI | null {
+	if (message.role !== "status" || message.meta?.messageKind !== "usage_summary") {
+		return null;
+	}
+	try {
+		const parsed = JSON.parse(message.content) as UsageSummaryUI;
+		if (
+			(parsed.status === "done" || parsed.status === "failed") &&
+			typeof parsed.iterations === "number" &&
+			typeof parsed.token?.input === "number" &&
+			typeof parsed.token?.output === "number" &&
+			typeof parsed.cache?.input === "number" &&
+			typeof parsed.cache?.output === "number"
+		) {
+			return parsed;
+		}
+	} catch {
+		// Fall back to plain status rendering.
+	}
+	return null;
+}
+
+function UsageSummaryBlock({ summary }: { summary: UsageSummaryUI }): ReactElement {
+	return (
+		<div className={cn("w-full p-1", summary.status === "failed" ? "border-red-500/70 bg-red-500/10" : "")}>
+			<div id={`usage-summary-${summary.iterations}`} className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+				<span className="text-text-secondary">
+					In <span className="text-text-primary">{summary.token.input}</span>
+				</span>
+				<span className="text-text-secondary">
+					Out <span className="text-text-primary">{summary.token.output}</span>
+				</span>
+				<span className="text-text-secondary">
+					Cache <span className="text-text-primary">{summary.cache.input + summary.cache.output}</span>
+				</span>
+			</div>
+		</div>
+	);
+}
+
 function ToolMessageBlock({ message }: { message: ClineChatMessage }): ReactElement {
 	const parsed = useMemo(() => parseToolMessageContent(message.content), [message.content]);
 	const isRunning = message.meta?.hookEventName === "tool_call_start";
@@ -141,6 +188,10 @@ function ReasoningMessageBlock({ message }: { message: ClineChatMessage }): Reac
 }
 
 export function ClineChatMessageItem({ message }: { message: ClineChatMessage }): ReactElement {
+	const usageSummary = parseUsageSummary(message);
+	if (usageSummary) {
+		return <UsageSummaryBlock summary={usageSummary} />;
+	}
 	if (message.role === "tool") {
 		return <ToolMessageBlock message={message} />;
 	}
