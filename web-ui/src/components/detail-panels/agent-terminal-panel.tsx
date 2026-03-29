@@ -12,7 +12,6 @@ import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store
 import { usePersistentTerminalSession } from "@/terminal/use-persistent-terminal-session";
 import { isMacPlatform } from "@/utils/platform";
 
-
 interface AgentTerminalSessionControls {
 	clearTerminal: () => void;
 	containerRef: MutableRefObject<HTMLDivElement | null>;
@@ -318,9 +317,7 @@ function AgentTerminalPanelLayout({
 				/>
 			</div>
 			{lastError ? (
-				<div
-					className="flex gap-2 rounded-none border-t border-status-red/30 bg-status-red/10 p-3 text-[13px] text-status-red"
-				>
+				<div className="flex gap-2 rounded-none border-t border-status-red/30 bg-status-red/10 p-3 text-[13px] text-status-red">
 					{lastError}
 				</div>
 			) : null}
@@ -335,42 +332,23 @@ function AgentTerminalPanelLayout({
 						isOpenPrLoading={isOpenPrLoading}
 					/>
 					{cancelAutomaticActionLabel && onCancelAutomaticAction ? (
-						<Button
-							variant="default"
-							fill
-							onClick={onCancelAutomaticAction}
-						>
+						<Button variant="default" fill onClick={onCancelAutomaticAction}>
 							{cancelAutomaticActionLabel}
 						</Button>
 					) : null}
 					{isScheduledTask ? (
 						<>
-							<Button
-								variant="primary"
-								fill
-								disabled={isMoveToTrashLoading}
-								onClick={onMoveToTrash}
-							>
+							<Button variant="primary" fill disabled={isMoveToTrashLoading} onClick={onMoveToTrash}>
 								{isMoveToTrashLoading ? <Spinner size={14} /> : "Move to Backlog"}
 							</Button>
 							{onForceTrash ? (
-								<Button
-									variant="danger"
-									fill
-									disabled={isMoveToTrashLoading}
-									onClick={onForceTrash}
-								>
+								<Button variant="danger" fill disabled={isMoveToTrashLoading} onClick={onForceTrash}>
 									Move to Trash
 								</Button>
 							) : null}
 						</>
 					) : (
-						<Button
-							variant="danger"
-							fill
-							disabled={isMoveToTrashLoading}
-							onClick={onMoveToTrash}
-						>
+						<Button variant="danger" fill disabled={isMoveToTrashLoading} onClick={onMoveToTrash}>
 							{isMoveToTrashLoading ? <Spinner size={14} /> : "Move Card To Trash"}
 						</Button>
 					)}

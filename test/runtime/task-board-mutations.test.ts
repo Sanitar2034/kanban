@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { RuntimeBoardData } from "../../src/core/api-contract.js";
+import type { RuntimeBoardData } from "../../src/core/api-contract";
 import {
 	addTaskDependency,
 	addTaskToColumn,
@@ -11,7 +11,7 @@ import {
 	recycleScheduledTaskToBacklog,
 	trashTaskAndGetReadyLinkedTaskIds,
 	updateTask,
-} from "../../src/core/task-board-mutations.js";
+} from "../../src/core/task-board-mutations";
 
 function createBoard(): RuntimeBoardData {
 	return {
@@ -58,7 +58,6 @@ describe("deleteTasksFromBoard", () => {
 		expect(deleted.board.columns.find((column) => column.id === "trash")?.cards).toEqual([]);
 	});
 });
-
 
 describe("task images", () => {
 	it("preserves images when creating and updating tasks", () => {
@@ -275,7 +274,6 @@ describe("scheduled task update", () => {
 	});
 });
 
-
 describe("recycleScheduledTaskToBacklog", () => {
 	it("moves a review task back to backlog and updates schedule fields", () => {
 		const now = 1000000;
@@ -414,7 +412,6 @@ describe("recycleScheduledTaskToBacklog", () => {
 	});
 });
 
-
 describe("trashTaskAndGetReadyLinkedTaskIds with scheduled tasks", () => {
 	it("recycles scheduled task to backlog instead of trashing", () => {
 		const now = 1000000;
@@ -490,7 +487,6 @@ describe("trashTaskAndGetReadyLinkedTaskIds with scheduled tasks", () => {
 		expect(trashCards.some((card) => card.id === "aaaaa")).toBe(true);
 	});
 });
-
 
 describe("getScheduledTasksDue", () => {
 	it("returns task IDs where nextRunAt is in the past", () => {

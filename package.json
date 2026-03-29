@@ -1,6 +1,6 @@
 {
   "name": "kanban",
-  "version": "0.1.50",
+  "version": "0.1.51",
   "description": "A kanban foundation for coding agents",
   "publishConfig": {
     "access": "public",
@@ -59,7 +59,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome lint src test web-ui/src web-ui/tests vitest.config.ts web-ui/vite.config.ts web-ui/vitest.config.ts web-ui/playwright.config.ts",
     "format": "biome check --write .",
-    "check": "npm run lint && npm run typecheck && npm run test",
+    "check": "biome check . && npm run typecheck && npm run test",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepare": "husky",
@@ -87,6 +87,8 @@
     "@sentry/node": "^10.45.0",
     "@trpc/client": "^11.11.0",
     "@trpc/server": "^11.11.0",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
     "commander": "^14.0.3",
     "node-pty": "^1.2.0-beta.11",
     "open": "^11.0.0",

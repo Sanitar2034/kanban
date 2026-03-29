@@ -4,9 +4,7 @@ import {
 	buildWindowsCmdArgsCommandLine,
 	resolveWindowsComSpec,
 	shouldUseWindowsCmdLaunch,
-} from "../core/windows-cmd-launch.js";
-
-const MAX_HISTORY_BYTES = 1024 * 1024;
+} from "../core/windows-cmd-launch";
 
 export interface PtyExitEvent {
 	exitCode: number;
@@ -66,8 +64,6 @@ function terminatePtyProcess(ptyProcess: pty.IPty): void {
 
 export class PtySession {
 	private readonly ptyProcess: pty.IPty;
-	private readonly outputHistory: Buffer[] = [];
-	private historyBytes = 0;
 	private interrupted = false;
 	private exited = false;
 
@@ -79,15 +75,6 @@ export class PtySession {
 		this.ptyProcess = ptyProcess;
 		(this.ptyProcess.onData as unknown as (listener: (data: PtyOutputChunk) => void) => void)((data) => {
 			const chunk = normalizeOutputChunk(data);
-			this.outputHistory.push(chunk);
-			this.historyBytes += chunk.byteLength;
-			while (this.historyBytes > MAX_HISTORY_BYTES && this.outputHistory.length > 0) {
-				const shifted = this.outputHistory.shift();
-				if (!shifted) {
-					break;
-				}
-				this.historyBytes -= shifted.byteLength;
-			}
 			this.onDataCallback?.(chunk);
 		});
 		this.ptyProcess.onExit((event) => {
@@ -101,9 +88,7 @@ export class PtySession {
 		const terminalName = env?.TERM?.trim() || process.env.TERM?.trim() || "xterm-256color";
 		const useWindowsShellLaunch = shouldUseWindowsCmdLaunch(binary);
 		const spawnBinary = useWindowsShellLaunch ? resolveWindowsComSpec() : binary;
-		const spawnArgs = useWindowsShellLaunch
-			? buildWindowsCmdArgsCommandLine(binary, normalizedArgs)
-			: normalizedArgs;
+		const spawnArgs = useWindowsShellLaunch ? buildWindowsCmdArgsCommandLine(binary, normalizedArgs) : normalizedArgs;
 		const ptyOptions: pty.IPtyForkOptions = {
 			name: terminalName,
 			cwd,
@@ -119,10 +104,6 @@ export class PtySession {
 
 	get pid(): number {
 		return this.ptyProcess.pid;
-	}
-
-	getOutputHistory(): readonly Buffer[] {
-		return this.outputHistory;
 	}
 
 	write(data: string | Buffer): void {

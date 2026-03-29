@@ -6,8 +6,8 @@ import type {
 	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
 	RuntimeTaskSchedule,
-} from "./api-contract.js";
-import { createUniqueTaskId } from "./task-id.js";
+} from "./api-contract";
+import { createUniqueTaskId } from "./task-id";
 
 export interface RuntimeCreateTaskInput {
 	prompt: string;
@@ -680,13 +680,7 @@ function computeNextCronRun(cronExpression: string, now: number): number {
 		return now + 86400000;
 	}
 
-	const [minuteField, hourField, domField, monthField, dowField] = fields as [
-		string,
-		string,
-		string,
-		string,
-		string,
-	];
+	const [minuteField, hourField, domField, monthField, dowField] = fields as [string, string, string, string, string];
 
 	// Start searching from the next minute after `now`.
 	const start = new Date(now);

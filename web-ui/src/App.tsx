@@ -37,17 +37,16 @@ import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallb
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
-import { useScheduledTaskStarter } from "@/hooks/use-scheduled-task-starter";
 import { useDebugTools } from "@/hooks/use-debug-tools";
 import { useDocumentVisibility } from "@/hooks/use-document-visibility";
 import { useGitActions } from "@/hooks/use-git-actions";
 import { useHomeSidebarAgentPanel } from "@/hooks/use-home-sidebar-agent-panel";
 import { useKanbanAccessGate } from "@/hooks/use-kanban-access-gate";
 import { useOpenWorkspace } from "@/hooks/use-open-workspace";
-import { usePrewarmedAgentTerminals } from "@/hooks/use-prewarmed-agent-terminals";
 import { parseRemovedProjectPathFromStreamError, useProjectNavigation } from "@/hooks/use-project-navigation";
 import { useProjectUiState } from "@/hooks/use-project-ui-state";
 import { useReviewReadyNotifications } from "@/hooks/use-review-ready-notifications";
+import { useScheduledTaskStarter } from "@/hooks/use-scheduled-task-starter";
 import { useShortcutActions } from "@/hooks/use-shortcut-actions";
 import { useStartupOnboarding } from "@/hooks/use-startup-onboarding";
 import { useTaskBranchOptions } from "@/hooks/use-task-branch-options";
@@ -410,15 +409,6 @@ export default function App(): ReactElement {
 		upsertSession,
 		sendTaskSessionInput,
 	});
-	usePrewarmedAgentTerminals({
-		currentProjectId,
-		isWorkspaceReady: !isWorkspaceMetadataPending,
-		isRuntimeDisconnected,
-		board,
-		sessions,
-		cursorColor: TERMINAL_THEME_COLORS.textPrimary,
-		terminalBackgroundColor: TERMINAL_THEME_COLORS.surfacePrimary,
-	});
 	const homeTerminalSummary = sessions[homeTerminalTaskId] ?? null;
 	const homeSidebarAgentPanel = useHomeSidebarAgentPanel({
 		currentProjectId,
@@ -430,15 +420,16 @@ export default function App(): ReactElement {
 		latestTaskChatMessage,
 		taskChatMessagesByTaskId,
 	});
-	const { runningShortcutLabel, handleSelectShortcutLabel, handleRunShortcut, handleCreateShortcut } = useShortcutActions({
-		currentProjectId,
-		selectedShortcutLabel: runtimeProjectConfig?.selectedShortcutLabel,
-		shortcuts,
-		refreshRuntimeProjectConfig,
-		prepareTerminalForShortcut,
-		prepareWaitForTerminalConnectionReady,
-		sendTaskSessionInput,
-	});
+	const { runningShortcutLabel, handleSelectShortcutLabel, handleRunShortcut, handleCreateShortcut } =
+		useShortcutActions({
+			currentProjectId,
+			selectedShortcutLabel: runtimeProjectConfig?.selectedShortcutLabel,
+			shortcuts,
+			refreshRuntimeProjectConfig,
+			prepareTerminalForShortcut,
+			prepareWaitForTerminalConnectionReady,
+			sendTaskSessionInput,
+		});
 
 	const persistWorkspaceStateAsync = useCallback(
 		async (input: { workspaceId: string; payload: Parameters<typeof saveWorkspaceState>[1] }) =>
