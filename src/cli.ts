@@ -487,7 +487,10 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 			isAddressInUseError(error) &&
 			(await tryOpenExistingServer({ noOpen: options.noOpen, shouldAutoOpenBrowser }))
 		) {
-			return;
+			// Explicit exit: the auto-update background check and Sentry handles
+			// would otherwise keep the event loop alive for several seconds,
+			// causing the test (and real-world UX) to stall unnecessarily.
+			process.exit(0);
 		}
 		throw error;
 	}

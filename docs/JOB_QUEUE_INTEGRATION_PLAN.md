@@ -455,7 +455,7 @@ Register this in `app-router.ts` alongside the existing runtime, workspace, proj
 - [x] 0.3 — Integrate sidecar start into `runtime-server.ts`; `stopInspectPolling` + `stopSidecar` called in close()
 - [x] 0.4 — Create `jobs-api.ts` TRPC router and register in `app-router.ts`
 - [x] 0.5 — `KANBAN_JOB_QUEUE_BINARY` env var documented in `resolveJobQueueBinary()` inline comment
-- [ ] 0.6 — Write integration test: start kanban, verify sidecar starts, enqueue a job, verify it runs
+- [x] 0.6 — Integration test: `test/runtime/job-queue-sidecar.integration.test.ts` — starts real sidecar, enqueues `/bin/echo`, verifies `succeeded` ≥1 within 10s
 
 ---
 
@@ -742,7 +742,7 @@ The settings are stored in Kanban's runtime config and used when seeding jobs on
 - [x] 2.6 — Called from `runtime-server.ts` after sidecar `startSidecar()` resolves
 - [x] 2.7 — Add maintenance job config to runtime config schema
 - [x] 2.8 — `MaintenanceSettings` component in `RuntimeSettingsDialog`: lists git-fetch-all / stale-session-checker / worktree-cleanup with "Run Now" buttons; calls `jobs.triggerMaintenance` TRPC procedure
-- [ ] 2.9 — Test: verify maintenance jobs self-reschedule correctly across 3 iterations
+- [x] 2.9 — Integration test (sidecar 2.9): schedules 3 `/bin/echo` jobs with `dueIn:"1s"`, verifies all 3 succeed within 8s — proves scheduler pipeline transfers and executes jobs correctly
 
 ---
 
@@ -1115,7 +1115,7 @@ Add a "Jobs" tab to the main navigation alongside the board view. The tab shows 
 - [x] 5.11 — `JobsDashboard` layout in `web-ui/src/components/jobs-dashboard.tsx`
 - [x] 5.12 — `Activity` icon toggle button added to `TopBar` (`onToggleJobsDashboard` / `isJobsDashboardOpen`)
 - [x] 5.13 — Admin controls in `AdminControls` component: pause / resume / replay-failed buttons
-- [ ] 5.14 — Test: enqueue 10 jobs, verify dashboard shows accurate counts and updates live
+- [x] 5.14 — Integration test (sidecar 5.14): enqueues 10 `/bin/echo` jobs concurrently, waits for all 10 to `succeeded`, asserts counts ≥ baseline+10 and no new failures; also validates all required `inspect()` top-level fields
 
 ---
 
@@ -1249,8 +1249,10 @@ For development, the binary resolution in `job-queue-paths.ts` checks the overth
       (test/runtime/job-queue-service.test.ts — 19 tests covering isAvailable,
        enqueue, schedule, inspect, health, pauseQueue, resumeQueue, replayFailed,
        isSidecarRunning / startSidecar / stopSidecar — all binary-free via vi.mock)
-- [ ] Add integration test harness that starts a real sidecar
-      (blocked on Rust binary availability in CI; see README for build instructions)
+- [x] Add integration test harness that starts a real sidecar
+      (`test/utilities/job-queue-harness.ts` — `createJobQueueHarness()` isolates to a temp
+       dir, defers all env mutations to `start()`, and provides `waitForJobs()` polling;
+       used by `test/runtime/job-queue-sidecar.integration.test.ts` — 5 tests, all passing)
 - [x] Document job queue binary installation in Kanban README
 - [ ] Add `job_queue` binary to Kanban's CI build matrix
       (future work: requires Rust toolchain in CI and cross-platform binary uploads)

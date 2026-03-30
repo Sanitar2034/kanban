@@ -161,6 +161,9 @@ export const runtimeBoardCardSchema = z.object({
 	createdByAutomation: z.string().nullable().optional(),
 	/** Fingerprint of the automation finding that triggered this card's creation. */
 	automationFindingFingerprint: z.string().nullable().optional(),
+	/** Evidence snapshot at the time of automation-triggered creation.
+	 *  Used by the loop-prevention system and for audit display. */
+	automationEvidence: z.record(z.string(), z.string()).nullable().optional(),
 });
 export type RuntimeBoardCard = z.infer<typeof runtimeBoardCardSchema>;
 
