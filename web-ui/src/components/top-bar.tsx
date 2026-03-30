@@ -1,3 +1,4 @@
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as RadixPopover from "@radix-ui/react-popover";
 import {
 	ArrowDown,
@@ -9,12 +10,13 @@ import {
 	CircleArrowDown,
 	Command,
 	GitBranch,
+	Menu,
 	Play,
 	Plus,
 	Settings,
 	Terminal,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { OpenWorkspaceButton } from "@/components/open-workspace-button";
 import {
 	getRuntimeShortcutIconComponent,
@@ -36,6 +38,19 @@ import {
 import type { OpenTargetId, OpenTargetOption } from "@/utils/open-targets";
 import { formatPathForDisplay } from "@/utils/path-display";
 import { isMacPlatform } from "@/utils/platform";
+
+const MOBILE_BREAKPOINT = "(max-width: 768px)";
+
+function useIsMobile(): boolean {
+	const subscribe = useCallback((cb: () => void) => {
+		const mql = window.matchMedia(MOBILE_BREAKPOINT);
+		mql.addEventListener("change", cb);
+		return () => mql.removeEventListener("change", cb);
+	}, []);
+	const getSnapshot = useCallback(() => window.matchMedia(MOBILE_BREAKPOINT).matches, []);
+	const getServerSnapshot = useCallback(() => false, []);
+	return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
 
 type SettingsSection = "shortcuts";
 type CreateShortcutResult = { ok: boolean; message?: string };
@@ -389,6 +404,99 @@ export function TopBar({
 		setIsCreateShortcutDialogOpen(false);
 	};
 
+	const isMobile = useIsMobile();
+
+	/* ── Shortcut inline buttons (desktop only) ── */
+	const shortcutButtons =
+		!hideProjectDependentActions && onRunShortcut ? (
+			selectedShortcut ? (
+				<div className="flex">
+					<Button
+						variant="default"
+						size="sm"
+						icon={runningShortcutLabel ? <Spinner size={12} /> : <SelectedShortcutIcon size={14} />}
+						disabled={Boolean(runningShortcutLabel)}
+						onClick={() => onRunShortcut(selectedShortcut.label)}
+						className="text-xs rounded-r-none kb-navbar-btn"
+					>
+						{selectedShortcut.label}
+					</Button>
+					<RadixPopover.Root>
+						<RadixPopover.Trigger asChild>
+							<Button
+								size="sm"
+								variant="default"
+								icon={<ChevronDown size={12} />}
+								aria-label="Select shortcut"
+								disabled={Boolean(runningShortcutLabel)}
+								className="rounded-l-none border-l-0 kb-navbar-btn"
+								style={{ width: 24, paddingLeft: 0, paddingRight: 0 }}
+							/>
+						</RadixPopover.Trigger>
+						<RadixPopover.Portal>
+							<RadixPopover.Content
+								className="z-50 rounded-lg border border-border bg-surface-2 p-1 shadow-xl"
+								style={{ animation: "kb-tooltip-show 100ms ease" }}
+								sideOffset={5}
+								align="end"
+							>
+								<div className="min-w-[180px]">
+									{shortcutItems.map((shortcut, shortcutIndex) => {
+										const ShortcutIcon = getRuntimeShortcutIconComponent(shortcut.icon);
+										const isActive =
+											shortcutIndex === (selectedShortcutIndex >= 0 ? selectedShortcutIndex : 0);
+										return (
+											<button
+												type="button"
+												key={`${shortcut.label}:${shortcut.command}:${shortcutIndex}`}
+												className={cn(
+													"flex w-full items-center gap-2 px-2.5 py-1.5 text-[13px] text-text-primary rounded-md hover:bg-surface-3 text-left",
+													isActive && "bg-surface-3",
+												)}
+												onClick={() => onSelectShortcutLabel?.(shortcut.label)}
+											>
+												<ShortcutIcon size={14} />
+												<span className="flex-1">{shortcut.label}</span>
+												{isActive ? <Check size={14} className="text-text-secondary" /> : null}
+											</button>
+										);
+									})}
+									<div className="h-px bg-border my-1" />
+									<button
+										type="button"
+										className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[13px] text-text-primary rounded-md hover:bg-surface-3 text-left"
+										onClick={handleAddShortcut}
+									>
+										<Plus size={14} />
+										<span>Add shortcut</span>
+									</button>
+								</div>
+							</RadixPopover.Content>
+						</RadixPopover.Portal>
+					</RadixPopover.Root>
+				</div>
+			) : onCreateFirstShortcut ? (
+				<Button
+					variant="default"
+					size="sm"
+					icon={<Play size={14} />}
+					onClick={handleOpenCreateShortcutDialog}
+					className="text-xs kb-navbar-btn"
+				>
+					Run
+				</Button>
+			) : null
+		) : null;
+
+	/* ── Determine whether overflow menu has any items ── */
+	const hasTerminalAction = Boolean(onToggleTerminal);
+	const hasDebugAction = Boolean(showDebugButton && onOpenDebugDialog);
+	const hasShortcutAction = Boolean(!hideProjectDependentActions && onRunShortcut && selectedShortcut);
+	const hasCreateShortcutAction = Boolean(
+		!hideProjectDependentActions && onRunShortcut && !selectedShortcut && onCreateFirstShortcut,
+	);
+	const hasOverflowItems = hasTerminalAction || hasDebugAction || hasShortcutAction || hasCreateShortcutAction;
+
 	return (
 		<>
 			<nav
@@ -408,37 +516,46 @@ export function TopBar({
 								icon={<ArrowLeft size={16} />}
 								onClick={onBack}
 								aria-label="Back to board"
-								className="mr-1 shrink-0"
+								className={cn("mr-1 shrink-0", isMobile && "min-w-[44px] min-h-[44px]")}
 							/>
 						</div>
 					) : null}
 					{isWorkspacePathLoading ? (
 						<span
 							className="kb-skeleton inline-block"
-							style={{ height: 14, width: 320, borderRadius: 3 }}
+							style={{ height: 14, width: isMobile ? 120 : 320, borderRadius: 3 }}
 							aria-hidden
 						/>
 					) : displayWorkspacePath ? (
-						<div className="shrink min-w-0 max-w-[640px] overflow-hidden">
+						<div className={cn("shrink min-w-0 overflow-hidden", isMobile ? "max-w-[180px]" : "max-w-[640px]")}>
 							<span
 								className="font-mono truncate block w-full min-w-0 text-xs max-w-full text-text-secondary"
 								title={workspacePath}
 								data-testid="workspace-path"
 							>
-								{hasAbsoluteLeadingSlash ? "/" : ""}
-								{workspaceSegments.map((segment, index) => {
-									const isLast = index === workspaceSegments.length - 1;
-									return (
-										<span key={`${segment}-${index}`}>
-											{index === 0 ? "" : "/"}
-											<span className={isLast ? "text-text-primary" : undefined}>{segment}</span>
-										</span>
-									);
-								})}
+								{isMobile ? (
+									/* On mobile show only the last path segment */
+									<span className="text-text-primary">
+										{workspaceSegments[workspaceSegments.length - 1] ?? displayWorkspacePath}
+									</span>
+								) : (
+									<>
+										{hasAbsoluteLeadingSlash ? "/" : ""}
+										{workspaceSegments.map((segment, index) => {
+											const isLast = index === workspaceSegments.length - 1;
+											return (
+												<span key={`${segment}-${index}`}>
+													{index === 0 ? "" : "/"}
+													<span className={isLast ? "text-text-primary" : undefined}>{segment}</span>
+												</span>
+											);
+										})}
+									</>
+								)}
 							</span>
 						</div>
 					) : null}
-					{displayWorkspacePath && !isWorkspacePathLoading ? (
+					{displayWorkspacePath && !isWorkspacePathLoading && !isMobile ? (
 						<div className="ml-2 shrink-0">
 							<OpenWorkspaceButton
 								options={openTargetOptions}
@@ -450,12 +567,12 @@ export function TopBar({
 							/>
 						</div>
 					) : null}
-					{!hideProjectDependentActions && workspaceHint ? (
+					{!isMobile && !hideProjectDependentActions && workspaceHint ? (
 						<span className="kb-navbar-tag inline-flex items-center rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-text-secondary">
 							{workspaceHint}
 						</span>
 					) : null}
-					{!hideProjectDependentActions && runtimeHint ? (
+					{!isMobile && !hideProjectDependentActions && runtimeHint ? (
 						onOpenSettings ? (
 							<button
 								type="button"
@@ -470,7 +587,7 @@ export function TopBar({
 							</span>
 						)
 					) : null}
-					{!hideProjectDependentActions ? (
+					{!isMobile && !hideProjectDependentActions ? (
 						<TopBarGitStatusSection
 							showHomeGitSummary={showHomeGitSummary === true}
 							selectedTaskId={selectedTaskId ?? null}
@@ -484,122 +601,53 @@ export function TopBar({
 						/>
 					) : null}
 				</div>
+
+				{/* ── Right-side actions ── */}
 				<div className="flex flex-nowrap items-center h-10 pr-0.5 shrink-0">
-					{!hideProjectDependentActions && onRunShortcut ? (
-						selectedShortcut ? (
-							<div className="flex">
-								<Button
-									variant="default"
-									size="sm"
-									icon={runningShortcutLabel ? <Spinner size={12} /> : <SelectedShortcutIcon size={14} />}
-									disabled={Boolean(runningShortcutLabel)}
-									onClick={() => onRunShortcut(selectedShortcut.label)}
-									className="text-xs rounded-r-none kb-navbar-btn"
+					{/* Desktop: show all actions inline */}
+					{!isMobile && (
+						<>
+							{shortcutButtons}
+							{onToggleTerminal ? (
+								<Tooltip
+									side="bottom"
+									content={
+										<span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+											<span>Toggle terminal</span>
+											<span className="inline-flex items-center gap-0.5 whitespace-nowrap">
+												<span>(</span>
+												{isMacPlatform ? <Command size={11} /> : <span>Ctrl</span>}
+												<span>+ J)</span>
+											</span>
+										</span>
+									}
 								>
-									{selectedShortcut.label}
-								</Button>
-								<RadixPopover.Root>
-									<RadixPopover.Trigger asChild>
-										<Button
-											size="sm"
-											variant="default"
-											icon={<ChevronDown size={12} />}
-											aria-label="Select shortcut"
-											disabled={Boolean(runningShortcutLabel)}
-											className="rounded-l-none border-l-0 kb-navbar-btn"
-											style={{ width: 24, paddingLeft: 0, paddingRight: 0 }}
-										/>
-									</RadixPopover.Trigger>
-									<RadixPopover.Portal>
-										<RadixPopover.Content
-											className="z-50 rounded-lg border border-border bg-surface-2 p-1 shadow-xl"
-											style={{ animation: "kb-tooltip-show 100ms ease" }}
-											sideOffset={5}
-											align="end"
-										>
-											<div className="min-w-[180px]">
-												{shortcutItems.map((shortcut, shortcutIndex) => {
-													const ShortcutIcon = getRuntimeShortcutIconComponent(shortcut.icon);
-													const isActive =
-														shortcutIndex === (selectedShortcutIndex >= 0 ? selectedShortcutIndex : 0);
-													return (
-														<button
-															type="button"
-															key={`${shortcut.label}:${shortcut.command}:${shortcutIndex}`}
-															className={cn(
-																"flex w-full items-center gap-2 px-2.5 py-1.5 text-[13px] text-text-primary rounded-md hover:bg-surface-3 text-left",
-																isActive && "bg-surface-3",
-															)}
-															onClick={() => onSelectShortcutLabel?.(shortcut.label)}
-														>
-															<ShortcutIcon size={14} />
-															<span className="flex-1">{shortcut.label}</span>
-															{isActive ? <Check size={14} className="text-text-secondary" /> : null}
-														</button>
-													);
-												})}
-												<div className="h-px bg-border my-1" />
-												<button
-													type="button"
-													className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[13px] text-text-primary rounded-md hover:bg-surface-3 text-left"
-													onClick={handleAddShortcut}
-												>
-													<Plus size={14} />
-													<span>Add shortcut</span>
-												</button>
-											</div>
-										</RadixPopover.Content>
-									</RadixPopover.Portal>
-								</RadixPopover.Root>
-							</div>
-						) : onCreateFirstShortcut ? (
-							<Button
-								variant="default"
-								size="sm"
-								icon={<Play size={14} />}
-								onClick={handleOpenCreateShortcutDialog}
-								className="text-xs kb-navbar-btn"
-							>
-								Run
-							</Button>
-						) : null
-					) : null}
-					{onToggleTerminal ? (
-						<Tooltip
-							side="bottom"
-							content={
-								<span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-									<span>Toggle terminal</span>
-									<span className="inline-flex items-center gap-0.5 whitespace-nowrap">
-										<span>(</span>
-										{isMacPlatform ? <Command size={11} /> : <span>Ctrl</span>}
-										<span>+ J)</span>
-									</span>
-								</span>
-							}
-						>
-							<Button
-								variant="ghost"
-								size="sm"
-								icon={<Terminal size={16} />}
-								onClick={onToggleTerminal}
-								disabled={Boolean(isTerminalLoading)}
-								aria-label={isTerminalOpen ? "Close terminal" : "Open terminal"}
-								className="ml-2"
-							/>
-						</Tooltip>
-					) : null}
-					{showDebugButton && onOpenDebugDialog ? (
-						<Button
-							variant="ghost"
-							size="sm"
-							icon={<Bug size={16} />}
-							onClick={onOpenDebugDialog}
-							aria-label="Debug"
-							data-testid="open-debug-dialog-button"
-							className="ml-0.5 mr-0.5"
-						/>
-					) : null}
+									<Button
+										variant="ghost"
+										size="sm"
+										icon={<Terminal size={16} />}
+										onClick={onToggleTerminal}
+										disabled={Boolean(isTerminalLoading)}
+										aria-label={isTerminalOpen ? "Close terminal" : "Open terminal"}
+										className="ml-2"
+									/>
+								</Tooltip>
+							) : null}
+							{showDebugButton && onOpenDebugDialog ? (
+								<Button
+									variant="ghost"
+									size="sm"
+									icon={<Bug size={16} />}
+									onClick={onOpenDebugDialog}
+									aria-label="Debug"
+									data-testid="open-debug-dialog-button"
+									className="ml-0.5 mr-0.5"
+								/>
+							) : null}
+						</>
+					)}
+
+					{/* Settings button — always visible */}
 					<Button
 						variant="ghost"
 						size="sm"
@@ -607,8 +655,92 @@ export function TopBar({
 						onClick={() => onOpenSettings?.()}
 						aria-label="Settings"
 						data-testid="open-settings-button"
-						className="ml-0.5 mr-0.5"
+						className={cn("ml-0.5 mr-0.5", isMobile && "min-w-[44px] min-h-[44px]")}
 					/>
+
+					{/* Mobile: overflow hamburger menu */}
+					{isMobile && hasOverflowItems ? (
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger asChild>
+								<Button
+									variant="ghost"
+									size="sm"
+									icon={<Menu size={16} />}
+									aria-label="More actions"
+									className="ml-0.5 min-w-[44px] min-h-[44px]"
+								/>
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Portal>
+								<DropdownMenu.Content
+									className="z-50 min-w-[180px] rounded-md border border-border-bright bg-surface-1 p-1 shadow-lg"
+									style={{ animation: "kb-tooltip-show 100ms ease" }}
+									sideOffset={5}
+									align="end"
+								>
+									{hasShortcutAction && selectedShortcut ? (
+										<DropdownMenu.Item
+											className="flex items-center gap-2 px-2.5 py-2.5 text-[13px] text-text-primary rounded-md data-[highlighted]:bg-surface-3 cursor-pointer"
+											disabled={Boolean(runningShortcutLabel)}
+											onSelect={() => onRunShortcut?.(selectedShortcut.label)}
+										>
+											{runningShortcutLabel ? <Spinner size={14} /> : <SelectedShortcutIcon size={14} />}
+											<span>{selectedShortcut.label}</span>
+										</DropdownMenu.Item>
+									) : null}
+									{hasCreateShortcutAction ? (
+										<DropdownMenu.Item
+											className="flex items-center gap-2 px-2.5 py-2.5 text-[13px] text-text-primary rounded-md data-[highlighted]:bg-surface-3 cursor-pointer"
+											onSelect={handleOpenCreateShortcutDialog}
+										>
+											<Play size={14} />
+											<span>Run</span>
+										</DropdownMenu.Item>
+									) : null}
+									{hasTerminalAction ? (
+										<DropdownMenu.Item
+											className="flex items-center gap-2 px-2.5 py-2.5 text-[13px] text-text-primary rounded-md data-[highlighted]:bg-surface-3 cursor-pointer"
+											disabled={Boolean(isTerminalLoading)}
+											onSelect={onToggleTerminal}
+										>
+											<Terminal size={14} />
+											<span>{isTerminalOpen ? "Close terminal" : "Open terminal"}</span>
+										</DropdownMenu.Item>
+									) : null}
+									{hasDebugAction ? (
+										<DropdownMenu.Item
+											className="flex items-center gap-2 px-2.5 py-2.5 text-[13px] text-text-primary rounded-md data-[highlighted]:bg-surface-3 cursor-pointer"
+											onSelect={onOpenDebugDialog}
+										>
+											<Bug size={14} />
+											<span>Debug</span>
+										</DropdownMenu.Item>
+									) : null}
+									{/* Show items hidden from the left side on mobile */}
+									{(workspaceHint || runtimeHint) && !hideProjectDependentActions ? (
+										<>
+											<DropdownMenu.Separator className="h-px bg-border my-1" />
+											{workspaceHint ? (
+												<DropdownMenu.Item
+													className="flex items-center gap-2 px-2.5 py-2.5 text-[13px] text-text-secondary rounded-md data-[highlighted]:bg-surface-3 cursor-default"
+													onSelect={(e) => e.preventDefault()}
+												>
+													<span>{workspaceHint}</span>
+												</DropdownMenu.Item>
+											) : null}
+											{runtimeHint ? (
+												<DropdownMenu.Item
+													className="flex items-center gap-2 px-2.5 py-2.5 text-[13px] text-status-orange rounded-md data-[highlighted]:bg-surface-3 cursor-pointer"
+													onSelect={() => onOpenSettings?.()}
+												>
+													<span>{runtimeHint}</span>
+												</DropdownMenu.Item>
+											) : null}
+										</>
+									) : null}
+								</DropdownMenu.Content>
+							</DropdownMenu.Portal>
+						</DropdownMenu.Root>
+					) : null}
 				</div>
 			</nav>
 			<Dialog
