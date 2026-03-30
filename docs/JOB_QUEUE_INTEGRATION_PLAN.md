@@ -1007,9 +1007,9 @@ A detail panel replacing the normal chat/terminal view for workflow cards:
 
 ### Progress
 
-- [ ] 4.1 — Define `RuntimeWorkflowPolicy` and `RuntimeWorkflowState` schemas
-- [ ] 4.2 — Add workflow fields to board card schema
-- [ ] 4.3 — Create `planner-step.sh` workflow orchestration script
+- [x] 4.1 — `runtimeWorkflowPolicySchema` + `runtimeWorkflowStateSchema` exported from `api-contract.ts`
+- [x] 4.2 — `workflowPolicy` + `workflowState` nullable optional fields added to `runtimeBoardCardSchema`
+- [x] 4.3 — `scripts/workflows/planner-step.sh`: policy-gated iterating step; reads state/policy JSON, writes plan/exec/verify artifacts to `.kanban-workflows/<taskId>/iter-N/`, self-reschedules via `job_queue schedule`
 - [ ] 4.4 — Add `kanban task update-workflow` CLI command
 - [ ] 4.5 — Add `startWorkflow`, `pauseWorkflow`, `resumeWorkflow`, `stopWorkflow` TRPC endpoints
 - [ ] 4.6 — Create `WorkflowCard` UI component with progress display

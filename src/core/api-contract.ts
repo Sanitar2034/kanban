@@ -87,6 +87,54 @@ export const runtimeTaskImageSchema = z.object({
 });
 export type RuntimeTaskImage = z.infer<typeof runtimeTaskImageSchema>;
 
+// ---------------------------------------------------------------------------
+// Project 4: Multi-Step Agentic Workflow schemas
+// ---------------------------------------------------------------------------
+
+/**
+ * Policy that governs how a workflow card iterates.  Stored on the board card
+ * and written to a policy JSON file in the task's worktree for use by
+ * planner-step.sh.
+ */
+export const runtimeWorkflowPolicySchema = z.object({
+	/** Maximum number of planner iterations before the workflow stops. */
+	maxIterations: z.number().int().positive().default(10),
+	/** Hard deadline in minutes from first start.  null = no deadline. */
+	deadlineMinutes: z.number().int().positive().nullable().optional(),
+	/** Seconds between each planner iteration. */
+	intervalSeconds: z.number().int().positive().default(120),
+	/** Whether the workflow's exec step may write code changes. */
+	allowCodeEdits: z.boolean().default(false),
+	/** Whether each exec step must pass a verification step before rescheduling. */
+	requireVerification: z.boolean().default(true),
+});
+export type RuntimeWorkflowPolicy = z.infer<typeof runtimeWorkflowPolicySchema>;
+
+/** Snapshot of a workflow card's runtime progress. */
+export const runtimeWorkflowStateSchema = z.object({
+	/** Current iteration number (0 = not started). */
+	iteration: z.number().int().nonnegative(),
+	/** Lifecycle status of the workflow. */
+	status: z.enum(["pending", "running", "paused", "completed", "stopped"]),
+	/** Unix-ms of the most recently completed step. */
+	lastStepAt: z.number().nullable(),
+	/** Unix-ms when the next step is scheduled to run. */
+	nextDueAt: z.number().nullable(),
+	/** Job-queue job ID for the currently scheduled step, if any. */
+	currentJobId: z.string().nullable(),
+	/** Per-iteration artifact records written by planner-step.sh. */
+	artifacts: z.array(
+		z.object({
+			iteration: z.number().int().nonnegative(),
+			type: z.enum(["plan", "exec", "verify"]),
+			/** Path relative to the workspace root. */
+			path: z.string(),
+			createdAt: z.number(),
+		}),
+	),
+});
+export type RuntimeWorkflowState = z.infer<typeof runtimeWorkflowStateSchema>;
+
 export const runtimeBoardCardSchema = z.object({
 	id: z.string(),
 	prompt: z.string(),
@@ -105,6 +153,10 @@ export const runtimeBoardCardSchema = z.object({
 	scheduledDueAt: z.number().nullable().optional(),
 	/** If true, this backlog task will be auto-started by the dependency watcher when all its dependencies are satisfied. */
 	autoStartWhenReady: z.boolean().optional(),
+	/** Policy governing a multi-step workflow card (Project 4).  null on normal task cards. */
+	workflowPolicy: runtimeWorkflowPolicySchema.nullable().optional(),
+	/** Live workflow runtime state.  null on normal task cards. */
+	workflowState: runtimeWorkflowStateSchema.nullable().optional(),
 });
 export type RuntimeBoardCard = z.infer<typeof runtimeBoardCardSchema>;
 
