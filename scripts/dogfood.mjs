@@ -366,7 +366,7 @@ async function main() {
 		}
 
 		const cliEntrypoint = resolve(repoRoot, "dist/cli.js");
-		const launchArgs = ["--port", args.port];
+		const launchArgs = ["--port", args.port, "--host", "0.0.0.0"];
 		if (skipShutdownCleanup) {
 			launchArgs.push("--skip-shutdown-cleanup");
 		}
