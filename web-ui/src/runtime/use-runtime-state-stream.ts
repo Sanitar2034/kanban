@@ -20,6 +20,8 @@ import type {
 export interface JobQueueStatus {
 	sidecarRunning: boolean;
 	health: Record<string, unknown> | null;
+	/** Batches created since the server process started (plan item 6.6). */
+	activeBatches: Array<{ batchId: string; queue: string; taskIds: string[] }>;
 }
 
 const STREAM_RECONNECT_BASE_DELAY_MS = 500;
@@ -479,6 +481,12 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 							status: {
 								sidecarRunning: payload.sidecarRunning,
 								health: payload.health as Record<string, unknown> | null,
+								activeBatches:
+									(
+										payload as unknown as {
+											activeBatches?: Array<{ batchId: string; queue: string; taskIds: string[] }>;
+										}
+									).activeBatches ?? [],
 							},
 						});
 						return;

@@ -349,6 +349,11 @@ export interface RuntimeTrpcContext {
 		pauseQueue: (input: { queue: string; reason?: string }) => Promise<{ ok: boolean }>;
 		resumeQueue: (input: { queue: string; reason?: string }) => Promise<{ ok: boolean }>;
 		replayFailed: (input?: { queue?: string; limit?: number }) => Promise<{ ok: boolean; replayed: number }>;
+		cancelTaskSchedule: (input: { taskId: string }) => Promise<{
+			ok: boolean;
+			deleted: number;
+			errors: string[];
+		}>;
 		startSidecar: () => Promise<{ ok: boolean; error?: string }>;
 		stopSidecar: () => Promise<{ ok: boolean }>;
 		createBatch: (input: { taskIds: string[]; concurrency: number; projectPath: string }) => Promise<{
@@ -736,6 +741,15 @@ export const runtimeAppRouter = t.router({
 			.input(z.object({ queue: z.string().optional(), limit: z.number().int().positive().optional() }).optional())
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.jobsApi.replayFailed(input ?? undefined);
+			}),
+		/**
+		 * cancelTaskSchedule — cancels all pending scheduled/queued jobs for a
+		 * given task's schedule and workflow queues.  Called from the UI trash flow.
+		 */
+		cancelTaskSchedule: t.procedure
+			.input(z.object({ taskId: z.string().min(1) }))
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.jobsApi.cancelTaskSchedule(input);
 			}),
 		startSidecar: t.procedure.mutation(async ({ ctx }) => {
 			return await ctx.jobsApi.startSidecar();

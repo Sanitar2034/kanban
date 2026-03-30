@@ -17,7 +17,14 @@ export interface CreateJobsApiDependencies {
 export function createJobsApi(deps: CreateJobsApiDependencies) {
 	const svc = () => deps.getJobQueueService();
 
+	/** In-memory registry of batches created this process lifetime (plan item 6.6). */
+	const activeBatchRegistry = new Map<string, { queue: string; taskIds: string[] }>();
+
 	return {
+		/** Returns all batches registered since this process started. */
+		getActiveBatches(): Array<{ batchId: string; queue: string; taskIds: string[] }> {
+			return [...activeBatchRegistry.entries()].map(([batchId, meta]) => ({ batchId, ...meta }));
+		},
 		// -----------------------------------------------------------------
 		// Status
 		// -----------------------------------------------------------------
@@ -92,6 +99,48 @@ export function createJobsApi(deps: CreateJobsApiDependencies) {
 		replayFailed: async (input?: { queue?: string; limit?: number }) => {
 			const count = await svc().replayFailed(input);
 			return { ok: true, replayed: count };
+		},
+
+		// -----------------------------------------------------------------
+		// Task lifecycle helpers
+		// -----------------------------------------------------------------
+
+		/**
+		 * cancelTaskSchedule — called when a backlog card is trashed.
+		 *
+		 * Cancels all outstanding scheduled and queued jobs for both the
+		 * per-task schedule queue (`kanban.schedule.<taskId>`) and the
+		 * per-task workflow queue (`kanban.workflow.<taskId>.plan`).
+		 *
+		 * This implements plan item 1.9 — schedule cancellation is wired into
+		 * the card trash flow so stale jobs never fire after a task is removed.
+		 *
+		 * Both pause + delete are attempted; errors are collected rather than
+		 * thrown so a partially-missing queue does not block the trash operation.
+		 */
+		cancelTaskSchedule: async (input: { taskId: string }) => {
+			const scheduleQueue = `kanban.schedule.${input.taskId}`;
+			const workflowQueue = `kanban.workflow.${input.taskId}.plan`;
+			const errors: string[] = [];
+			let deleted = 0;
+
+			for (const queue of [scheduleQueue, workflowQueue]) {
+				for (const status of ["scheduled", "queued"] as const) {
+					try {
+						// Pause first so workers do not claim new items between delete waves
+						await svc().pauseQueue(queue, "task trashed");
+					} catch {
+						// Queue may not exist yet — non-fatal
+					}
+					try {
+						deleted += await svc().deleteJobs({ queue, status });
+					} catch (err) {
+						errors.push(`${queue}[${status}]: ${err instanceof Error ? err.message : String(err)}`);
+					}
+				}
+			}
+
+			return { ok: errors.length === 0, deleted, errors };
 		},
 
 		// -----------------------------------------------------------------
@@ -313,6 +362,9 @@ export function createJobsApi(deps: CreateJobsApiDependencies) {
 				});
 				jobIds.push(jobId);
 			}
+
+			// Register for runtime state broadcast (plan item 6.6)
+			activeBatchRegistry.set(batchId, { queue, taskIds: input.taskIds });
 
 			return {
 				ok: true,

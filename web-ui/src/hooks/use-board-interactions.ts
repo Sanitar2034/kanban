@@ -69,6 +69,12 @@ interface UseBoardInteractionsInput {
 	readyForReviewNotificationsEnabled: boolean;
 	taskGitActionLoadingByTaskId: Record<string, TaskGitActionLoadingStateLike>;
 	runAutoReviewGitAction: (taskId: string, action: TaskGitAction) => Promise<boolean>;
+	/**
+	 * Optional fire-and-forget callback invoked when a card is trashed.
+	 * Cancels any outstanding scheduled or workflow jobs for the task so
+	 * stale jobs never fire after the card is removed (plan item 1.9).
+	 */
+	cancelTaskSchedule?: (taskId: string) => void;
 }
 
 export interface UseBoardInteractionsResult {
@@ -113,6 +119,7 @@ export function useBoardInteractions({
 	readyForReviewNotificationsEnabled,
 	taskGitActionLoadingByTaskId,
 	runAutoReviewGitAction,
+	cancelTaskSchedule,
 }: UseBoardInteractionsInput): UseBoardInteractionsResult {
 	const previousSessionsRef = useRef<Record<string, RuntimeTaskSessionSummary>>({});
 	const notificationPermissionPromptInFlightRef = useRef(false);
@@ -748,23 +755,27 @@ export function useBoardInteractions({
 		if (moveToTrashLoadingByIdRef.current[selectedCard.card.id]) {
 			return;
 		}
+		// Fire-and-forget: cancel any scheduled/workflow jobs before trashing (plan 1.9)
+		cancelTaskSchedule?.(selectedCard.card.id);
 		setTaskMoveToTrashLoading(selectedCard.card.id, true);
 		void requestMoveTaskToTrashWithAnimation(selectedCard.card.id, selectedCard.column.id).finally(() => {
 			setTaskMoveToTrashLoading(selectedCard.card.id, false);
 		});
-	}, [requestMoveTaskToTrashWithAnimation, selectedCard, setTaskMoveToTrashLoading]);
+	}, [cancelTaskSchedule, requestMoveTaskToTrashWithAnimation, selectedCard, setTaskMoveToTrashLoading]);
 
 	const handleMoveReviewCardToTrash = useCallback(
 		(taskId: string) => {
 			if (moveToTrashLoadingByIdRef.current[taskId]) {
 				return;
 			}
+			// Fire-and-forget: cancel any scheduled/workflow jobs before trashing (plan 1.9)
+			cancelTaskSchedule?.(taskId);
 			setTaskMoveToTrashLoading(taskId, true);
 			void requestMoveTaskToTrashWithAnimation(taskId, "review").finally(() => {
 				setTaskMoveToTrashLoading(taskId, false);
 			});
 		},
-		[requestMoveTaskToTrashWithAnimation, setTaskMoveToTrashLoading],
+		[cancelTaskSchedule, requestMoveTaskToTrashWithAnimation, setTaskMoveToTrashLoading],
 	);
 
 	const handleRestoreTaskFromTrash = useCallback(

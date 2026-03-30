@@ -399,6 +399,37 @@ export class JobQueueService {
 	}
 
 	/**
+	 * Delete jobs matching the given criteria.
+	 *
+	 * Uses `admin jobs delete --status <status> [--queue <queue>] [--limit <n>]`.
+	 * Returns the number of jobs deleted.
+	 *
+	 * Typical use: cancel all scheduled/queued jobs for a trashed task's queue.
+	 */
+	async deleteJobs(options: {
+		queue?: string;
+		status?: "scheduled" | "queued" | "failed" | "cancelled";
+		limit?: number;
+		dryRun?: boolean;
+	}): Promise<number> {
+		const status = options.status ?? "scheduled";
+		const args = ["admin", "jobs", "delete", "--status", status, "--actor", "kanban"];
+		if (options.queue) {
+			args.push("--queue", options.queue);
+		}
+		if (options.limit) {
+			args.push("--limit", String(options.limit));
+		}
+		if (options.dryRun) {
+			args.push("--dry-run");
+		}
+		const output = await this.exec(args);
+		// Output: "deleted N job(s)"  OR  "dry-run: would delete N job(s)"
+		const match = output.match(/(\d+)\s+job/);
+		return match ? Number.parseInt(match[1], 10) : 0;
+	}
+
+	/**
 	 * Replay failed jobs back to `queued` state.
 	 * Returns the number of jobs replayed.
 	 */

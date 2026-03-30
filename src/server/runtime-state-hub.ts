@@ -58,7 +58,11 @@ export interface RuntimeStateHub {
 	bumpClineSessionContextVersion: () => void;
 	broadcastTaskReadyForReview: (workspaceId: string, taskId: string) => void;
 	/** Broadcast a job_queue_status_updated message to all connected clients. */
-	broadcastJobQueueStatus: (sidecarRunning: boolean, health: Record<string, unknown> | null) => void;
+	broadcastJobQueueStatus: (
+		sidecarRunning: boolean,
+		health: Record<string, unknown> | null,
+		activeBatches?: Array<{ batchId: string; queue: string; taskIds: string[] }>,
+	) => void;
 	close: () => Promise<void>;
 }
 
@@ -340,7 +344,11 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		}
 	};
 
-	const broadcastJobQueueStatus = (sidecarRunning: boolean, health: Record<string, unknown> | null) => {
+	const broadcastJobQueueStatus = (
+		sidecarRunning: boolean,
+		health: Record<string, unknown> | null,
+		activeBatches?: Array<{ batchId: string; queue: string; taskIds: string[] }>,
+	) => {
 		if (runtimeStateClients.size === 0) {
 			return;
 		}
@@ -348,6 +356,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			type: "job_queue_status_updated" as const,
 			sidecarRunning,
 			health,
+			activeBatches: activeBatches ?? [],
 		};
 		for (const client of runtimeStateClients) {
 			sendRuntimeStateMessage(client, payload);

@@ -103,6 +103,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 					deps.runtimeStateHub.broadcastJobQueueStatus(
 						jobQueueService.isSidecarRunning(),
 						snapshot as unknown as Record<string, unknown>,
+						jobsApi.getActiveBatches(),
 					);
 				});
 			})

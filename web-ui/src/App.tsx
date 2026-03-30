@@ -61,6 +61,7 @@ import {
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
+import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
@@ -591,6 +592,12 @@ export default function App(): ReactElement {
 		readyForReviewNotificationsEnabled,
 		taskGitActionLoadingByTaskId,
 		runAutoReviewGitAction,
+		cancelTaskSchedule: currentProjectId
+			? (taskId: string) => {
+					// Fire-and-forget: cancel any pending scheduled/workflow jobs when a task is trashed (plan 1.9)
+					void getRuntimeTrpcClient(currentProjectId).jobs.cancelTaskSchedule.mutate({ taskId });
+				}
+			: undefined,
 	});
 
 	const {
