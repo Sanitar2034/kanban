@@ -7,10 +7,16 @@
  *
  * Covers plan items:
  *  0.6  — start sidecar, enqueue a job, verify it runs to completion
+ *  1.10 — schedule a command for 3s in the future, verify it stays pending then
+ *         executes and writes verifiable output (proves scheduler deferred-execution
+ *         pipeline for the "kanban task start" use case)
  *  2.9  — schedule 3 jobs with short delays, verify all complete (scheduler pipeline)
  *  5.14 — enqueue 10 jobs, verify inspect() returns accurate status counts
  */
 
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { createJobQueueHarness } from "../utilities/job-queue-harness";
@@ -47,6 +53,41 @@ describe("0.6: enqueue a job and verify it runs", () => {
 		expect(health).toBeDefined();
 		expect(typeof health).toBe("object");
 	}, 10_000);
+});
+
+// ---------------------------------------------------------------------------
+// 1.10 — Deferred execution: schedule a command for 3s, verify sentinel file
+//        exists only AFTER the delay (proves deferred execution, the core
+//        mechanism behind "kanban task start" scheduled at a future time)
+// ---------------------------------------------------------------------------
+describe("1.10: scheduled task execution — deferred pipeline", () => {
+	test("scheduled command creates sentinel file only after due time", async () => {
+		const sentinel = join(tmpdir(), `kanban-test-1.10-${Date.now()}.txt`);
+
+		// Sanity check: file doesn't exist yet.
+		expect(existsSync(sentinel)).toBe(false);
+
+		const baseline = await jq.service.inspect();
+		const baselineSucceeded = baseline.jobs.status_counts.succeeded ?? 0;
+
+		// Schedule /usr/bin/touch to create a sentinel file, due in 3 seconds.
+		// Using touch (no -c-style flags) because clap in job_queue treats
+		// dash-prefixed --arg values as unexpected flags.
+		const jobId = await jq.service.schedule({
+			command: "/usr/bin/touch",
+			args: [sentinel],
+			dueIn: "3s",
+		});
+		expect(jobId).toMatch(/\S+/);
+
+		// 0.8s after scheduling the job is still in the scheduled queue — NOT yet executed.
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		expect(existsSync(sentinel)).toBe(false);
+
+		// Now wait for the scheduler to fire the job and the worker to execute it.
+		await jq.waitForJobs(baselineSucceeded + 1, 12_000);
+		expect(existsSync(sentinel)).toBe(true);
+	}, 20_000);
 });
 
 // ---------------------------------------------------------------------------

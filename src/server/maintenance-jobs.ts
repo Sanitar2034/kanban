@@ -187,6 +187,15 @@ export async function seedProjectAutomationJobs(service: JobQueueService, runtim
 			intervalSecs: 3600,
 			queue: "kanban.maintenance",
 		},
+		{
+			// Purge automation audit events older than 30 days — runs once per day.
+			name: "purge-automation-audit",
+			script: join(scriptsDir, "purge-automation-audit.sh"),
+			args: [dbUrl, "86400", "30"],
+			dueIn: "1h",
+			intervalSecs: 86400,
+			queue: "kanban.maintenance",
+		},
 	];
 
 	for (const gs of globalScripts) {

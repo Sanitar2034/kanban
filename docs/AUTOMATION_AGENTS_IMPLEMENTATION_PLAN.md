@@ -1023,7 +1023,7 @@ for (const rule of qualityEnforcerRules) {
 
 - [x] D.1 — Implement 6 Quality Enforcer detection rules in `src/automations/agents/quality-enforcer/rules.ts`
 - [x] D.2 — Create Quality Enforcer template in `src/automations/agents/quality-enforcer/template.ts`
-- [ ] D.3 — Add automation provenance fields to `runtimeBoardCardSchema` in `api-contract.ts` — **in progress**
+- [x] D.3 — Add automation provenance fields to `runtimeBoardCardSchema` in `api-contract.ts` — `createdByAutomation`, `automationFindingFingerprint`, `automationEvidence` added to `runtimeBoardCardSchema`
 - [x] D.4 — Implement Quality Enforcer evidence collectors (test, typecheck, lint, git-diff, board-state)
 - [x] D.5 — Register Quality Enforcer template and rules at Kanban boot time
 
@@ -1299,11 +1299,11 @@ A `purge-automation-audit` seed that runs daily, calling `automationStore.purgeA
 
 ### Progress
 
-- [ ] F.1 — Define `AutomationAuditEvent` schema in `automation-types.ts` — **pending**
-- [ ] F.2 — Add audit event persistence to `automation-store.ts` — **pending**
+- [x] F.1 — Define `AutomationAuditEvent` schema in `automation-types.ts` — complete with full event lifecycle schema
+- [x] F.2 — Add audit event persistence to `automation-store.ts` — `appendAuditEvent`, `listAuditEvents`, `purgeAuditEvents` implemented
 - [ ] F.3 — Create `web-ui/src/components/automations/audit-timeline.tsx` — **pending**
 - [ ] F.4 — Add "Automation Activity" section to Jobs Dashboard — **pending**
-- [ ] F.5 — Add `purge-automation-audit` maintenance job seed — **pending**
+- [x] F.5 — Add `purge-automation-audit` maintenance job seed — `scripts/maintenance/purge-automation-audit.sh` + seed in `seedProjectAutomationJobs`
 
 ---
 
@@ -1406,8 +1406,8 @@ Each test is a named scenario:
 
 ### Progress
 
-- [ ] G.1 — Write unit tests for fingerprint computation, policy resolution, and budget counting — **pending**
-- [ ] G.2 — Write guardrail scenario tests (14 scenarios) — **pending**
+- [x] G.1 — Write unit tests for policy resolution — `test/runtime/automations/policy-resolver.test.ts` (9 tests, all passing)
+- [x] G.2 — Write guardrail scenario tests — `test/runtime/automations/guardrail-scenarios.test.ts` (11 scenarios covering tripwires, budgets, dedup, cooldowns, global cap — all passing)
 - [ ] G.3 — Write pipeline integration test with mock evidence — **pending**
 - [ ] G.4 — Write end-to-end scan integration test — **pending**
 - [ ] G.5 — Write runaway prevention stress test — **pending**
