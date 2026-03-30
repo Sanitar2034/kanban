@@ -1,5 +1,5 @@
 import type { DropResult } from "@hello-pangea/dnd";
-import { GitCompareArrows, Maximize2, Minimize2, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, GitCompareArrows, Maximize2, Minimize2, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -177,6 +177,47 @@ function DiffToolbar({
 				className="ml-auto h-5"
 				aria-label={isExpanded ? "Collapse split diff view" : "Expand split diff view"}
 			/>
+		</div>
+	);
+}
+
+function AutomationEvidenceBanner({ card }: { card: BoardCard }): React.ReactElement {
+	const [isExpanded, setIsExpanded] = useState(false);
+	const evidence = card.automationEvidence;
+	const evidenceEntries = evidence ? Object.entries(evidence) : [];
+	return (
+		<div
+			style={{
+				flexShrink: 0,
+				borderBottom: "1px solid var(--color-border)",
+				background: "var(--color-surface-1)",
+				fontSize: 12,
+			}}
+		>
+			<button
+				type="button"
+				className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-text-secondary hover:bg-surface-3"
+				onClick={() => setIsExpanded((v) => !v)}
+				aria-expanded={isExpanded}
+			>
+				<Bot size={12} className="shrink-0 text-accent" />
+				<span className="flex-1 truncate font-medium text-text-secondary">Created by automation agent</span>
+				{isExpanded ? (
+					<ChevronDown size={12} className="shrink-0" />
+				) : (
+					<ChevronRight size={12} className="shrink-0" />
+				)}
+			</button>
+			{isExpanded && evidenceEntries.length > 0 ? (
+				<div className="px-3 pb-2">
+					{evidenceEntries.map(([key, value]) => (
+						<div key={key} className="mt-1">
+							<span className="font-mono text-text-tertiary">{key}: </span>
+							<span className="font-mono text-text-secondary">{String(value).slice(0, 200)}</span>
+						</div>
+					))}
+				</div>
+			) : null}
 		</div>
 	);
 }
@@ -573,76 +614,80 @@ export function CardDetailView({
 							<div
 								style={{
 									display: isDiffExpanded ? "none" : "flex",
+									flexDirection: "column",
 									width: agentPanelPercent,
 									minWidth: 0,
 									minHeight: 0,
 								}}
 							>
-								{showClineAgentChatPanel ? (
-									<ClineAgentChatPanel
-										ref={clineAgentChatPanelRef}
-										taskId={selection.card.id}
-										summary={sessionSummary}
-										taskColumnId={selection.column.id}
-										defaultMode={selection.card.startInPlanMode ? "plan" : "act"}
-										workspaceId={currentProjectId}
-										runtimeConfig={runtimeConfig}
-										onClineSettingsSaved={onClineSettingsSaved}
-										onSendMessage={onSendClineChatMessage}
-										onCancelTurn={onCancelClineChatTurn}
-										onLoadMessages={onLoadClineChatMessages}
-										incomingMessages={streamedClineChatMessages}
-										incomingMessage={latestClineChatMessage}
-										onCommit={onAgentCommitTask ? () => onAgentCommitTask(selection.card.id) : undefined}
-										onOpenPr={onAgentOpenPrTask ? () => onAgentOpenPrTask(selection.card.id) : undefined}
-										isCommitLoading={agentCommitTaskLoadingById?.[selection.card.id] ?? false}
-										isOpenPrLoading={agentOpenPrTaskLoadingById?.[selection.card.id] ?? false}
-										showMoveToTrash={showMoveToTrashActions}
-										onMoveToTrash={onMoveToTrash}
-										isMoveToTrashLoading={isMoveToTrashLoading}
-										onCancelAutomaticAction={
-											selection.card.autoReviewEnabled === true && onCancelAutomaticTaskAction
-												? () => onCancelAutomaticTaskAction(selection.card.id)
-												: undefined
-										}
-										cancelAutomaticActionLabel={
-											selection.card.autoReviewEnabled === true
-												? getTaskAutoReviewCancelButtonLabel(selection.card.autoReviewMode)
-												: null
-										}
-									/>
-								) : (
-									<AgentTerminalPanel
-										taskId={selection.card.id}
-										workspaceId={currentProjectId}
-										terminalEnabled={isTaskTerminalEnabled}
-										summary={sessionSummary}
-										onSummary={onSessionSummary}
-										onCommit={onAgentCommitTask ? () => onAgentCommitTask(selection.card.id) : undefined}
-										onOpenPr={onAgentOpenPrTask ? () => onAgentOpenPrTask(selection.card.id) : undefined}
-										isCommitLoading={agentCommitTaskLoadingById?.[selection.card.id] ?? false}
-										isOpenPrLoading={agentOpenPrTaskLoadingById?.[selection.card.id] ?? false}
-										showSessionToolbar={false}
-										autoFocus
-										showMoveToTrash={showMoveToTrashActions}
-										onMoveToTrash={onMoveToTrash}
-										isMoveToTrashLoading={isMoveToTrashLoading}
-										onCancelAutomaticAction={
-											selection.card.autoReviewEnabled === true && onCancelAutomaticTaskAction
-												? () => onCancelAutomaticTaskAction(selection.card.id)
-												: undefined
-										}
-										cancelAutomaticActionLabel={
-											selection.card.autoReviewEnabled === true
-												? getTaskAutoReviewCancelButtonLabel(selection.card.autoReviewMode)
-												: null
-										}
-										panelBackgroundColor={TERMINAL_THEME_COLORS.surfacePrimary}
-										terminalBackgroundColor={TERMINAL_THEME_COLORS.surfacePrimary}
-										showRightBorder={false}
-										taskColumnId={selection.column.id}
-									/>
-								)}
+								{selection.card.createdByAutomation ? <AutomationEvidenceBanner card={selection.card} /> : null}
+								<div style={{ display: "flex", flex: "1 1 0", minHeight: 0 }}>
+									{showClineAgentChatPanel ? (
+										<ClineAgentChatPanel
+											ref={clineAgentChatPanelRef}
+											taskId={selection.card.id}
+											summary={sessionSummary}
+											taskColumnId={selection.column.id}
+											defaultMode={selection.card.startInPlanMode ? "plan" : "act"}
+											workspaceId={currentProjectId}
+											runtimeConfig={runtimeConfig}
+											onClineSettingsSaved={onClineSettingsSaved}
+											onSendMessage={onSendClineChatMessage}
+											onCancelTurn={onCancelClineChatTurn}
+											onLoadMessages={onLoadClineChatMessages}
+											incomingMessages={streamedClineChatMessages}
+											incomingMessage={latestClineChatMessage}
+											onCommit={onAgentCommitTask ? () => onAgentCommitTask(selection.card.id) : undefined}
+											onOpenPr={onAgentOpenPrTask ? () => onAgentOpenPrTask(selection.card.id) : undefined}
+											isCommitLoading={agentCommitTaskLoadingById?.[selection.card.id] ?? false}
+											isOpenPrLoading={agentOpenPrTaskLoadingById?.[selection.card.id] ?? false}
+											showMoveToTrash={showMoveToTrashActions}
+											onMoveToTrash={onMoveToTrash}
+											isMoveToTrashLoading={isMoveToTrashLoading}
+											onCancelAutomaticAction={
+												selection.card.autoReviewEnabled === true && onCancelAutomaticTaskAction
+													? () => onCancelAutomaticTaskAction(selection.card.id)
+													: undefined
+											}
+											cancelAutomaticActionLabel={
+												selection.card.autoReviewEnabled === true
+													? getTaskAutoReviewCancelButtonLabel(selection.card.autoReviewMode)
+													: null
+											}
+										/>
+									) : (
+										<AgentTerminalPanel
+											taskId={selection.card.id}
+											workspaceId={currentProjectId}
+											terminalEnabled={isTaskTerminalEnabled}
+											summary={sessionSummary}
+											onSummary={onSessionSummary}
+											onCommit={onAgentCommitTask ? () => onAgentCommitTask(selection.card.id) : undefined}
+											onOpenPr={onAgentOpenPrTask ? () => onAgentOpenPrTask(selection.card.id) : undefined}
+											isCommitLoading={agentCommitTaskLoadingById?.[selection.card.id] ?? false}
+											isOpenPrLoading={agentOpenPrTaskLoadingById?.[selection.card.id] ?? false}
+											showSessionToolbar={false}
+											autoFocus
+											showMoveToTrash={showMoveToTrashActions}
+											onMoveToTrash={onMoveToTrash}
+											isMoveToTrashLoading={isMoveToTrashLoading}
+											onCancelAutomaticAction={
+												selection.card.autoReviewEnabled === true && onCancelAutomaticTaskAction
+													? () => onCancelAutomaticTaskAction(selection.card.id)
+													: undefined
+											}
+											cancelAutomaticActionLabel={
+												selection.card.autoReviewEnabled === true
+													? getTaskAutoReviewCancelButtonLabel(selection.card.autoReviewMode)
+													: null
+											}
+											panelBackgroundColor={TERMINAL_THEME_COLORS.surfacePrimary}
+											terminalBackgroundColor={TERMINAL_THEME_COLORS.surfacePrimary}
+											showRightBorder={false}
+											taskColumnId={selection.column.id}
+										/>
+									)}
+								</div>
 							</div>
 							{!isDiffExpanded ? (
 								<div

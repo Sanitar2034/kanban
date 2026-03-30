@@ -73,6 +73,12 @@ export interface BoardCard {
 			createdAt: number;
 		}>;
 	} | null;
+	/** Automation agent provenance — set when this card was created by an
+	 *  automation agent.  Used to show the Bot badge and to prevent
+	 *  self-referencing loops in the guardrail system. */
+	createdByAutomation?: string | null;
+	automationFindingFingerprint?: string | null;
+	automationEvidence?: Record<string, string> | null;
 }
 
 export interface BoardColumn {

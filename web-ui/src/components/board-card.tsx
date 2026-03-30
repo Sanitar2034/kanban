@@ -1,7 +1,7 @@
 import { Draggable } from "@hello-pangea/dnd";
 import { formatClineToolCallLabel } from "@runtime-cline-tool-call-display";
 import { buildTaskWorktreeDisplayPath } from "@runtime-task-worktree-path";
-import { AlertCircle, GitBranch, Play, RotateCcw, Trash2 } from "lucide-react";
+import { AlertCircle, Bot, GitBranch, Play, RotateCcw, Trash2 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -129,7 +129,7 @@ function getCardSessionActivity(summary: RuntimeTaskSessionSummary | undefined):
 	const activityText = hookActivity?.activityText?.trim();
 	const toolName = hookActivity?.toolName?.trim() ?? null;
 	const toolInputSummary = hookActivity?.toolInputSummary?.trim() ?? null;
-	const source = hookActivity?.source?.trim() ?? null;
+	const _source = hookActivity?.source?.trim() ?? null;
 	const finalMessage = hookActivity?.finalMessage?.trim();
 	const hookEventName = hookActivity?.hookEventName?.trim() ?? null;
 	if (summary.state === "awaiting_review" && finalMessage) {
@@ -498,6 +498,13 @@ export function BoardCard({
 						>
 							<div className="flex items-center gap-2" style={{ minHeight: 24 }}>
 								{statusMarker ? <div className="inline-flex items-center">{statusMarker}</div> : null}
+								{card.createdByAutomation ? (
+									<Tooltip content="Created by automation agent" side="top">
+										<span className="inline-flex items-center shrink-0 text-text-tertiary">
+											<Bot size={12} />
+										</span>
+									</Tooltip>
+								) : null}
 								<div ref={titleContainerRef} className="flex-1 min-w-0">
 									<p
 										ref={titleRef}
