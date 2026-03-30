@@ -8,6 +8,7 @@ import { getRuntimeAgentCatalogEntry, getRuntimeLaunchSupportedAgentCatalog } fr
 import { areRuntimeProjectShortcutsEqual } from "@runtime-shortcuts";
 import { Check, ChevronDown, Circle, CircleDot, ExternalLink, Plus, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MaintenanceSettings } from "@/components/maintenance-settings";
 import { ClineSetupSection } from "@/components/shared/cline-setup-section";
 import {
 	getRuntimeShortcutIconComponent,
@@ -839,6 +840,12 @@ export function RuntimeSettingsDialog({
 				{shortcuts.length === 0 ? (
 					<p className="text-text-secondary text-[13px]">No shortcuts configured.</p>
 				) : null}
+
+				<h6 className="font-semibold text-text-primary m-0 mt-6 mb-2">Maintenance Jobs</h6>
+				<p className="text-text-secondary text-[13px] mt-0 mb-2">
+					Trigger a maintenance job to run immediately in addition to its regular schedule.
+				</p>
+				<MaintenanceSettings workspaceId={workspaceId} />
 
 				{saveError ? (
 					<div className="flex gap-2 rounded-md border border-status-red/30 bg-status-red/5 p-3 text-[13px] mt-3">

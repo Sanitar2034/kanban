@@ -46,6 +46,33 @@ export interface BoardCard {
 	baseRef: string;
 	createdAt: number;
 	updatedAt: number;
+	/** Plan item 3.3 — auto-start when all dependencies are trashed. */
+	autoStartWhenReady?: boolean;
+	/** Plan item 1.4 — schedule metadata */
+	scheduledAt?: number | null;
+	scheduledJobId?: string | null;
+	scheduledDueAt?: number | null;
+	/** Plan item 4.1-4.2 — workflow card data */
+	workflowPolicy?: {
+		maxIterations: number;
+		intervalSeconds: number;
+		allowCodeEdits: boolean;
+		requireVerification: boolean;
+		deadlineMinutes?: number | null;
+	} | null;
+	workflowState?: {
+		iteration: number;
+		status: "pending" | "running" | "paused" | "completed" | "stopped";
+		lastStepAt: number | null;
+		nextDueAt: number | null;
+		currentJobId: string | null;
+		artifacts: Array<{
+			iteration: number;
+			type: "plan" | "exec" | "verify";
+			path: string;
+			createdAt: number;
+		}>;
+	} | null;
 }
 
 export interface BoardColumn {

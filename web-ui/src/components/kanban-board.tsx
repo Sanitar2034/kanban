@@ -9,7 +9,7 @@ import {
 	type SnapDragActions,
 } from "@hello-pangea/dnd";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BoardColumn } from "@/components/board-column";
 import { DependencyOverlay } from "@/components/dependencies/dependency-overlay";
@@ -363,6 +363,18 @@ export function KanbanBoard({
 		programmaticCardMoveInFlight?.toColumnId ??
 		(activeDragTaskId !== null && activeDragSourceColumnId === "backlog" ? "in_progress" : null);
 
+	/** Set of task IDs whose cards have autoStartWhenReady=true (plan item 3.6).
+	 *  Passed to DependencyOverlay to render lightning-bolt badges on matching arrows. */
+	const autoStartTaskIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const column of data.columns) {
+			for (const card of column.cards) {
+				if (card.autoStartWhenReady) ids.add(card.id);
+			}
+		}
+		return ids;
+	}, [data.columns]);
+
 	return (
 		<DragDropContext
 			onBeforeCapture={handleBeforeCapture}
@@ -419,6 +431,7 @@ export function KanbanBoard({
 					activeTaskEffectiveColumnId={activeTaskEffectiveColumnId}
 					isMotionActive={activeDragTaskId !== null || programmaticCardMoveInFlight !== null}
 					onDeleteDependency={onDeleteDependency}
+					autoStartTaskIds={autoStartTaskIds}
 				/>
 			</section>
 		</DragDropContext>

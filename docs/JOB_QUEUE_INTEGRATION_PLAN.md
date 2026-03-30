@@ -741,7 +741,7 @@ The settings are stored in Kanban's runtime config and used when seeding jobs on
 - [x] 2.5 — `seedMaintenanceJobs` implemented in `src/server/maintenance-jobs.ts` (idempotent, checks for existing pending/running jobs per queue before seeding)
 - [x] 2.6 — Called from `runtime-server.ts` after sidecar `startSidecar()` resolves
 - [x] 2.7 — Add maintenance job config to runtime config schema
-- [ ] 2.8 — Create `MaintenanceSettings` component in settings UI
+- [x] 2.8 — `MaintenanceSettings` component in `RuntimeSettingsDialog`: lists git-fetch-all / stale-session-checker / worktree-cleanup with "Run Now" buttons; calls `jobs.triggerMaintenance` TRPC procedure
 - [ ] 2.9 — Test: verify maintenance jobs self-reschedule correctly across 3 iterations
 
 ---
@@ -829,9 +829,9 @@ In the board view, when a card has dependencies and `autoStartWhenReady` is true
 - [x] 3.2 — `scripts/maintenance/dependency-auto-start.sh`: polls `list-ready`, starts up to CONCURRENCY_LIMIT tasks, self-reschedules
 - [x] 3.3 — `autoStartWhenReady: z.boolean().optional()` added to `runtimeBoardCardSchema` in `api-contract.ts`
 - [x] 1.5 — `scripts/maintenance/schedule-task-guard.sh`: checks task is still in backlog before starting (prevents double-start on scheduled tasks)
-- [ ] 3.4 — Add auto-start toggle to backlog card dependency UI
+- [x] 3.4 — Add auto-start toggle to backlog card dependency UI
 - [x] 3.5 — `seedProjectAutomationJobs()` in `maintenance-jobs.ts`: seeds `dependency-auto-start.sh` for each indexed project + global git-fetch-all / stale-session-checker / worktree-cleanup; called from `runtime-server.ts` after `seedMaintenanceJobs`
-- [ ] 3.6 — Add pipeline arrow visualization between dependent cards
+- [x] 3.6 — `DependencyOverlay` extended with `autoStartTaskIds` prop: lightning-bolt badge rendered at midpoint of each dependency arrow whose `fromTaskId` has `autoStartWhenReady=true`; `KanbanBoard` computes and passes the set; CSS `.kb-dependency-autostart-badge` added
 - [ ] 3.7 — Test: create A→B dependency chain, trash B, verify A auto-starts
 
 ---
@@ -1208,12 +1208,12 @@ Shows at the top of the board when a batch is active:
 ### Progress
 
 - [x] 6.1 — `createBatch` in `jobs-api.ts` + TRPC procedure in `app-router.ts`; `kanban task batch --task-ids --concurrency --project-path` CLI command in `task.ts`
-- [ ] 6.2 — Add multi-select interaction to backlog cards (shift-click, cmd-click)
+- [x] 6.2 — Add multi-select interaction to backlog cards (shift-click, cmd-click)
 - [x] 6.3 — `web-ui/src/components/batch-action-bar.tsx`: floating bottom bar; Run Batch + Trash All + clear; renders when ≥2 selected
 - [x] 6.4 — `web-ui/src/components/batch-config-dialog.tsx`: drag-to-reorder priority list, concurrency slider (1-4), calls onStart callback
 - [x] 6.5 — Create `BatchProgressIndicator` component
 - [x] 6.6 — Add batch metadata tracking (batchId → taskIds mapping in runtime state)
-- [ ] 6.7 — Add "Pause Batch" and "Cancel Remaining" controls
+- [x] 6.7 — Add "Pause Batch" and "Cancel Remaining" controls
 - [ ] 6.8 — Test: select 4 backlog tasks, run batch with concurrency 2, verify 2 run at a time
 
 ---

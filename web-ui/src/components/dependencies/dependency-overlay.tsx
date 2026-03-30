@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { X, Zap } from "lucide-react";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -423,6 +423,7 @@ export function DependencyOverlay({
 	activeTaskEffectiveColumnId,
 	isMotionActive = false,
 	onDeleteDependency,
+	autoStartTaskIds,
 }: {
 	containerRef: RefObject<HTMLElement>;
 	dependencies: BoardDependency[];
@@ -431,6 +432,10 @@ export function DependencyOverlay({
 	activeTaskEffectiveColumnId?: BoardColumnId | null;
 	isMotionActive?: boolean;
 	onDeleteDependency?: (dependencyId: string) => void;
+	/** Set of task IDs whose cards have `autoStartWhenReady=true`.  When set,
+	 *  a lightning-bolt badge is rendered at the midpoint of each matching
+	 *  dependency arrow (plan item 3.6). */
+	autoStartTaskIds?: ReadonlySet<string>;
 }): React.ReactElement | null {
 	const [layout, setLayout] = useState<DependencyLayout>(() => createEmptyLayout());
 	const [hoveredDependencyId, setHoveredDependencyId] = useState<string | null>(null);
@@ -1007,6 +1012,20 @@ export function DependencyOverlay({
 					<X size={10} color="var(--color-text-primary)" />
 				</div>
 			) : null}
+			{autoStartTaskIds && autoStartTaskIds.size > 0
+				? renderedDependencies
+						.filter((rendered) => !rendered.isTransient && autoStartTaskIds.has(rendered.dependency.fromTaskId))
+						.map((rendered) => (
+							<div
+								key={`${rendered.dependency.id}-autostart`}
+								className="kb-dependency-autostart-badge"
+								style={{ left: rendered.midpointX, top: rendered.midpointY }}
+								title="Auto-starts when dependency completes"
+							>
+								<Zap size={9} />
+							</div>
+						))
+				: null}
 		</>
 	);
 }

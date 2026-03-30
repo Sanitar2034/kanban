@@ -380,6 +380,9 @@ export interface RuntimeTrpcContext {
 			reason?: string;
 		}) => Promise<{ ok: boolean; queue: string }>;
 		stopWorkflow: (input: { taskId: string; projectPath: string }) => Promise<{ ok: boolean; queue: string }>;
+		triggerMaintenance: (input: {
+			scriptType: "git-fetch-all" | "stale-session-checker" | "worktree-cleanup";
+		}) => Promise<{ ok: boolean; jobId?: string; error?: string }>;
 	};
 }
 
@@ -793,6 +796,21 @@ export const runtimeAppRouter = t.router({
 			.input(z.object({ taskId: z.string().min(1), projectPath: z.string().min(1) }))
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.jobsApi.stopWorkflow(input);
+			}),
+		/**
+		 * triggerMaintenance — immediately enqueues a single run of a named
+		 * maintenance script (plan item 2.8).  The script self-reschedules its
+		 * next periodic run on completion so triggering it once does not break
+		 * the ongoing schedule.
+		 */
+		triggerMaintenance: t.procedure
+			.input(
+				z.object({
+					scriptType: z.enum(["git-fetch-all", "stale-session-checker", "worktree-cleanup"]),
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.jobsApi.triggerMaintenance(input);
 			}),
 	}),
 });

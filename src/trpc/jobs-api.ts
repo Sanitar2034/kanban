@@ -8,6 +8,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RuntimeWorkflowPolicy, RuntimeWorkflowState } from "../core/api-contract";
+import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import type { JobQueueService } from "../server/job-queue-service";
 
 export interface CreateJobsApiDependencies {
@@ -374,6 +375,40 @@ export function createJobsApi(deps: CreateJobsApiDependencies) {
 				taskCount: input.taskIds.length,
 				concurrency: input.concurrency,
 			};
+		},
+
+		/**
+		 * Immediately enqueue a single maintenance script run (plan item 2.8).
+		 *
+		 * Schedules the named script on the `kanban.maintenance` queue with
+		 * `maxAttempts: 1` so it runs exactly once.  The script will self-reschedule
+		 * its next periodic run as usual once it completes.
+		 */
+		triggerMaintenance: async (input: {
+			scriptType: "git-fetch-all" | "stale-session-checker" | "worktree-cleanup";
+		}): Promise<{ ok: boolean; jobId?: string; error?: string }> => {
+			const service = svc();
+			if (!service.isAvailable()) {
+				return { ok: false, error: "Job queue is not available." };
+			}
+			// Scripts live at <package-root>/scripts/maintenance/ regardless of
+			// whether we are running from dist/ or src/.
+			const scriptsDir = join(__dirname, "..", "..", "scripts", "maintenance");
+			const scriptPath = join(scriptsDir, `${input.scriptType}.sh`);
+			const runtimeUrl = getKanbanRuntimeOrigin();
+			const dbUrl = service.getDatabaseUrl();
+			try {
+				const jobId = await service.enqueue({
+					command: scriptPath,
+					args: [runtimeUrl, dbUrl, "300", "1"],
+					queue: "kanban.maintenance",
+					maxAttempts: 1,
+				});
+				return { ok: true, jobId };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, error: message };
+			}
 		},
 	};
 }
