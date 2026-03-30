@@ -537,6 +537,60 @@ async function getTaskQueueStatus(input: { cwd: string; projectPath?: string }):
 	};
 }
 
+async function updateWorkflowState(input: {
+	cwd: string;
+	taskId: string;
+	projectPath?: string;
+	status?: string;
+	iteration?: number;
+	nextDueAt?: number;
+	currentJobId?: string;
+}): Promise<JsonRecord> {
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const updated = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (runtimeState) => {
+		const taskRecord = findTaskRecord(runtimeState, input.taskId);
+		if (!taskRecord) {
+			throw new Error(`Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`);
+		}
+
+		const existing = taskRecord.task.workflowState ?? null;
+		const nextWorkflowState = existing
+			? {
+					...existing,
+					...(input.status !== undefined
+						? { status: input.status as "pending" | "running" | "paused" | "completed" | "stopped" }
+						: {}),
+					...(input.iteration !== undefined ? { iteration: input.iteration } : {}),
+					...(input.nextDueAt !== undefined ? { nextDueAt: input.nextDueAt } : {}),
+					...(input.currentJobId !== undefined ? { currentJobId: input.currentJobId || null } : {}),
+				}
+			: null;
+
+		const updatedTask = updateTask(runtimeState.board, input.taskId, {
+			prompt: taskRecord.task.prompt,
+			baseRef: taskRecord.task.baseRef,
+			startInPlanMode: taskRecord.task.startInPlanMode,
+			autoReviewEnabled: taskRecord.task.autoReviewEnabled === true,
+			autoReviewMode: taskRecord.task.autoReviewMode ?? "commit",
+			workflowState: nextWorkflowState,
+		});
+
+		if (!updatedTask.updated || !updatedTask.task) {
+			throw new Error(`Task "${input.taskId}" could not be updated.`);
+		}
+
+		const nextState = { ...runtimeState, board: updatedTask.board };
+		return {
+			board: updatedTask.board,
+			value: formatTaskRecord(nextState, updatedTask.task, taskRecord.columnId),
+		};
+	});
+
+	return { ok: true, task: updated, workspacePath: workspaceRepoPath };
+}
+
 async function batchTasks(input: {
 	cwd: string;
 	taskIds: string[];
@@ -1246,6 +1300,39 @@ export function registerTaskCommand(program: Command): void {
 					}),
 			);
 		});
+
+	task
+		.command("update-workflow-state")
+		.description("Update the live workflow state on a workflow card (called by planner-step.sh).")
+		.requiredOption("--task-id <id>", "Task ID.")
+		.option("--status <status>", "Workflow status: pending | running | paused | completed | stopped.")
+		.option("--iteration <n>", "Current iteration number.")
+		.option("--next-due-at <ms>", "Unix-ms when the next step is scheduled.")
+		.option("--current-job-id <id>", "Job queue job ID for the next scheduled step (empty string to clear).")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(
+			async (options: {
+				taskId: string;
+				status?: string;
+				iteration?: string;
+				nextDueAt?: string;
+				currentJobId?: string;
+				projectPath?: string;
+			}) => {
+				await runTaskCommand(
+					async () =>
+						await updateWorkflowState({
+							cwd: process.cwd(),
+							taskId: options.taskId,
+							projectPath: options.projectPath,
+							status: options.status,
+							iteration: options.iteration !== undefined ? Number(options.iteration) : undefined,
+							nextDueAt: options.nextDueAt !== undefined ? Number(options.nextDueAt) : undefined,
+							currentJobId: options.currentJobId,
+						}),
+				);
+			},
+		);
 
 	task
 		.command("batch")

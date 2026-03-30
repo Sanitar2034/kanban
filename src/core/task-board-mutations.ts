@@ -5,6 +5,8 @@ import type {
 	RuntimeBoardDependency,
 	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
+	RuntimeWorkflowPolicy,
+	RuntimeWorkflowState,
 } from "./api-contract";
 import { createUniqueTaskId } from "./task-id";
 
@@ -25,6 +27,10 @@ export interface RuntimeUpdateTaskInput {
 	autoReviewMode?: RuntimeTaskAutoReviewMode;
 	images?: RuntimeTaskImage[];
 	baseRef: string;
+	/** Optional: update the workflow policy on the card (Project 4). */
+	workflowPolicy?: RuntimeWorkflowPolicy | null;
+	/** Optional: update the live workflow state on the card (Project 4). */
+	workflowState?: RuntimeWorkflowState | null;
 }
 
 function normalizeTaskAutoReviewMode(value: RuntimeTaskAutoReviewMode | null | undefined): RuntimeTaskAutoReviewMode {
@@ -599,6 +605,8 @@ export function updateTask(
 				images: input.images === undefined ? card.images : cloneTaskImages(input.images),
 				baseRef,
 				updatedAt: now,
+				...(input.workflowPolicy !== undefined ? { workflowPolicy: input.workflowPolicy } : {}),
+				...(input.workflowState !== undefined ? { workflowState: input.workflowState } : {}),
 			};
 			return updatedTask;
 		});
