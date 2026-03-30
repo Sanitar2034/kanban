@@ -5,6 +5,9 @@
  * They receive a dependency-injected `JobQueueService` and return plain
  * serialisable objects, keeping all business logic out of the router file.
  */
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { RuntimeWorkflowPolicy, RuntimeWorkflowState } from "../core/api-contract";
 import type { JobQueueService } from "../server/job-queue-service";
 
 export interface CreateJobsApiDependencies {
@@ -122,6 +125,174 @@ export function createJobsApi(deps: CreateJobsApiDependencies) {
 		 * pool provides natural concurrency control — only `concurrency` workers
 		 * need to be assigned to the batch queue for strict cap enforcement.
 		 */
+		/**
+		 * startWorkflow — initialises a multi-step agentic workflow for a board card.
+		 *
+		 * Writes state.json + policy.json into `.kanban-workflows/<taskId>/` inside the
+		 * project workspace, then enqueues the first planner-step.sh invocation on the
+		 * per-task queue `kanban.workflow.<taskId>.plan`.  The caller is responsible for
+		 * updating the board card's workflowState (via task.update-workflow-state) once
+		 * the jobId is known.
+		 */
+		startWorkflow: async (input: { taskId: string; projectPath: string; policy: RuntimeWorkflowPolicy }) => {
+			const queueName = `kanban.workflow.${input.taskId}.plan`;
+			const workflowDir = join(input.projectPath, ".kanban-workflows", input.taskId);
+			await mkdir(workflowDir, { recursive: true });
+
+			// Initial state
+			const initialState: RuntimeWorkflowState = {
+				iteration: 0,
+				status: "running",
+				lastStepAt: null,
+				nextDueAt: null,
+				currentJobId: null,
+				artifacts: [],
+			};
+			const stateFile = join(workflowDir, "state.json");
+			const policyFile = join(workflowDir, "policy.json");
+
+			// Persist deadline into policy JSON as unix-seconds for shell scripts
+			const policyForScript = {
+				...input.policy,
+				deadlineTs:
+					input.policy.deadlineMinutes !== undefined && input.policy.deadlineMinutes !== null
+						? Math.floor(Date.now() / 1000) + input.policy.deadlineMinutes * 60
+						: null,
+			};
+
+			await writeFile(stateFile, JSON.stringify(initialState, null, 2), "utf8");
+			await writeFile(policyFile, JSON.stringify(policyForScript, null, 2), "utf8");
+
+			const kanbanBin = process.argv[1] ?? "kanban";
+			const plannerScript = join(__dirname, "..", "..", "scripts", "workflows", "planner-step.sh");
+
+			const jobId = await svc().schedule({
+				queue: queueName,
+				command: "bash",
+				args: [plannerScript, input.taskId, input.projectPath, svc().getDatabaseUrl(), stateFile, policyFile],
+				dueIn: "1s",
+				maxAttempts: 1,
+				timeoutSecs: input.policy.intervalSeconds * 2 + 60,
+			});
+
+			// Fire-and-forget: update the card's workflowState with the currentJobId
+			const updateArgs = [
+				kanbanBin,
+				"task",
+				"update-workflow-state",
+				"--task-id",
+				input.taskId,
+				"--project-path",
+				input.projectPath,
+				"--status",
+				"running",
+				"--current-job-id",
+				jobId,
+			];
+			void import("node:child_process").then(({ execFile }) => {
+				execFile(process.execPath, updateArgs, { timeout: 10_000 }, () => null);
+			});
+
+			return { ok: true, jobId, queue: queueName, workflowDir };
+		},
+
+		/**
+		 * pauseWorkflow — pauses the per-task workflow queue.
+		 * The current iteration job may still finish but no new steps will be claimed.
+		 */
+		pauseWorkflow: async (input: { taskId: string; projectPath: string; reason?: string }) => {
+			const queueName = `kanban.workflow.${input.taskId}.plan`;
+			const reason = input.reason ?? "paused by user";
+			await svc().pauseQueue(queueName, reason);
+
+			const kanbanBin = process.argv[1] ?? "kanban";
+			void import("node:child_process").then(({ execFile }) => {
+				execFile(
+					process.execPath,
+					[
+						kanbanBin,
+						"task",
+						"update-workflow-state",
+						"--task-id",
+						input.taskId,
+						"--project-path",
+						input.projectPath,
+						"--status",
+						"paused",
+					],
+					{ timeout: 10_000 },
+					() => null,
+				);
+			});
+
+			return { ok: true, queue: queueName };
+		},
+
+		/**
+		 * resumeWorkflow — resumes a previously paused workflow queue.
+		 */
+		resumeWorkflow: async (input: { taskId: string; projectPath: string; reason?: string }) => {
+			const queueName = `kanban.workflow.${input.taskId}.plan`;
+			const reason = input.reason ?? "resumed by user";
+			await svc().resumeQueue(queueName, reason);
+
+			const kanbanBin = process.argv[1] ?? "kanban";
+			void import("node:child_process").then(({ execFile }) => {
+				execFile(
+					process.execPath,
+					[
+						kanbanBin,
+						"task",
+						"update-workflow-state",
+						"--task-id",
+						input.taskId,
+						"--project-path",
+						input.projectPath,
+						"--status",
+						"running",
+					],
+					{ timeout: 10_000 },
+					() => null,
+				);
+			});
+
+			return { ok: true, queue: queueName };
+		},
+
+		/**
+		 * stopWorkflow — permanently stops a workflow.  Pauses the queue and marks the
+		 * card status as "stopped" so the planner-step guard exits on any pending run.
+		 */
+		stopWorkflow: async (input: { taskId: string; projectPath: string }) => {
+			const queueName = `kanban.workflow.${input.taskId}.plan`;
+			// Best-effort pause; queue may not exist if no jobs were ever enqueued.
+			await svc()
+				.pauseQueue(queueName, "stopped by user")
+				.catch(() => null);
+
+			const kanbanBin = process.argv[1] ?? "kanban";
+			void import("node:child_process").then(({ execFile }) => {
+				execFile(
+					process.execPath,
+					[
+						kanbanBin,
+						"task",
+						"update-workflow-state",
+						"--task-id",
+						input.taskId,
+						"--project-path",
+						input.projectPath,
+						"--status",
+						"stopped",
+					],
+					{ timeout: 10_000 },
+					() => null,
+				);
+			});
+
+			return { ok: true, queue: queueName };
+		},
+
 		createBatch: async (input: { taskIds: string[]; concurrency: number; projectPath: string }) => {
 			const batchId = globalThis.crypto.randomUUID().slice(0, 8);
 			const queue = `kanban.batch.${batchId}`;

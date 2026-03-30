@@ -147,6 +147,7 @@ import {
 	runtimeTaskSessionStopResponseSchema,
 	runtimeTaskWorkspaceInfoRequestSchema,
 	runtimeTaskWorkspaceInfoResponseSchema,
+	runtimeWorkflowPolicySchema,
 	runtimeWorkspaceChangesRequestSchema,
 	runtimeWorkspaceChangesResponseSchema,
 	runtimeWorkspaceFileSearchRequestSchema,
@@ -358,6 +359,22 @@ export interface RuntimeTrpcContext {
 			taskCount: number;
 			concurrency: number;
 		}>;
+		startWorkflow: (input: {
+			taskId: string;
+			projectPath: string;
+			policy: import("../core/api-contract").RuntimeWorkflowPolicy;
+		}) => Promise<{ ok: boolean; jobId: string; queue: string; workflowDir: string }>;
+		pauseWorkflow: (input: {
+			taskId: string;
+			projectPath: string;
+			reason?: string;
+		}) => Promise<{ ok: boolean; queue: string }>;
+		resumeWorkflow: (input: {
+			taskId: string;
+			projectPath: string;
+			reason?: string;
+		}) => Promise<{ ok: boolean; queue: string }>;
+		stopWorkflow: (input: { taskId: string; projectPath: string }) => Promise<{ ok: boolean; queue: string }>;
 	};
 }
 
@@ -736,6 +753,32 @@ export const runtimeAppRouter = t.router({
 			)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.jobsApi.createBatch(input);
+			}),
+		startWorkflow: t.procedure
+			.input(
+				z.object({
+					taskId: z.string().min(1),
+					projectPath: z.string().min(1),
+					policy: runtimeWorkflowPolicySchema,
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.jobsApi.startWorkflow(input);
+			}),
+		pauseWorkflow: t.procedure
+			.input(z.object({ taskId: z.string().min(1), projectPath: z.string().min(1), reason: z.string().optional() }))
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.jobsApi.pauseWorkflow(input);
+			}),
+		resumeWorkflow: t.procedure
+			.input(z.object({ taskId: z.string().min(1), projectPath: z.string().min(1), reason: z.string().optional() }))
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.jobsApi.resumeWorkflow(input);
+			}),
+		stopWorkflow: t.procedure
+			.input(z.object({ taskId: z.string().min(1), projectPath: z.string().min(1) }))
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.jobsApi.stopWorkflow(input);
 			}),
 	}),
 });

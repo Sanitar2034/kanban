@@ -111,6 +111,11 @@ export class JobQueueService {
 	// -------------------------------------------------------------------------
 
 	/** Returns true if the job_queue binary can be found and executed. */
+	/** Expose the configured database URL so callers can pass it to shell scripts. */
+	getDatabaseUrl(): string {
+		return this.databaseUrl;
+	}
+
 	isAvailable(): boolean {
 		if (this.binaryCache === undefined) {
 			this.binaryCache = resolveJobQueueBinary();
