@@ -88,6 +88,19 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	const jobQueueService = new JobQueueService();
 	const jobsApi = createJobsApi({ getJobQueueService: () => jobQueueService });
 
+	// ---------------------------------------------------------------------------
+	// Automation Agents — imports only; service is constructed after all deps
+	// are wired (see the block just before createTrpcContext, below).
+	// ---------------------------------------------------------------------------
+	const { AutomationService } = await import("../automations/automation-service");
+	const { createAutomationsApi } = await import("../trpc/automations-api");
+	const { templateRegistry } = await import("../automations/template-registry");
+	const { QUALITY_ENFORCER_TEMPLATE } = await import("../automations/agents/quality-enforcer/template");
+	const { qualityEnforcerRules } = await import("../automations/agents/quality-enforcer/rules");
+	const { ruleCatalog } = await import("../automations/rule-catalog");
+	const { addTaskToColumn } = await import("../core/task-board-mutations");
+	const { mutateWorkspaceState } = await import("../state/workspace-state");
+
 	// Start sidecar if the binary is available — failure is non-fatal.
 	if (jobQueueService.isAvailable()) {
 		jobQueueService
@@ -200,6 +213,101 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		deps.workspaceRegistry.clearActiveWorkspace();
 	};
 
+	// ---------------------------------------------------------------------------
+	// Automation Agents — construct the service now that all deps are available.
+	// ---------------------------------------------------------------------------
+
+	// Register the Quality Enforcer template and rules (idempotent at boot).
+	if (!templateRegistry.hasTemplate(QUALITY_ENFORCER_TEMPLATE.id)) {
+		templateRegistry.registerTemplate(QUALITY_ENFORCER_TEMPLATE);
+	}
+	for (const rule of qualityEnforcerRules) {
+		if (!ruleCatalog.getEvaluator(rule.rule.id)) {
+			ruleCatalog.registerRule(rule);
+		}
+	}
+
+	const automationService = new AutomationService({
+		getBoardState: async (projectPath) => {
+			const match = deps.workspaceRegistry.listManagedWorkspaces().find((w) => w.workspacePath === projectPath);
+			if (!match || !match.workspacePath) {
+				return null;
+			}
+			try {
+				const state = await deps.workspaceRegistry.buildWorkspaceStateSnapshot(
+					match.workspaceId,
+					match.workspacePath,
+				);
+				return {
+					cards: state.board.columns.flatMap((col) => col.cards),
+					sessions: state.sessions,
+				};
+			} catch {
+				return null;
+			}
+		},
+		createTask: async (workspacePath, prompt, options) => {
+			const result = await mutateWorkspaceState(workspacePath, (state) => {
+				const baseRef = state.git.currentBranch ?? state.git.defaultBranch ?? state.git.branches[0] ?? "";
+				if (!baseRef) {
+					throw new Error(`Could not determine base ref for workspace at ${workspacePath}`);
+				}
+				const added = addTaskToColumn(state.board, "backlog", { prompt, baseRef }, () =>
+					globalThis.crypto.randomUUID(),
+				);
+				return { board: added.board, value: added.task };
+			});
+			const taskId = result.value.id;
+
+			// Auto-start if requested.
+			if (options?.autoStart) {
+				const workspaceEntry = deps.workspaceRegistry
+					.listManagedWorkspaces()
+					.find((w) => w.workspacePath === workspacePath);
+				if (workspaceEntry) {
+					const scope = { workspaceId: workspaceEntry.workspaceId, workspacePath };
+					// Create a fresh runtimeApi (cheap — just closures) and start the
+					// task asynchronously so the scan result returns immediately.
+					const runtimeApi = createRuntimeApi({
+						getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
+						getActiveRuntimeConfig: deps.workspaceRegistry.getActiveRuntimeConfig,
+						loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
+						setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
+						getScopedTerminalManager,
+						getScopedClineTaskSessionService,
+						resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
+						runCommand: deps.runCommand,
+						broadcastClineMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastClineMcpAuthStatusesUpdated,
+						broadcastTaskChatCleared: deps.runtimeStateHub.broadcastTaskChatCleared,
+						bumpClineSessionContextVersion: deps.runtimeStateHub.bumpClineSessionContextVersion,
+						prepareForStateReset,
+					});
+					runtimeApi
+						.startTaskSession(scope, {
+							taskId,
+							prompt,
+							baseRef: result.value.baseRef,
+						})
+						.catch((err: unknown) => {
+							const msg = err instanceof Error ? err.message : String(err);
+							process.stderr.write(`[automation-service] auto-start failed for task ${taskId}: ${msg}\n`);
+						});
+				}
+			}
+
+			return { taskId };
+		},
+	});
+
+	automationService.start().catch((err: unknown) => {
+		const msg = err instanceof Error ? err.message : String(err);
+		deps.warn(`[automation-service] failed to start: ${msg}`);
+	});
+
+	const automationsApi = createAutomationsApi({
+		getAutomationService: () => automationService,
+	});
+
 	const createTrpcContext = async (req: IncomingMessage): Promise<RuntimeTrpcContext> => {
 		const requestUrl = new URL(req.url ?? "/", "http://localhost");
 		const scope = await resolveWorkspaceScopeFromRequest(req, requestUrl);
@@ -255,6 +363,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
 				broadcastTaskReadyForReview: deps.runtimeStateHub.broadcastTaskReadyForReview,
 			}),
+			automationsApi,
 			jobsApi,
 		};
 	};
@@ -359,6 +468,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			await terminalWebSocketBridge.close();
 			// Stop inspect polling before stopping the sidecar so no background
 			// calls race with the shutdown.
+			automationService.stop();
 			jobQueueService.stopInspectPolling();
 			// Stop the job queue sidecar before closing the HTTP server so that
 			// any in-flight jobs have a chance to complete.

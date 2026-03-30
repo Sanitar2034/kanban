@@ -4,7 +4,7 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
-
+import { automationInstancePolicyOverridesSchema } from "../automations/automation-types";
 import type {
 	RuntimeClineAccountProfileResponse,
 	RuntimeClineAddProviderRequest,
@@ -160,6 +160,7 @@ import {
 	runtimeWorktreeEnsureRequestSchema,
 	runtimeWorktreeEnsureResponseSchema,
 } from "../core/api-contract";
+import type { AutomationsApi } from "./automations-api";
 
 export interface RuntimeTrpcWorkspaceScope {
 	workspaceId: string;
@@ -319,6 +320,7 @@ export interface RuntimeTrpcContext {
 	hooksApi: {
 		ingest: (input: RuntimeHookIngestRequest) => Promise<RuntimeHookIngestResponse>;
 	};
+	automationsApi: AutomationsApi;
 	jobsApi: {
 		getStatus: () => Promise<{
 			available: boolean;
@@ -811,6 +813,75 @@ export const runtimeAppRouter = t.router({
 			)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.jobsApi.triggerMaintenance(input);
+			}),
+	}),
+	automations: t.router({
+		listTemplates: t.procedure.query(async ({ ctx }) => {
+			return ctx.automationsApi.listTemplates();
+		}),
+		listInstances: t.procedure.query(async ({ ctx }) => {
+			return ctx.automationsApi.listInstances();
+		}),
+		getInstance: t.procedure.input(z.object({ id: z.string().uuid() })).query(async ({ ctx, input }) => {
+			return ctx.automationsApi.getInstance(input.id);
+		}),
+		createInstance: t.procedure
+			.input(
+				z.object({
+					templateId: z.string().min(1),
+					label: z.string().min(1),
+					projectPaths: z.array(z.string()),
+					policyOverrides: automationInstancePolicyOverridesSchema.optional(),
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				return ctx.automationsApi.createInstance(input);
+			}),
+		updateInstance: t.procedure
+			.input(
+				z.object({
+					id: z.string().uuid(),
+					updates: z.object({
+						label: z.string().min(1).optional(),
+						projectPaths: z.array(z.string()).optional(),
+						policyOverrides: automationInstancePolicyOverridesSchema.optional(),
+					}),
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				return ctx.automationsApi.updateInstance(input.id, input.updates);
+			}),
+		enableInstance: t.procedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+			return ctx.automationsApi.enableInstance(input.id);
+		}),
+		disableInstance: t.procedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+			return ctx.automationsApi.disableInstance(input.id);
+		}),
+		deleteInstance: t.procedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+			await ctx.automationsApi.deleteInstance(input.id);
+		}),
+		triggerScan: t.procedure.input(z.object({ instanceId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+			return ctx.automationsApi.triggerScan(input.instanceId);
+		}),
+		listFindings: t.procedure
+			.input(z.object({ instanceId: z.string().uuid().optional() }))
+			.query(async ({ ctx, input }) => {
+				return ctx.automationsApi.listFindings(input.instanceId);
+			}),
+		suppressFinding: t.procedure
+			.input(z.object({ fingerprint: z.string().min(1) }))
+			.mutation(async ({ ctx, input }) => {
+				await ctx.automationsApi.suppressFinding(input.fingerprint);
+			}),
+		listAuditEvents: t.procedure
+			.input(z.object({ instanceId: z.string().uuid().optional() }))
+			.query(async ({ ctx, input }) => {
+				return ctx.automationsApi.listAuditEvents(input.instanceId);
+			}),
+		listScanRuns: t.procedure
+			.input(z.object({ instanceId: z.string().uuid().optional() }))
+			.query(async ({ ctx, input }) => {
+				return ctx.automationsApi.listScanRuns(input.instanceId);
 			}),
 	}),
 });

@@ -40,7 +40,7 @@ export interface AutomationServiceDeps {
 	 * Get the current board state for a workspace identified by project path.
 	 * Returns null if the project is not in any managed workspace.
 	 */
-	getBoardState(projectPath: string): PipelineBoardState | null;
+	getBoardState(projectPath: string): Promise<PipelineBoardState | null>;
 	/**
 	 * Create a task on the board for the given workspace path.
 	 */
@@ -309,7 +309,7 @@ export class AutomationService {
 
 		try {
 			for (const projectPath of projectPaths) {
-				const boardState = this.deps.getBoardState(projectPath);
+				const boardState = await this.deps.getBoardState(projectPath);
 
 				// Run the detection pipeline.
 				const pipelineResult = await detectionPipeline.run(
