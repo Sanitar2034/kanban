@@ -72,4 +72,55 @@ Click the branch name in the navbar to open a full git interface to browse commi
 
 ---
 
+## Job Queue Sidecar (Optional)
+
+Kanban integrates with an optional Rust-based job queue sidecar (`job_queue`) for background work: scheduled task execution, periodic maintenance, dependency-driven auto-start pipelines, multi-step agentic workflows, and batch operations. The sidecar is not required to use Kanban — all core board functionality works without it. Features gated on the sidecar are shown as "unavailable" in the UI until the binary is found.
+
+### Installing the job_queue binary
+
+**Option 1 — Build from source (recommended for development)**
+
+```bash
+# Clone the overthink_rust workspace next to kanban
+git clone git@github.com:cline/overthink_rust.git ../overthink_rust
+
+# Build the job_queue binary
+cd ../overthink_rust/job_queue_layer
+cargo build
+
+# The binary is now at ../overthink_rust/job_queue_layer/target/debug/job_queue
+# Kanban auto-detects this location on startup.
+```
+
+**Option 2 — Set an explicit path**
+
+Point Kanban at any pre-built `job_queue` binary using the environment variable:
+
+```bash
+export KANBAN_JOB_QUEUE_BINARY=/path/to/job_queue
+npx kanban
+```
+
+**Option 3 — Install to PATH**
+
+```bash
+cargo install --path ../overthink_rust/job_queue_layer
+# or copy the binary to any directory on $PATH
+```
+
+### What the sidecar enables
+
+| Feature | Description |
+|---------|-------------|
+| **Scheduled tasks** | Start a backlog task at a specific time (e.g., "tonight at 10pm") |
+| **Periodic maintenance** | Auto git-fetch, stale session cleanup, worktree housekeeping |
+| **Auto-start pipelines** | Tasks start automatically when their dependencies are completed |
+| **Agentic workflows** | Multi-step policy-gated agent loops with iteration artifacts |
+| **Batch operations** | Select N tasks, run them with controlled concurrency |
+| **Health dashboard** | Live visibility into queue counts, worker activity, and alerts |
+
+See [`docs/JOB_QUEUE_INTEGRATION_PLAN.md`](./docs/JOB_QUEUE_INTEGRATION_PLAN.md) for the full architecture and implementation details.
+
+---
+
 [Apache 2.0 © 2026 Cline Bot Inc.](./LICENSE)

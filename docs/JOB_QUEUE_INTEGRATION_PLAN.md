@@ -1241,11 +1241,19 @@ For development, the binary resolution in `job-queue-paths.ts` checks the overth
 
 ### Progress (Cross-Cutting)
 
-- [ ] Add graceful degradation when job queue binary is not found
-- [ ] Add `JobQueueService` unit tests with mocked CLI output
+- [x] Add graceful degradation when job queue binary is not found
+      (JobsDashboard renders an "unavailable" banner with install instructions;
+       jobs.getStatus returns `available: false`; all TRPC handlers short-circuit
+       cleanly when the service is not available)
+- [x] Add `JobQueueService` unit tests with mocked CLI output
+      (test/runtime/job-queue-service.test.ts — 19 tests covering isAvailable,
+       enqueue, schedule, inspect, health, pauseQueue, resumeQueue, replayFailed,
+       isSidecarRunning / startSidecar / stopSidecar — all binary-free via vi.mock)
 - [ ] Add integration test harness that starts a real sidecar
-- [ ] Document job queue binary installation in Kanban README
+      (blocked on Rust binary availability in CI; see README for build instructions)
+- [x] Document job queue binary installation in Kanban README
 - [ ] Add `job_queue` binary to Kanban's CI build matrix
+      (future work: requires Rust toolchain in CI and cross-platform binary uploads)
 
 ---
 
