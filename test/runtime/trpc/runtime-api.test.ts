@@ -136,6 +136,7 @@ function createRuntimeConfigState(): RuntimeConfigState {
 		openPrPromptTemplateDefault: "pr",
 		globalConfigPath: "/tmp/global-config.json",
 		projectConfigPath: "/tmp/project-config.json",
+		maintenanceJobs: [],
 	};
 }
 

@@ -23,6 +23,27 @@ interface RuntimeProjectConfigFileShape {
 	shortcuts?: RuntimeProjectShortcut[];
 }
 
+/**
+ * Per-job configuration for Kanban's background maintenance tasks.
+ * Each entry controls a self-rescheduling shell script in `scripts/maintenance/`.
+ */
+export interface MaintenanceJobConfig {
+	/** Human-readable name, e.g. "git-fetch-all". */
+	name: string;
+	/** Whether this job should be seeded on startup (default: true). */
+	enabled: boolean;
+	/** How often the job reschedules itself, in seconds. */
+	intervalSeconds: number;
+}
+
+/** Default maintenance jobs seeded on first Kanban startup. */
+export const DEFAULT_MAINTENANCE_JOB_CONFIGS: readonly MaintenanceJobConfig[] = [
+	{ name: "git-fetch-all", enabled: true, intervalSeconds: 300 },
+	{ name: "stale-session-checker", enabled: true, intervalSeconds: 1800 },
+	{ name: "worktree-cleanup", enabled: true, intervalSeconds: 86400 },
+	{ name: "dependency-auto-start", enabled: true, intervalSeconds: 30 },
+];
+
 export interface RuntimeConfigState {
 	globalConfigPath: string;
 	projectConfigPath: string | null;
@@ -35,6 +56,8 @@ export interface RuntimeConfigState {
 	openPrPromptTemplate: string;
 	commitPromptTemplateDefault: string;
 	openPrPromptTemplateDefault: string;
+	/** Configuration for background maintenance jobs. Defaults to DEFAULT_MAINTENANCE_JOB_CONFIGS. */
+	maintenanceJobs: MaintenanceJobConfig[];
 }
 
 export interface RuntimeConfigUpdateInput {
@@ -45,6 +68,8 @@ export interface RuntimeConfigUpdateInput {
 	shortcuts?: RuntimeProjectShortcut[];
 	commitPromptTemplate?: string;
 	openPrPromptTemplate?: string;
+	/** Override specific maintenance job configs by name. Merges with existing config. */
+	maintenanceJobs?: MaintenanceJobConfig[];
 }
 
 const RUNTIME_HOME_PARENT_DIR = ".cline";
@@ -288,6 +313,7 @@ function toRuntimeConfigState({
 		),
 		commitPromptTemplateDefault: DEFAULT_COMMIT_PROMPT_TEMPLATE,
 		openPrPromptTemplateDefault: DEFAULT_OPEN_PR_PROMPT_TEMPLATE,
+		maintenanceJobs: [...DEFAULT_MAINTENANCE_JOB_CONFIGS],
 	};
 }
 
@@ -472,6 +498,7 @@ function createRuntimeConfigStateFromValues(input: {
 		openPrPromptTemplate: normalizePromptTemplate(input.openPrPromptTemplate, DEFAULT_OPEN_PR_PROMPT_TEMPLATE),
 		commitPromptTemplateDefault: DEFAULT_COMMIT_PROMPT_TEMPLATE,
 		openPrPromptTemplateDefault: DEFAULT_OPEN_PR_PROMPT_TEMPLATE,
+		maintenanceJobs: [...DEFAULT_MAINTENANCE_JOB_CONFIGS],
 	};
 }
 

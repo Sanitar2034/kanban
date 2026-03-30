@@ -28,6 +28,7 @@ function createRuntimeConfigState(overrides: Partial<RuntimeConfigState> = {}): 
 		openPrPromptTemplate: "pr",
 		commitPromptTemplateDefault: "commit",
 		openPrPromptTemplateDefault: "pr",
+		maintenanceJobs: [],
 		...overrides,
 	};
 }
