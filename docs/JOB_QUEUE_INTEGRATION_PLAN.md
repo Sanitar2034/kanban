@@ -830,7 +830,7 @@ In the board view, when a card has dependencies and `autoStartWhenReady` is true
 - [x] 3.3 — `autoStartWhenReady: z.boolean().optional()` added to `runtimeBoardCardSchema` in `api-contract.ts`
 - [x] 1.5 — `scripts/maintenance/schedule-task-guard.sh`: checks task is still in backlog before starting (prevents double-start on scheduled tasks)
 - [ ] 3.4 — Add auto-start toggle to backlog card dependency UI
-- [ ] 3.5 — Seed dependency watcher job during sidecar startup (when any workspace has auto-start tasks)
+- [x] 3.5 — `seedProjectAutomationJobs()` in `maintenance-jobs.ts`: seeds `dependency-auto-start.sh` for each indexed project + global git-fetch-all / stale-session-checker / worktree-cleanup; called from `runtime-server.ts` after `seedMaintenanceJobs`
 - [ ] 3.6 — Add pipeline arrow visualization between dependent cards
 - [ ] 3.7 — Test: create A→B dependency chain, trash B, verify A auto-starts
 

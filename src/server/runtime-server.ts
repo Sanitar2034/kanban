@@ -94,8 +94,10 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			.startSidecar()
 			.then(async () => {
 				// Seed periodic maintenance jobs after the sidecar is ready.
-				const { seedMaintenanceJobs } = await import("./maintenance-jobs");
+				const { seedMaintenanceJobs, seedProjectAutomationJobs } = await import("./maintenance-jobs");
 				await seedMaintenanceJobs(jobQueueService);
+				// Seed per-project automation watchers (dependency auto-start, etc.).
+				await seedProjectAutomationJobs(jobQueueService, getKanbanRuntimeOrigin());
 				// Wire inspect-snapshot polling → WebSocket health broadcast (30 s cadence).
 				jobQueueService.startInspectPolling(30_000, (snapshot) => {
 					deps.runtimeStateHub.broadcastJobQueueStatus(
