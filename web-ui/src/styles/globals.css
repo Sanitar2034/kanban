@@ -752,6 +752,41 @@ body.kb-dependency-link-mode {
 	}
 }
 
+@keyframes kb-dialog-show-mobile {
+	from {
+		opacity: 0;
+		transform: scale(0.96);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Dialog positioning: centered on desktop, near-full-screen on mobile */
+.kb-dialog-content {
+	transform: translate(-50%, -50%);
+	animation: kb-dialog-show 150ms ease;
+}
+
+@media (width <= 768px) {
+	.kb-dialog-content {
+		inset: 8px;
+		left: 8px;
+		top: 8px;
+		width: auto;
+		max-width: none;
+		max-height: none;
+		transform: none;
+		animation: kb-dialog-show-mobile 150ms ease;
+	}
+
+	/* Ensure action buttons in dialogs meet 44px touch target on mobile */
+	.kb-dialog-content button {
+		min-height: 44px;
+	}
+}
+
 @keyframes kb-tooltip-show {
 	from {
 		opacity: 0;
