@@ -444,29 +444,23 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			if (!isLocalRequest(req)) {
 				const session = await remoteAuth.validateSession(req.headers.cookie ?? "");
 				if (!session) {
-					const acceptsHtml = (req.headers.accept ?? "").includes("text/html");
-					if (acceptsHtml) {
-						// Serve the SPA directly with 200 — no redirect.
-						// useAuthGate in the SPA will call /login/me, get 401, and render the login page.
-						// A redirect back to "/" would cause an infinite loop since "/" is also gated.
-						try {
-							const asset = await readAsset(webUiDir, "/index.html");
-							res.writeHead(200, {
-								"Content-Type": "text/html; charset=utf-8",
-								"Cache-Control": "no-store",
-							});
-							res.end(asset.content);
-						} catch {
-							jsonResponse(res, 401, { error: "Unauthorized." });
-						}
+					// Static assets are always served without auth — the browser needs
+					// JS, CSS, icons, manifest.json, and sw.js to bootstrap the SPA
+					// login page. Only block API calls.
+					const isApiRequest = pathname.startsWith("/api/");
+					if (!isApiRequest) {
+						// Fall through to the existing static asset / SPA handler below.
+						// The SPA's useAuthGate will call /login/me, get 401, and show the login page.
 					} else {
 						jsonResponse(res, 401, { error: "Unauthorized." });
+						return;
 					}
-					return;
 				}
 
 				// Touch the session on every authenticated request (refreshes rolling expiry).
-				await remoteAuth.touchSession(session.sessionId);
+				if (session) {
+					await remoteAuth.touchSession(session.sessionId);
+				}
 			}
 			// ── End auth gate ─────────────────────────────────────────────────
 

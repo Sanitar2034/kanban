@@ -17,6 +17,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { getSdkProviderSettings } from "../cline-sdk/sdk-provider-boundary";
+import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import { loadRemoteConfig } from "../remote/config-store";
 import type { CallerIdentity } from "../remote/types";
 import type { RemoteAuth } from "./remote-auth";
@@ -117,10 +118,19 @@ export function createLoginHandler(deps: CreateLoginHandlerDependencies): LoginH
 					// Check if there is a stored Cline token on this machine.
 					const clineSettings = getSdkProviderSettings("cline");
 					const hasClineToken = Boolean(clineSettings?.auth?.accessToken?.trim());
+					// Effective public base URL: explicit config first, then the Host
+					// header (what the browser actually used to reach us), then the
+					// runtime origin as a last fallback.
+					const hostHeader = req.headers.host?.trim();
+					const scheme = req.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() ?? "http";
+					const effectivePublicUrl =
+						config.publicBaseUrl?.trim() || (hostHeader ? `${scheme}://${hostHeader}` : getKanbanRuntimeOrigin());
 					json(res, 200, {
 						authMode: config.authMode,
 						hasClineToken,
 						vapidPublicKey: remoteAuth.pushManager.getPublicKey(),
+						canOAuth: true,
+						publicBaseUrl: effectivePublicUrl,
 					});
 					return;
 				}
@@ -306,13 +316,11 @@ export function createLoginHandler(deps: CreateLoginHandlerDependencies): LoginH
 				// ── GET /auth/start (server-side OAuth relay, Option B) ─────
 				if (method === "GET" && pathname === "/auth/start") {
 					const config = await loadRemoteConfig();
-					if (!config.publicBaseUrl) {
-						json(res, 400, {
-							error: "publicBaseUrl is not configured. Set it in remote settings to enable browser OAuth.",
-						});
-						return;
-					}
-					const redirectUri = `${config.publicBaseUrl.replace(/\/$/, "")}/auth/callback`;
+					const hostHeader = req.headers.host?.trim();
+					const scheme = req.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() ?? "http";
+					const baseUrl =
+						config.publicBaseUrl?.trim() || (hostHeader ? `${scheme}://${hostHeader}` : getKanbanRuntimeOrigin());
+					const redirectUri = `${baseUrl.replace(/\/$/, "")}/auth/callback`;
 					const authorizeUrl = new URL(`${CLINE_API_BASE}/api/v1/auth/authorize`);
 					authorizeUrl.searchParams.set("client_type", "extension");
 					authorizeUrl.searchParams.set("callback_url", redirectUri);
@@ -337,11 +345,11 @@ export function createLoginHandler(deps: CreateLoginHandlerDependencies): LoginH
 					}
 
 					const config = await loadRemoteConfig();
-					if (!config.publicBaseUrl) {
-						json(res, 400, { error: "publicBaseUrl is not configured." });
-						return;
-					}
-					const redirectUri = `${config.publicBaseUrl.replace(/\/$/, "")}/auth/callback`;
+					const hostHeader = req.headers.host?.trim();
+					const scheme = req.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() ?? "http";
+					const baseUrl =
+						config.publicBaseUrl?.trim() || (hostHeader ? `${scheme}://${hostHeader}` : getKanbanRuntimeOrigin());
+					const redirectUri = `${baseUrl.replace(/\/$/, "")}/auth/callback`;
 
 					// Exchange code for access token.
 					let accessToken: string;

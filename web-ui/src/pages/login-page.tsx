@@ -11,6 +11,8 @@ interface LoginConfig {
 	authMode: "workos" | "password" | "both";
 	hasClineToken: boolean;
 	vapidPublicKey: string | null;
+	canOAuth: boolean;
+	publicBaseUrl: string;
 }
 
 interface LoginPageProps {
@@ -83,7 +85,13 @@ export function LoginPage({ onSuccess }: LoginPageProps): ReactElement {
 			})
 			.catch(() => {
 				// Fall back to showing both methods if config is unavailable.
-				setConfig({ authMode: "both", hasClineToken: false, vapidPublicKey: null });
+				setConfig({
+					authMode: "both",
+					hasClineToken: false,
+					vapidPublicKey: null,
+					canOAuth: false,
+					publicBaseUrl: "",
+				});
 				setConfigError(true);
 			});
 	}, []);
@@ -136,9 +144,11 @@ export function LoginPage({ onSuccess }: LoginPageProps): ReactElement {
 		}
 	};
 
-	const showWorkos = config?.authMode === "workos" || config?.authMode === "both";
+	// Show the WorkOS button only when the server-side OAuth relay is available
+	// (publicBaseUrl is configured). Without it, /auth/start returns an error.
+	const showWorkos = (config?.authMode === "workos" || config?.authMode === "both") && config?.canOAuth === true;
 	const showPassword = config?.authMode === "password" || config?.authMode === "both";
-	const showDivider = config?.authMode === "both";
+	const showDivider = showWorkos && showPassword;
 
 	// ── Render ─────────────────────────────────────────────────────────────
 	return (

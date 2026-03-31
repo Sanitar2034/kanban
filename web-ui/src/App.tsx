@@ -36,7 +36,6 @@ import { createIdleTaskSession } from "@/hooks/app-utils";
 import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallback";
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
-import { useAuthGate } from "@/hooks/use-auth-gate";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
 import { useDebugTools } from "@/hooks/use-debug-tools";
 import { useDocumentVisibility } from "@/hooks/use-document-visibility";
@@ -55,7 +54,6 @@ import { useTaskSessions } from "@/hooks/use-task-sessions";
 import { useTaskStartActions } from "@/hooks/use-task-start-actions";
 import { useTerminalPanels } from "@/hooks/use-terminal-panels";
 import { useWorkspaceSync } from "@/hooks/use-workspace-sync";
-import { LoginPage } from "@/pages/login-page";
 import {
 	getTaskAgentNavbarHint,
 	isTaskAgentSetupSatisfied,
@@ -78,21 +76,7 @@ import { TERMINAL_THEME_COLORS } from "@/terminal/theme-colors";
 import type { BoardData } from "@/types";
 
 // ── Auth loading screen ────────────────────────────────────────────────────
-// Shown for ~100ms while useAuthGate checks /login/me.
-function AuthLoadingScreen(): ReactElement {
-	return (
-		<div className="flex min-h-screen items-center justify-center bg-surface-0">
-			<Spinner size={20} />
-		</div>
-	);
-}
-
 export default function App(): ReactElement {
-	// Auth gate — must be the first hook called.
-	// Localhost always receives "authenticated" (server bypasses the gate).
-	// Remote browsers with no session receive "unauthenticated" → login page.
-	const { status: authStatus } = useAuthGate();
-
 	const [board, setBoard] = useState<BoardData>(() => createInitialBoardData());
 	const [sessions, setSessions] = useState<Record<string, RuntimeTaskSessionSummary>>({});
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -747,14 +731,6 @@ export default function App(): ReactElement {
 			idPrefix={`inline-edit-task-${editingTaskId}`}
 		/>
 	) : undefined;
-
-	// Auth gate — checked before any other conditional renders.
-	if (authStatus === "loading") {
-		return <AuthLoadingScreen />;
-	}
-	if (authStatus === "unauthenticated") {
-		return <LoginPage onSuccess={() => window.location.reload()} />;
-	}
 
 	if (isRuntimeDisconnected) {
 		return <RuntimeDisconnectedFallback />;
