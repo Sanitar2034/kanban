@@ -10,6 +10,8 @@ export interface AgentSpecialist {
 	baseAgentId: RuntimeAgentId;
 	/** Human-readable description of this specialist's role, injected as the rolePrompt. */
 	description: string;
+	/** Optional model override to pass as modelId when spawning this specialist. */
+	modelId?: string;
 }
 
 /** Schema for the agents.json file shape — an array of specialist definitions. */
@@ -17,6 +19,7 @@ type AgentSpecialistsFileShape = Array<{
 	id?: unknown;
 	baseAgentId?: unknown;
 	description?: unknown;
+	modelId?: unknown;
 }>;
 
 /** Validates a raw parsed value is a valid AgentSpecialist. */
@@ -24,6 +27,7 @@ function isValidSpecialist(raw: {
 	id?: unknown;
 	baseAgentId?: unknown;
 	description?: unknown;
+	modelId?: unknown;
 }): raw is AgentSpecialist {
 	return (
 		typeof raw.id === "string" &&
@@ -31,7 +35,8 @@ function isValidSpecialist(raw: {
 		typeof raw.baseAgentId === "string" &&
 		raw.baseAgentId.trim().length > 0 &&
 		typeof raw.description === "string" &&
-		raw.description.trim().length > 0
+		raw.description.trim().length > 0 &&
+		(raw.modelId === undefined || (typeof raw.modelId === "string" && raw.modelId.trim().length > 0))
 	);
 }
 

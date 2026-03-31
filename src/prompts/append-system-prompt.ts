@@ -79,12 +79,17 @@ function renderAgentTeamsSection(installedBinaries: Set<string>, specialists: Ag
 	});
 
 	// Build the custom specialists list if any are configured in agents.json.
-	const specialistLines = specialists.map((s) => `  - \`${s.id}\` → ${s.baseAgentId} — ${s.description}`);
+	const specialistLines = specialists.map((s) => {
+		const modelSuffix = s.modelId ? ` · model: ${s.modelId}` : "";
+		return `  - \`${s.id}\` → ${s.baseAgentId} — ${s.description}${modelSuffix}`;
+	});
 
 	const specialistsSection =
 		specialistLines.length > 0
 			? `
 ## Custom specialists (from .cline/kanban/agents.json)
+
+Before spawning teammates, review this list. If a specialist description matches the role you need, prefer it over a generic built-in. When spawning a specialist that declares a model, pass it as the modelId option to team_spawn_teammate.
 
 Pre-configured specialist roles you can spawn by name:
 

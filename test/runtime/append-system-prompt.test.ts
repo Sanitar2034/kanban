@@ -116,7 +116,7 @@ describe("renderAppendSystemPrompt", () => {
 			join(tmpDir, ".cline", "kanban", "agents.json"),
 			JSON.stringify([
 				{ id: "planner", baseAgentId: "claude", description: "Plans and breaks down tasks" },
-				{ id: "poet", baseAgentId: "cline", description: "Writes creative copy" },
+				{ id: "poet", baseAgentId: "cline", description: "Writes creative copy", modelId: "claude-opus-4-5" },
 			]),
 		);
 		const origCwd = process.cwd();
@@ -128,6 +128,13 @@ describe("renderAppendSystemPrompt", () => {
 			expect(rendered).toContain("`poet`");
 			expect(rendered).toContain("Plans and breaks down tasks");
 			expect(rendered).toContain("Writes creative copy");
+			// poet has a modelId — it should appear in the rendered line
+			expect(rendered).toContain("model: claude-opus-4-5");
+			// planner has no modelId — no model suffix
+			expect(rendered).not.toContain("`planner` → claude — Plans and breaks down tasks · model:");
+			// Selection guidance is present
+			expect(rendered).toContain("prefer it over a generic built-in");
+			expect(rendered).toContain("pass it as the modelId option to team_spawn_teammate");
 		} finally {
 			process.chdir(origCwd);
 		}
