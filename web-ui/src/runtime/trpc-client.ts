@@ -1,6 +1,17 @@
 import type { RuntimeAppRouter } from "@runtime-trpc";
 import { createTRPCProxyClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 
+// Custom fetch wrapper that dispatches "kanban:unauthorized" when the server
+// returns HTTP 401. useAuthGate listens for this event and flips the app
+// to the login screen without requiring a full page reload.
+const unauthorizedAwareFetch: typeof fetch = async (input, init) => {
+	const response = await fetch(input, init);
+	if (response.status === 401) {
+		window.dispatchEvent(new CustomEvent("kanban:unauthorized"));
+	}
+	return response;
+};
+
 interface TrpcErrorDataWithConflictRevision {
 	code?: string;
 	conflictRevision?: number | null;
@@ -21,6 +32,7 @@ export function getRuntimeTrpcClient(workspaceId: string | null): RuntimeTrpcCli
 			httpBatchLink({
 				url: "/api/trpc",
 				headers: () => (workspaceId ? { "x-kanban-workspace-id": workspaceId } : {}),
+				fetch: unauthorizedAwareFetch,
 			}),
 		],
 	});
