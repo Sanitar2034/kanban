@@ -80,6 +80,7 @@ export function KanbanBoard({
 }): React.ReactElement {
 	const dragOccurredRef = useRef(false);
 	const boardRef = useRef<HTMLElement>(null);
+	const allCards = data.columns.flatMap((col) => col.cards);
 	const sensorApiRef = useRef<SensorAPI | null>(null);
 	const latestDataRef = useRef<BoardData>(data);
 	const programmaticCardMoveInFlightRef = useRef<ProgrammaticCardMoveInFlight | null>(null);
@@ -404,6 +405,7 @@ export function KanbanBoard({
 						dependencyTargetTaskId={dependencyLinking.draft?.targetTaskId ?? null}
 						isDependencyLinking={dependencyLinking.draft !== null}
 						workspacePath={workspacePath}
+						allCards={allCards}
 						onCardClick={(card) => {
 							if (!dragOccurredRef.current) {
 								onCardSelect(card.id);

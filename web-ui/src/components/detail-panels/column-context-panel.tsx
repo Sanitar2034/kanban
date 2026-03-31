@@ -169,7 +169,7 @@ function ColumnSection({
 								{(() => {
 									const items: ReactNode[] = [];
 									let draggableIndex = 0;
-									for (const card of column.cards) {
+									for (const card of column.cards.filter((c) => !c.parentTaskId)) {
 										if (column.id === "backlog" && editingTaskId === card.id) {
 											items.push(
 												<div key={card.id} style={{ marginBottom: 8 }}>

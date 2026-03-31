@@ -37,6 +37,7 @@ export function BoardColumn({
 	dependencyTargetTaskId,
 	isDependencyLinking,
 	workspacePath,
+	allCards,
 }: {
 	column: BoardColumnModel;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
@@ -65,10 +66,11 @@ export function BoardColumn({
 	dependencyTargetTaskId?: string | null;
 	isDependencyLinking?: boolean;
 	workspacePath?: string | null;
+	allCards?: BoardCardModel[];
 }): React.ReactElement {
 	const visibleCards = column.cards.filter((card) => !card.parentTaskId);
 	const cardsByParentId = new Map<string, BoardCardModel[]>();
-	for (const card of column.cards) {
+	for (const card of allCards ?? column.cards) {
 		if (card.parentTaskId) {
 			const siblings = cardsByParentId.get(card.parentTaskId) ?? [];
 			siblings.push(card);
