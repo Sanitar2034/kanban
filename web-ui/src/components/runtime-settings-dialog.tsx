@@ -6,7 +6,8 @@ import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixSwitch from "@radix-ui/react-switch";
 import { getRuntimeAgentCatalogEntry, getRuntimeLaunchSupportedAgentCatalog } from "@runtime-agent-catalog";
 import { areRuntimeProjectShortcutsEqual } from "@runtime-shortcuts";
-import { Check, ChevronDown, Circle, CircleDot, ExternalLink, Plus, Settings, X } from "lucide-react";
+import { Check, ChevronDown, Circle, CircleDot, ExternalLink, Info, Plus, Settings, X } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClineSetupSection } from "@/components/shared/cline-setup-section";
 import {
@@ -839,6 +840,27 @@ export function RuntimeSettingsDialog({
 				{shortcuts.length === 0 ? (
 					<p className="text-text-secondary text-[13px]">No shortcuts configured.</p>
 				) : null}
+
+				<h5 className="font-semibold text-text-primary mt-4 mb-0">QR Code</h5>
+				<p className="text-text-secondary text-[13px] mt-1 mb-3">
+					Scan with your phone to open this board on a mobile device.
+				</p>
+				<div className="flex flex-col items-center gap-2">
+					<div className="bg-white p-3 rounded-md inline-flex">
+						<QRCodeSVG value={window.location.origin} size={160} />
+					</div>
+					<span className="text-text-secondary text-sm font-mono">{window.location.origin}</span>
+					{/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(window.location.origin) ? (
+						<div className="flex items-center gap-1.5 text-text-tertiary text-xs mt-1">
+							<Info size={12} className="shrink-0" />
+							<span>
+								This URL points to localhost. Restart with{" "}
+								<code className="text-text-secondary">--host 0.0.0.0</code> for phone access over your local
+								network.
+							</span>
+						</div>
+					) : null}
+				</div>
 
 				{saveError ? (
 					<div className="flex gap-2 rounded-md border border-status-red/30 bg-status-red/5 p-3 text-[13px] mt-3">
