@@ -79,6 +79,12 @@
 		"typescript": "^5.9.3",
 		"vitest": "^4.1.0"
 	},
+	"optionalDependencies": {
+		"@biomejs/cli-linux-x64": "2.3.5",
+		"@biomejs/cli-linux-arm64": "2.3.5",
+		"@biomejs/cli-linux-x64-musl": "2.3.5",
+		"@biomejs/cli-linux-arm64-musl": "2.3.5"
+	},
 	"dependencies": {
 		"@clinebot/agents": "^0.0.23",
 		"@clinebot/core": "^0.0.23",
