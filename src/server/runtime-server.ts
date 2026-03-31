@@ -429,6 +429,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				pathname === "/login/config" ||
 				pathname === "/login/cline" ||
 				pathname === "/login/cline-autodetect" ||
+				pathname === "/login/cline-dummy" ||
 				pathname === "/login/password" ||
 				pathname === "/logout" ||
 				pathname === "/auth/start" ||

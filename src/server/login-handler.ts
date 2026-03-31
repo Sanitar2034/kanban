@@ -132,6 +132,8 @@ export function createLoginHandler(deps: CreateLoginHandlerDependencies): LoginH
 						vapidPublicKey: remoteAuth.pushManager.getPublicKey(),
 						canOAuth: true,
 						publicBaseUrl: effectivePublicUrl,
+						// TEMPORARY: dummy auth accepts any email while WorkOS flow is reworked.
+						canDummyAuth: true,
 					});
 					return;
 				}
@@ -314,27 +316,34 @@ export function createLoginHandler(deps: CreateLoginHandlerDependencies): LoginH
 					return;
 				}
 
-				// ── GET /auth/start ──────────────────────────────────────────
-				// Redirects the browser to the Cline/WorkOS authorize URL.
-				// Uses client_type=extension so the Cline backend sends the
-				// token to our callback_url. VS Code may also open — this is
-				// a known limitation until client_type=kanban is added upstream.
-				// The callback_url is built from the ?origin= param sent by the
-				// frontend (window.location.origin) so it works on any host.
-				if (method === "GET" && pathname === "/auth/start") {
-					const hostHeader = req.headers.host?.trim();
-					const scheme = req.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() ?? "http";
-					const requestedOrigin = url.searchParams.get("origin")?.trim();
-					const kanbanOrigin =
-						requestedOrigin || (hostHeader ? `${scheme}://${hostHeader}` : getKanbanRuntimeOrigin());
+				// ── POST /login/cline-dummy ──────────────────────────────────
+				// TEMPORARY: Accept any email and create a session immediately.
+				// Replaces the WorkOS OAuth flow while client_type=kanban is
+				// being added to the Cline backend.
+				if (method === "POST" && pathname === "/login/cline-dummy") {
+					const body = await readBody(req);
+					const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+					const email = typeof b["email"] === "string" ? b["email"].trim().toLowerCase() : "";
+					const persistent = b["persistent"] === true;
 
-					const callbackUrl = `${kanbanOrigin.replace(/\/$/, "")}/auth/callback`;
-					const authorizeUrl = new URL(`${CLINE_API_BASE}/api/v1/auth/authorize`);
-					authorizeUrl.searchParams.set("client_type", "extension");
-					authorizeUrl.searchParams.set("callback_url", callbackUrl);
-					authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
-					res.writeHead(302, { Location: authorizeUrl.toString() });
-					res.end();
+					if (!email || !email.includes("@")) {
+						json(res, 400, { error: "A valid email address is required." });
+						return;
+					}
+
+					const displayName = email.split("@")[0] ?? email;
+					const userRecord = remoteAuth.getOrCreateUserRecord(email, displayName);
+					const { cookie } = await remoteAuth.createSession({
+						email,
+						userId: null,
+						displayName: userRecord.displayName,
+						persistent,
+					});
+					res.writeHead(200, {
+						"Content-Type": "application/json; charset=utf-8",
+						"Set-Cookie": cookie,
+					});
+					res.end(JSON.stringify({ ok: true, email, displayName: userRecord.displayName }));
 					return;
 				}
 

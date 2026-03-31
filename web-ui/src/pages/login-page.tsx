@@ -13,6 +13,7 @@ interface LoginConfig {
 	vapidPublicKey: string | null;
 	canOAuth: boolean;
 	publicBaseUrl: string;
+	canDummyAuth?: boolean;
 }
 
 interface LoginPageProps {
@@ -67,6 +68,7 @@ export function LoginPage({ onSuccess }: LoginPageProps): ReactElement {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [persistent, setPersistent] = useState(false);
+	const [dummyEmail, setDummyEmail] = useState("");
 
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -96,14 +98,30 @@ export function LoginPage({ onSuccess }: LoginPageProps): ReactElement {
 			});
 	}, []);
 
-	// ── WorkOS sign-in ─────────────────────────────────────────────────────
-	// For all users (local and remote), /auth/start handles the OAuth relay.
-	// Localhost never reaches this page, so this is always the remote flow.
-	const handleWorkosSignIn = () => {
-		// Pass the current origin so the OAuth callback can redirect back to
-		// the correct Kanban host (not hardcoded 127.0.0.1).
-		const origin = encodeURIComponent(window.location.origin);
-		window.location.href = `/auth/start?origin=${origin}`;
+	// ── Dummy Cline sign-in (temporary) ────────────────────────────────────
+	const handleDummySignIn = async (e: FormEvent) => {
+		e.preventDefault();
+		if (!dummyEmail.trim() || isSubmitting) return;
+		setIsSubmitting(true);
+		setError(null);
+		try {
+			const res = await fetch("/login/cline-dummy", {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: dummyEmail.trim(), persistent }),
+			});
+			if (res.ok) {
+				onSuccess();
+				return;
+			}
+			const body = (await res.json().catch(() => ({}))) as { error?: string };
+			setError(body.error ?? "Sign in failed.");
+		} catch {
+			setError("Could not reach the server.");
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
 
 	// ── Password sign-in ───────────────────────────────────────────────────
@@ -147,10 +165,10 @@ export function LoginPage({ onSuccess }: LoginPageProps): ReactElement {
 		}
 	};
 
-	// Show the WorkOS button only when the server-side OAuth relay is available
-	// (publicBaseUrl is configured). Without it, /auth/start returns an error.
-	const showWorkos = (config?.authMode === "workos" || config?.authMode === "both") && config?.canOAuth === true;
-	const showPassword = config?.authMode === "password" || config?.authMode === "both";
+	const showDummyAuth = config?.canDummyAuth === true;
+	const showWorkos =
+		!showDummyAuth && (config?.authMode === "workos" || config?.authMode === "both") && config?.canOAuth === true;
+	const showPassword = !showDummyAuth && (config?.authMode === "password" || config?.authMode === "both");
 	const showDivider = showWorkos && showPassword;
 
 	// ── Render ─────────────────────────────────────────────────────────────
@@ -173,11 +191,47 @@ export function LoginPage({ onSuccess }: LoginPageProps): ReactElement {
 					</div>
 				) : (
 					<div className="flex flex-col gap-4">
+						{/* Dummy auth — temporary while WorkOS OAuth is reworked */}
+						{showDummyAuth ? (
+							<form onSubmit={(e) => void handleDummySignIn(e)} className="flex flex-col gap-3">
+								<div className="flex flex-col gap-1">
+									<label htmlFor="dummy-email" className="text-xs font-medium text-text-secondary">
+										Email address
+									</label>
+									<LoginInput
+										id="dummy-email"
+										type="email"
+										value={dummyEmail}
+										onChange={setDummyEmail}
+										placeholder="you@example.com"
+										disabled={isSubmitting}
+										autoComplete="email"
+									/>
+								</div>
+								<button
+									type="submit"
+									disabled={!dummyEmail.trim() || isSubmitting}
+									className={cn(
+										"flex w-full items-center justify-center gap-2 rounded-md",
+										"bg-accent px-3 py-2 text-[13px] font-medium text-white",
+										"hover:bg-accent-hover active:opacity-90",
+										"transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+									)}
+								>
+									{isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+									Sign in
+								</button>
+							</form>
+						) : null}
+
 						{/* WorkOS / Cline sign-in */}
 						{showWorkos ? (
 							<button
 								type="button"
-								onClick={handleWorkosSignIn}
+								onClick={() => {
+									const o = encodeURIComponent(window.location.origin);
+									window.location.href = `/auth/start?origin=${o}`;
+								}}
 								className={cn(
 									"flex w-full items-center justify-center gap-2 rounded-md",
 									"bg-accent px-3 py-2 text-[13px] font-medium text-white",
