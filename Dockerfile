@@ -55,6 +55,12 @@ COPY . .
 #   - Sentry upload is skipped (no SENTRY_AUTH_TOKEN in Docker builds)
 RUN npm run build
 
+# Patch the Cline SDK's OAuth success HTML to redirect to /auth/finalize
+# instead of trying to close the window. This enables the server-side OAuth
+# flow (used for remote logins) to redirect the browser back into Kanban.
+COPY scripts/patch-sdk-oauth.js ./scripts/patch-sdk-oauth.js
+RUN node scripts/patch-sdk-oauth.js
+
 # ── Download cloudflared binary ───────────────────────────────────────────────
 # Architecture-aware download: amd64 for x86_64, arm64 for aarch64.
 # Pre-installing avoids the runtime download in cloudflare-tunnel.ts and makes

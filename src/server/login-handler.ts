@@ -20,6 +20,7 @@ import { getSdkProviderSettings } from "../cline-sdk/sdk-provider-boundary";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import { loadRemoteConfig } from "../remote/config-store";
 import type { CallerIdentity } from "../remote/types";
+import { consumePendingToken, getCurrentPendingToken, startClineOAuth } from "./cline-oauth";
 import type { RemoteAuth } from "./remote-auth";
 import { isLocalRequest } from "./remote-auth";
 
@@ -313,20 +314,57 @@ export function createLoginHandler(deps: CreateLoginHandlerDependencies): LoginH
 					return;
 				}
 
-				// ── GET /auth/start (server-side OAuth relay, Option B) ─────
+				// ── GET /auth/start ──────────────────────────────────────────
+				// Starts the Cline OAuth flow using a temporary local callback
+				// server (same mechanism as MCP OAuth). No vscode:// trigger.
 				if (method === "GET" && pathname === "/auth/start") {
+					try {
+						const authorizeUrl = await startClineOAuth(remoteAuth);
+						res.writeHead(302, { Location: authorizeUrl });
+						res.end();
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						json(res, 500, { error: `Failed to start OAuth: ${message}` });
+					}
+					return;
+				}
+
+				// ── GET /auth/finalize ────────────────────────────────────────
+				// Called after the SDK's temp callback server processes the code.
+				// The patched la0 HTML redirects here with the pending token.
+				if (method === "GET" && pathname === "/auth/finalize") {
+					const token = url.searchParams.get("t") ?? getCurrentPendingToken() ?? "";
+					const pending = token ? consumePendingToken(token) : null;
+
+					if (!pending) {
+						json(res, 400, { error: "Invalid or expired authentication token." });
+						return;
+					}
+
 					const config = await loadRemoteConfig();
-					const hostHeader = req.headers.host?.trim();
-					const scheme = req.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() ?? "http";
-					const baseUrl =
-						config.publicBaseUrl?.trim() || (hostHeader ? `${scheme}://${hostHeader}` : getKanbanRuntimeOrigin());
-					const redirectUri = `${baseUrl.replace(/\/$/, "")}/auth/callback`;
-					const authorizeUrl = new URL(`${CLINE_API_BASE}/api/v1/auth/authorize`);
-					authorizeUrl.searchParams.set("client_type", "web");
-					authorizeUrl.searchParams.set("callback_url", redirectUri);
-					authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-					res.writeHead(302, { Location: authorizeUrl.toString() });
-					res.end();
+					if (!isEmailAllowed(pending.email, config)) {
+						json(res, 403, { error: "Your account is not authorised to access this Kanban instance." });
+						return;
+					}
+
+					const { cookie } = await remoteAuth.createSession({
+						email: pending.email,
+						userId: pending.userId,
+						displayName: pending.displayName,
+						persistent: false,
+					});
+
+					const html = `<!doctype html><html><head><meta charset="UTF-8">
+<meta http-equiv="refresh" content="0;url=/">
+<script>window.location.replace("/");</script>
+<style>*{margin:0}body{background:#1F2428;color:#8B949E;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;font-size:14px;}</style>
+</head><body>Signing you in to Kanban…</body></html>`;
+					res.writeHead(200, {
+						"Content-Type": "text/html; charset=utf-8",
+						"Set-Cookie": cookie,
+						"Cache-Control": "no-store",
+					});
+					res.end(html);
 					return;
 				}
 
@@ -410,12 +448,31 @@ export function createLoginHandler(deps: CreateLoginHandlerDependencies): LoginH
 						displayName: resolvedDisplayName,
 						persistent: false,
 					});
-					// Use an HTML redirect page instead of a 302 so the cookie is
-					// reliably set before navigation, even when the browser is
-					// simultaneously handling a vscode:// protocol redirect from Cline.
+					// Redirect back into Kanban as aggressively as possible.
+					// client_type=extension causes the Cline backend to serve an HTML
+					// page that both redirects to our callback_url AND fires a vscode://
+					// protocol handler in the same browser tab.
+					//
+					// We can't prevent VS Code from opening (it's triggered by the
+					// Cline backend's response page before our callback even loads),
+					// but we can ensure the browser tab ends up on Kanban by:
+					//   1. Setting the cookie in the HTTP response headers immediately
+					//   2. Replacing the history entry so the back button works
+					//   3. Using window.focus() to try to pull the tab back into focus
 					const html = `<!doctype html><html><head><meta charset="UTF-8">
-<script>window.location.replace("/");</script>
-<style>body{background:#1F2428;color:#8B949E;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-size:14px;}</style>
+<meta http-equiv="refresh" content="0;url=/">
+<script>
+// Replace current history entry so back button goes to Kanban, not the OAuth flow.
+try { history.replaceState(null, '', '/'); } catch(e) {}
+// Navigate immediately.
+window.location.replace('/');
+// Attempt to regain focus if VS Code stole it.
+window.focus();
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1F2428;color:#8B949E;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;font-size:14px;}
+</style>
 </head><body>Signing you in to Kanban…</body></html>`;
 					res.writeHead(200, {
 						"Content-Type": "text/html; charset=utf-8",

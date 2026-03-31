@@ -377,3 +377,6 @@ export async function fetchSdkClineUserRemoteConfig(input: ApiRequestParams): Pr
 	});
 	return await accountService.fetchRemoteConfig();
 }
+
+// Re-export loginClineOAuth so server-side OAuth code can use it directly.
+export { loginClineOAuth };
