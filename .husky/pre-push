@@ -1,0 +1,17 @@
+#!/bin/sh
+
+echo "Running root tests..."
+npm run test
+if [ $? -ne 0 ]; then
+	echo "Root tests failed. Push aborted."
+	exit 1
+fi
+
+echo "Running web-ui tests..."
+npm run web:test
+if [ $? -ne 0 ]; then
+	echo "Web UI tests failed. Push aborted."
+	exit 1
+fi
+
+echo "Pre-push checks passed."

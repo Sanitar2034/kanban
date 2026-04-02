@@ -9,10 +9,17 @@ if [ $? -ne 0 ]; then
 	exit 1
 fi
 
-echo "Running type checking and tests..."
-npm run typecheck && npm run test
+echo "Running type checking..."
+npm run typecheck
 if [ $? -ne 0 ]; then
-	echo "Checks failed."
+	echo "Root type checking failed."
+	exit 1
+fi
+
+echo "Running web-ui type checking..."
+npm run web:typecheck
+if [ $? -ne 0 ]; then
+	echo "Web UI type checking failed."
 	exit 1
 fi
 
