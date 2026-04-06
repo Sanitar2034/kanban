@@ -5,6 +5,7 @@ import {
 	addTaskDependency,
 	addTaskToColumn,
 	deleteTasksFromBoard,
+	moveTaskToColumn,
 	trashTaskAndGetReadyLinkedTaskIds,
 	updateTask,
 } from "../../src/core/task-board-mutations";
@@ -101,5 +102,155 @@ describe("task images", () => {
 				mimeType: "image/jpeg",
 			},
 		]);
+	});
+});
+
+describe("per-task agent/model/provider overrides", () => {
+	it("persists agentId on the card when creating a task", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Smart task", baseRef: "main", agentId: "claude" },
+			() => "aaaaa111",
+		);
+
+		expect(created.task.agentId).toBe("claude");
+	});
+
+	it("persists clineProviderId and clineModelId on the card when creating a task", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{
+				prompt: "Dumb task",
+				baseRef: "main",
+				agentId: "cline",
+				clineProviderId: "anthropic",
+				clineModelId: "claude-sonnet-4-20250514",
+			},
+			() => "aaaaa111",
+		);
+
+		expect(created.task.agentId).toBe("cline");
+		expect(created.task.clineProviderId).toBe("anthropic");
+		expect(created.task.clineModelId).toBe("claude-sonnet-4-20250514");
+	});
+
+	it("leaves override fields undefined when not provided", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Default task", baseRef: "main" },
+			() => "aaaaa111",
+		);
+
+		expect(created.task.agentId).toBeUndefined();
+		expect(created.task.clineProviderId).toBeUndefined();
+		expect(created.task.clineModelId).toBeUndefined();
+	});
+
+	it("updates agentId from undefined to a value", () => {
+		const created = addTaskToColumn(createBoard(), "backlog", { prompt: "Task", baseRef: "main" }, () => "aaaaa111");
+		expect(created.task.agentId).toBeUndefined();
+
+		const updated = updateTask(created.board, created.task.id, {
+			prompt: "Task",
+			baseRef: "main",
+			agentId: "codex",
+		});
+
+		expect(updated.updated).toBe(true);
+		expect(updated.task?.agentId).toBe("codex");
+	});
+
+	it("updates clineModelId", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Task", baseRef: "main", clineModelId: "old-model" },
+			() => "aaaaa111",
+		);
+
+		const updated = updateTask(created.board, created.task.id, {
+			prompt: "Task",
+			baseRef: "main",
+			clineModelId: "new-model",
+		});
+
+		expect(updated.task?.clineModelId).toBe("new-model");
+	});
+
+	it("preserves existing overrides when update input omits them (undefined)", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{
+				prompt: "Task",
+				baseRef: "main",
+				agentId: "claude",
+				clineProviderId: "anthropic",
+				clineModelId: "claude-sonnet-4-20250514",
+			},
+			() => "aaaaa111",
+		);
+
+		const updated = updateTask(created.board, created.task.id, {
+			prompt: "Updated prompt",
+			baseRef: "main",
+			// agentId, clineProviderId, clineModelId all undefined — should preserve
+		});
+
+		expect(updated.task?.agentId).toBe("claude");
+		expect(updated.task?.clineProviderId).toBe("anthropic");
+		expect(updated.task?.clineModelId).toBe("claude-sonnet-4-20250514");
+	});
+
+	it("clears overrides when update input provides null", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{
+				prompt: "Task",
+				baseRef: "main",
+				agentId: "codex",
+				clineProviderId: "openai",
+				clineModelId: "gpt-4",
+			},
+			() => "aaaaa111",
+		);
+
+		const updated = updateTask(created.board, created.task.id, {
+			prompt: "Task",
+			baseRef: "main",
+			agentId: null,
+			clineProviderId: null,
+			clineModelId: null,
+		});
+
+		expect(updated.task?.agentId).toBeUndefined();
+		expect(updated.task?.clineProviderId).toBeUndefined();
+		expect(updated.task?.clineModelId).toBeUndefined();
+	});
+
+	it("preserves overrides across move operations", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{
+				prompt: "Movable task",
+				baseRef: "main",
+				agentId: "claude",
+				clineProviderId: "anthropic",
+				clineModelId: "claude-sonnet-4-20250514",
+			},
+			() => "aaaaa111",
+		);
+
+		const moved = moveTaskToColumn(created.board, created.task.id, "in_progress");
+
+		expect(moved.moved).toBe(true);
+		expect(moved.task?.agentId).toBe("claude");
+		expect(moved.task?.clineProviderId).toBe("anthropic");
+		expect(moved.task?.clineModelId).toBe("claude-sonnet-4-20250514");
 	});
 });
