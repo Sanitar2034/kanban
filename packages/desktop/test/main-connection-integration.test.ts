@@ -1,6 +1,6 @@
 /**
  * Integration tests for the ConnectionStore / ConnectionManager wiring
- * in the desktop app startup path (TODO 1 + TODO 2).
+ * in the desktop app startup path.
  *
  * These tests exercise the ConnectionManager in isolation using mock
  * implementations of BrowserWindow, RuntimeChildManager, and Electron APIs.
@@ -81,6 +81,34 @@ function createMockChildManager(opts?: {
 
 type BW = import("electron").BrowserWindow;
 
+/** Mock http.get to simulate a healthy remote server. */
+function mockHttpHealthy() {
+	const { PassThrough } = require("node:stream");
+	const mockGet = vi.fn((_url: unknown, _opts: unknown, cb: (res: any) => void) => {
+		const res = new PassThrough();
+		res.statusCode = 200;
+		cb(res);
+		res.end();
+		return { on: vi.fn(), destroy: vi.fn() };
+	});
+	vi.spyOn(require("node:http"), "get").mockImplementation(mockGet);
+	vi.spyOn(require("node:https"), "get").mockImplementation(mockGet);
+}
+
+/** Mock http.get to simulate an unreachable remote server. */
+function mockHttpUnhealthy() {
+	const mockGet = vi.fn((_url: unknown, _opts: unknown, _cb: unknown) => {
+		const req = { on: vi.fn(), destroy: vi.fn() };
+		setTimeout(() => {
+			const errorHandler = req.on.mock.calls.find((c: any[]) => c[0] === "error")?.[1];
+			if (errorHandler) errorHandler(new Error("ECONNREFUSED"));
+		}, 0);
+		return req;
+	});
+	vi.spyOn(require("node:http"), "get").mockImplementation(mockGet);
+	vi.spyOn(require("node:https"), "get").mockImplementation(mockGet);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -91,6 +119,8 @@ describe("ConnectionManager integration", () => {
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kanban-cm-test-"));
 		vi.clearAllMocks();
+		// Default: health checks succeed (mock node:http/https).
+		mockHttpHealthy();
 	});
 
 	afterEach(() => {
@@ -108,7 +138,7 @@ describe("ConnectionManager integration", () => {
 		expect(store.getActiveConnectionId()).toBe("local");
 	});
 
-	it("uses active connection selection rather than always booting local", async () => {
+	it("always starts local child even when active connection is remote", async () => {
 		const store = new ConnectionStore(tmpDir);
 		const conn = store.addConnection({ label: "Remote", serverUrl: "https://r.example.com", authToken: "t" });
 		store.setActiveConnection(conn.id);
@@ -116,7 +146,9 @@ describe("ConnectionManager integration", () => {
 		const child = createMockChildManager();
 		const mgr = new ConnectionManager({ window: win as unknown as BW, childManager: child, store });
 		await mgr.initialize();
-		expect(child.start).not.toHaveBeenCalled();
+		// Local child always starts for fallback.
+		expect(child.start).toHaveBeenCalledOnce();
+		// Renderer loads the remote URL.
 		expect(win.loadURL).toHaveBeenCalledWith("https://r.example.com");
 	});
 
@@ -153,7 +185,9 @@ describe("ConnectionManager integration", () => {
 		const child = createMockChildManager();
 		const mgr = new ConnectionManager({ window: win as unknown as BW, childManager: child, store: s2 });
 		await mgr.initialize();
-		expect(child.start).not.toHaveBeenCalled();
+		// Local child always starts.
+		expect(child.start).toHaveBeenCalledOnce();
+		// Renderer loads the remote URL.
 		expect(win.loadURL).toHaveBeenCalledWith("https://prod.io");
 	});
 
@@ -173,14 +207,12 @@ describe("ConnectionManager integration", () => {
 		expect(win.loadURL).toHaveBeenCalledWith("http://127.0.0.1:54321");
 	});
 
-	it("falls back to local when remote fails during initialize", async () => {
+	it("falls back to local when remote health check fails during initialize", async () => {
+		mockHttpUnhealthy();
 		const store = new ConnectionStore(tmpDir);
 		const conn = store.addConnection({ label: "Broken", serverUrl: "https://broken.io" });
 		store.setActiveConnection(conn.id);
 		const win = createMockWindow();
-		win.loadURL.mockImplementation(async (...args: unknown[]) => {
-			if (args[0] === "https://broken.io") throw new Error("ERR_CONNECTION_REFUSED");
-		});
 		const child = createMockChildManager();
 		const onChange = vi.fn();
 		const mgr = new ConnectionManager({
@@ -235,7 +267,7 @@ describe("ConnectionManager integration", () => {
 		expect(onReady).toHaveBeenCalledWith("http://127.0.0.1:9999", expect.any(String));
 	});
 
-	it("fires onLocalRuntimeStopped when switching from local to remote", async () => {
+	it("does NOT fire onLocalRuntimeStopped when switching to remote (child stays alive)", async () => {
 		const store = new ConnectionStore(tmpDir);
 		const conn = store.addConnection({ label: "R", serverUrl: "https://r.io" });
 		const win = createMockWindow();
@@ -247,7 +279,8 @@ describe("ConnectionManager integration", () => {
 		await mgr.initialize();
 		expect(onStopped).not.toHaveBeenCalled();
 		await mgr.switchTo(conn.id);
-		expect(onStopped).toHaveBeenCalledOnce();
+		// Local child stays alive — onLocalRuntimeStopped should NOT fire.
+		expect(onStopped).not.toHaveBeenCalled();
 	});
 
 	it("fires onLocalRuntimeStopped on shutdown", async () => {

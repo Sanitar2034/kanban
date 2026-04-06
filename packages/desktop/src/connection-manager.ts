@@ -2,11 +2,15 @@
  * ConnectionManager — orchestrates switching between local and remote
  * Kanban server connections.
  *
+ * Architecture: the local runtime child is ALWAYS running. Switching to
+ * remote only changes which URL the renderer points at — the local child
+ * stays alive for instant fallback.
+ *
  * Responsibilities:
- * - Local→Remote: stop the runtime child process, install auth header
- *   interceptor for the remote origin, loadURL(serverUrl).
- * - Remote→Local: start the runtime child process, install auth header
- *   interceptor for the local origin, loadURL(localhost).
+ * - Local child lifecycle: start once during initialize(), keep alive
+ *   until shutdown(). Never kill the child when switching connections.
+ * - Remote switching: health-check the remote first, only then navigate
+ *   the renderer. If the remote is unreachable, auto-fallback to local.
  * - HTTP warning: warn before connecting to non-localhost http:// URLs.
  * - Auth token injection via session.webRequest.onBeforeSendHeaders.
  *
@@ -19,6 +23,8 @@
  *   4. Not crash or hang
  */
 
+import http from "node:http";
+import https from "node:https";
 import { BrowserWindow, dialog, type Session } from "electron";
 import type { RuntimeChildManager } from "./runtime-child.js";
 import type { ConnectionStore, SavedConnection } from "./connection-store.js";
@@ -30,6 +36,9 @@ import { showDesktopFailureDialog, type DesktopFailureState } from "./desktop-fa
 
 // Re-export for convenience.
 export { isInsecureRemoteUrl } from "./connection-utils.js";
+
+/** Timeout for remote health checks (ms). */
+const REMOTE_HEALTH_TIMEOUT_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,7 +108,13 @@ export class ConnectionManager {
 		this.createWslLauncher = options.createWslLauncher;
 	}
 
-	/** Switch to the given connection ID. */
+	/**
+	 * Switch to the given connection ID.
+	 *
+	 * If the target connection fails (e.g. remote is unreachable and user
+	 * picks "fallback to local"), the active connection will reflect where
+	 * the renderer actually ended up, not the originally requested target.
+	 */
 	async switchTo(connectionId: string): Promise<void> {
 		const connection = this.store
 			.getConnections()
@@ -113,31 +128,37 @@ export class ConnectionManager {
 
 		if (connection.id === "local") {
 			await this.switchToLocal();
+			this.store.setActiveConnection("local");
 		} else if (connection.id === "wsl") {
+			// switchToWsl handles its own store updates on success/failure.
 			await this.switchToWsl();
 		} else {
+			// switchToRemote handles its own store updates:
+			// - success → sets to connectionId
+			// - fallback-to-local → sets to "local"
+			// - dismiss → no change (stays on previous connection)
 			await this.switchToRemote(connection);
 		}
 
-		this.store.setActiveConnection(connectionId);
 		this.onConnectionChanged?.();
 	}
 
 	/**
-	 * Initialize — restore the persisted active connection.
+	 * Initialize — always start the local child, then restore the
+	 * persisted active connection.
 	 *
-	 * Reads the active connection from the store and switches to it.
-	 * If the saved connection is non-local and fails to connect (deleted,
-	 * unreachable, or otherwise invalid), falls back to local gracefully:
-	 *   1. Log a warning
-	 *   2. Fall back to local connection
-	 *   3. Update the persisted active connection to local
-	 *   4. Not crash or hang
+	 * The local child is started unconditionally so it's always available
+	 * as a fallback. If the active connection is remote, we health-check
+	 * first and silently fall back to local if unreachable.
 	 */
 	async initialize(): Promise<void> {
+		// Always start the local child first.
+		await this.ensureLocalChildRunning();
+		if (!this.childRunning) return; // Boot failure was recorded; nothing to load.
+
 		const active = this.store.getActiveConnection();
 		if (active.id === "local") {
-			await this.switchToLocal();
+			await this.loadLocal();
 		} else if (active.id === "wsl") {
 			try {
 				await this.switchToWsl();
@@ -148,19 +169,30 @@ export class ConnectionManager {
 				);
 				this.store.setActiveConnection("local");
 				this.onConnectionChanged?.();
-				await this.switchToLocal();
+				await this.loadLocal();
 			}
 		} else {
-			try {
-				await this.switchToRemote(active);
-			} catch (err) {
+			// Remote — health-check first, auto-fallback on failure.
+			const healthy = await this.checkRemoteHealth(active.serverUrl, active.authToken);
+			if (healthy) {
+				try {
+					await this.loadRemote(active);
+				} catch (err) {
+					console.warn(
+						`[ConnectionManager] Failed to load remote "${active.label}", falling back to local:`,
+						err instanceof Error ? err.message : err,
+					);
+					this.store.setActiveConnection("local");
+					this.onConnectionChanged?.();
+					await this.loadLocal();
+				}
+			} else {
 				console.warn(
-					`[ConnectionManager] Failed to restore remote connection "${active.label}" (${active.id}), falling back to local:`,
-					err instanceof Error ? err.message : err,
+					`[ConnectionManager] Remote "${active.label}" (${active.serverUrl}) is unreachable, falling back to local.`,
 				);
 				this.store.setActiveConnection("local");
 				this.onConnectionChanged?.();
-				await this.switchToLocal();
+				await this.loadLocal();
 			}
 		}
 	}
@@ -238,65 +270,133 @@ export class ConnectionManager {
 					await this.installAuthInterceptor(this.localUrl, this.localAuthToken);
 					await this.window.loadURL(this.localUrl);
 				} catch {
-					this.childRunning = false;
-					await this.switchToLocal();
+					// Child may have restarted on a different port.
+					await this.loadLocal();
 				}
 			} else {
-				await this.switchToLocal();
+				await this.ensureLocalChildRunning();
+				await this.loadLocal();
 			}
 		} else if (connection.id === "wsl") {
 			await this.switchToWsl();
 		} else {
-			await this.switchToRemote(connection);
+			// Health-check remote; fallback to local if dead.
+			const healthy = await this.checkRemoteHealth(connection.serverUrl, connection.authToken);
+			if (healthy) {
+				await this.loadRemote(connection);
+			} else {
+				await this.switchToLocal();
+			}
+		}
+	}
+
+	// -- Private: local child lifecycle ---------------------------------------
+
+	/**
+	 * Start the local child if it's not already running.
+	 * Does NOT navigate the renderer — call `loadLocal()` for that.
+	 */
+	private async ensureLocalChildRunning(): Promise<void> {
+		if (this.childRunning) return;
+
+		// Defensive: clean up stale child reference from shutdown/exit race.
+		if (this.childManager.running) {
+			try { await this.childManager.shutdown(); } catch { /* best-effort */ }
+		}
+
+		this.localAuthToken = generateAuthToken();
+		try {
+			this.localUrl = await this.childManager.start({
+				host: "127.0.0.1",
+				port: "auto",
+				authToken: this.localAuthToken,
+				kanbanCliCommand: this.kanbanCliCommand,
+			});
+			this.childRunning = true;
+			this.onLocalRuntimeReady?.(this.localUrl, this.localAuthToken);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error("[ConnectionManager] Failed to start local runtime:", message);
+
+			const failure: DesktopFailureState = {
+				code: "RUNTIME_CHILD_START_FAILED",
+				title: "Local Runtime Failed",
+				message: `Failed to start the Kanban runtime:\n\n${message}`,
+				canRetry: true,
+				canFallbackToLocal: false,
+			};
+
+			const action = await showDesktopFailureDialog(this.window, failure);
+			if (action === "retry") {
+				return this.ensureLocalChildRunning();
+			}
+			// 'dismiss' — record failure ONLY after the user has given up.
+			recordBootFailure("RUNTIME_CHILD_START_FAILED", message);
+		}
+	}
+
+	/**
+	 * Navigate the renderer to the local runtime URL.
+	 * Assumes the local child is already running.
+	 */
+	private async loadLocal(): Promise<void> {
+		await this.installAuthInterceptor(this.localUrl, this.localAuthToken);
+		await this.window.loadURL(this.localUrl);
+	}
+
+	// -- Private: remote health check ----------------------------------------
+
+	/**
+	 * Check if a remote server is reachable by hitting /api/health.
+	 * Returns true if the server responds with 200 within the timeout.
+	 */
+	private async checkRemoteHealth(serverUrl: string, authToken?: string): Promise<boolean> {
+		try {
+			const url = new URL("/api/health", serverUrl);
+			const headers: Record<string, string> = {};
+			if (authToken) {
+				headers["Authorization"] = `Bearer ${authToken}`;
+			}
+
+			const transport = url.protocol === "https:" ? https : http;
+
+			return await new Promise<boolean>((resolve) => {
+				const timer = setTimeout(() => {
+					req.destroy();
+					resolve(false);
+				}, REMOTE_HEALTH_TIMEOUT_MS);
+
+				const req = transport.get(url, { headers }, (res) => {
+					clearTimeout(timer);
+					// Drain the response body so the socket closes cleanly.
+					res.resume();
+					resolve(res.statusCode === 200);
+				});
+				req.on("error", () => {
+					clearTimeout(timer);
+					resolve(false);
+				});
+			});
+		} catch {
+			return false;
 		}
 	}
 
 	// -- Private switching ----------------------------------------------------
 
 	private async switchToLocal(): Promise<void> {
-		if (!this.childRunning) {
-			// Defensive: if the RuntimeChildManager still holds a child
-			// reference (e.g. shutdown/exit race when switching away from
-			// local), clean it up before starting a fresh child.
-			if (this.childManager.running) {
-				try { await this.childManager.shutdown(); } catch { /* best-effort */ }
-			}
+		await this.ensureLocalChildRunning();
+		await this.loadLocal();
+	}
 
-			this.localAuthToken = generateAuthToken();
-			try {
-				this.localUrl = await this.childManager.start({
-					host: "127.0.0.1",
-					port: "auto",
-					authToken: this.localAuthToken,
-					kanbanCliCommand: this.kanbanCliCommand,
-				});
-				this.childRunning = true;
-				this.onLocalRuntimeReady?.(this.localUrl, this.localAuthToken);
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				console.error("[ConnectionManager] Failed to start local runtime:", message);
-
-				const failure: DesktopFailureState = {
-					code: "RUNTIME_CHILD_START_FAILED",
-					title: "Local Runtime Failed",
-					message: `Failed to start the Kanban runtime:\n\n${message}`,
-					canRetry: true,
-					canFallbackToLocal: false,
-				};
-
-				const action = await showDesktopFailureDialog(this.window, failure);
-				if (action === "retry") {
-					return this.switchToLocal();
-				}
-				// 'dismiss' — record failure ONLY after the user has given up.
-				// If we recorded before the dialog, a successful retry would still
-				// have failureCode set and main.ts would never advance to 'ready'.
-				recordBootFailure("RUNTIME_CHILD_START_FAILED", message);
-				return;
-			}
-		}
-		await this.installAuthInterceptor(this.localUrl, this.localAuthToken);
-		await this.window.loadURL(this.localUrl);
+	/**
+	 * Navigate the renderer to a remote server URL.
+	 * Does NOT shut down the local child — it stays alive for fallback.
+	 */
+	private async loadRemote(connection: SavedConnection): Promise<void> {
+		const token = connection.authToken ?? "";
+		await this.installAuthInterceptor(connection.serverUrl, token);
+		await this.window.loadURL(connection.serverUrl);
 	}
 
 	private async switchToRemote(connection: SavedConnection): Promise<void> {
@@ -315,15 +415,38 @@ export class ConnectionManager {
 			});
 			if (response === 0) return;
 		}
-		if (this.childRunning) {
-			this.onLocalRuntimeStopped?.();
-			try { await this.childManager.shutdown(); } catch { /* best-effort */ }
-			this.childRunning = false;
+
+		// Health-check the remote before navigating.
+		const healthy = await this.checkRemoteHealth(connection.serverUrl, connection.authToken);
+		if (!healthy) {
+			const failure: DesktopFailureState = {
+				code: "REMOTE_CONNECTION_UNREACHABLE",
+				title: "Remote Connection Failed",
+				message: `Cannot reach "${connection.label}" at:\n\n${connection.serverUrl}\n\nThe server may be offline or unreachable.`,
+				canRetry: true,
+				canFallbackToLocal: true,
+			};
+
+			const action = await showDesktopFailureDialog(this.window, failure);
+			if (action === "retry") {
+				return this.switchToRemote(connection);
+			}
+			if (action === "fallback-local") {
+				this.store.setActiveConnection("local");
+				this.onConnectionChanged?.();
+				return this.loadLocal();
+			}
+			// 'dismiss' — only record boot failure during boot.
+			if (!getBootState().failureCode && getBootState().currentPhase !== "ready") {
+				recordBootFailure("REMOTE_CONNECTION_UNREACHABLE", "Health check failed");
+			}
+			return;
 		}
-		const token = connection.authToken ?? "";
+
+		// Remote is healthy — navigate the renderer (local child stays alive).
 		try {
-			await this.installAuthInterceptor(connection.serverUrl, token);
-			await this.window.loadURL(connection.serverUrl);
+			await this.loadRemote(connection);
+			this.store.setActiveConnection(connection.id);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			console.error("[ConnectionManager] Failed to connect to remote:", message);
@@ -341,9 +464,10 @@ export class ConnectionManager {
 				return this.switchToRemote(connection);
 			}
 			if (action === "fallback-local") {
-				return this.switchToLocal();
+				this.store.setActiveConnection("local");
+				this.onConnectionChanged?.();
+				return this.loadLocal();
 			}
-			// 'dismiss' — only record boot failure during boot, not post-startup menu switches.
 			if (!getBootState().failureCode && getBootState().currentPhase !== "ready") {
 				recordBootFailure("REMOTE_CONNECTION_UNREACHABLE", message);
 			}
@@ -356,13 +480,7 @@ export class ConnectionManager {
 			console.error("[ConnectionManager] WSL launcher factory not available.");
 			return;
 		}
-		// Stop local child if running.
-		if (this.childRunning) {
-			this.onLocalRuntimeStopped?.();
-			try { await this.childManager.shutdown(); } catch { /* best-effort */ }
-			this.childRunning = false;
-		}
-		// Stop existing WSL if running.
+		// Stop existing WSL if running (but keep local child alive).
 		this.stopWsl();
 
 		this.wslAuthToken = generateAuthToken();

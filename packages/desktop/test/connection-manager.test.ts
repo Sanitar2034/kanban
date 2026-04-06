@@ -67,10 +67,43 @@ function fakeWsl(err: Error): WslLauncher {
 	} as unknown as WslLauncher;
 }
 
+/** Mock http.get to simulate a healthy remote server. */
+function mockHealthy() {
+	const { PassThrough } = require("node:stream");
+	const mockGet = vi.fn((_url: unknown, _opts: unknown, cb: (res: any) => void) => {
+		const res = new PassThrough();
+		res.statusCode = 200;
+		cb(res);
+		res.end();
+		return { on: vi.fn(), destroy: vi.fn() };
+	});
+	vi.spyOn(require("node:http"), "get").mockImplementation(mockGet);
+	vi.spyOn(require("node:https"), "get").mockImplementation(mockGet);
+}
+
+/** Mock http.get to simulate an unreachable remote server. */
+function mockUnhealthy() {
+	const mockGet = vi.fn((_url: unknown, _opts: unknown, _cb: unknown) => {
+		const req = { on: vi.fn(), destroy: vi.fn() };
+		// Simulate connection error on next tick.
+		setTimeout(() => {
+			const errorHandler = req.on.mock.calls.find((c: any[]) => c[0] === "error")?.[1];
+			if (errorHandler) errorHandler(new Error("ECONNREFUSED"));
+		}, 0);
+		return req;
+	});
+	vi.spyOn(require("node:http"), "get").mockImplementation(mockGet);
+	vi.spyOn(require("node:https"), "get").mockImplementation(mockGet);
+}
+
 // ---------------------------------------------------------------------------
 
 describe("ConnectionManager", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Default: health checks succeed (overridden per-test when needed).
+		mockHealthy();
+	});
 
 	describe("isInsecureRemoteUrl", () => {
 		it("returns true for http:// with non-localhost host", () => {
@@ -277,7 +310,7 @@ describe("ConnectionManager", () => {
 			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
 		});
 
-		it("restarts child when loadURL fails", async () => {
+		it("falls back to loadLocal when loadURL fails", async () => {
 			const startMock = vi.fn().mockResolvedValue("http://127.0.0.1:12345");
 			const cm = fakeCM(startMock);
 			const manager = new ConnectionManager({
@@ -285,16 +318,16 @@ describe("ConnectionManager", () => {
 			});
 			// Initialize to start the child
 			await manager.initialize();
-			startMock.mockClear();
 			loadURLMock.mockClear();
 
-			// Make loadURL fail on reconnect — should restart child via switchToLocal
-			loadURLMock.mockRejectedValueOnce(new Error("load failed"));
-			startMock.mockResolvedValueOnce("http://127.0.0.1:54321");
+			// Make loadURL fail on reconnect — should fallback to loadLocal
+			loadURLMock
+				.mockRejectedValueOnce(new Error("load failed"))
+				.mockResolvedValueOnce(undefined);
 			await manager.reconnectActiveConnection();
 
-			// switchToLocal should have been called (start called again)
-			expect(startMock).toHaveBeenCalled();
+			// loadLocal should have been called (loadURL called again after failure)
+			expect(loadURLMock).toHaveBeenCalledTimes(2);
 		});
 
 		it("starts fresh child when child is not running", async () => {
@@ -306,7 +339,7 @@ describe("ConnectionManager", () => {
 			// Don't initialize — child is not running
 
 			await manager.reconnectActiveConnection();
-			// switchToLocal should start the child
+			// ensureLocalChildRunning + loadLocal
 			expect(startMock).toHaveBeenCalled();
 			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
 		});
@@ -328,12 +361,12 @@ describe("ConnectionManager", () => {
 			});
 
 			await manager.reconnectActiveConnection();
-			// Should have gone through local path (switchToLocal), not remote
+			// Should have gone through local path
 			expect(startMock).toHaveBeenCalled();
 			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
 		});
 
-		it("reconnects to remote when active connection is remote", async () => {
+		it("reconnects to remote when healthy", async () => {
 			const remoteConn: SavedConnection = {
 				id: "remote-1", label: "Prod", serverUrl: "https://prod.example.com", authToken: "tok",
 			};
@@ -344,6 +377,23 @@ describe("ConnectionManager", () => {
 
 			await manager.reconnectActiveConnection();
 			expect(loadURLMock).toHaveBeenCalledWith("https://prod.example.com");
+		});
+
+		it("falls back to local when remote health check fails", async () => {
+			mockUnhealthy();
+			const remoteConn: SavedConnection = {
+				id: "remote-1", label: "Prod", serverUrl: "https://dead.example.com", authToken: "tok",
+			};
+			const store = fakeStore(remoteConn.id, [remoteConn]);
+			const cm = fakeCM();
+			const manager = new ConnectionManager({
+				window: fakeWindow(), childManager: cm, store,
+			});
+
+			await manager.reconnectActiveConnection();
+			// Should fallback to local since remote is unhealthy
+			expect(cm.start).toHaveBeenCalled();
+			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
 		});
 	});
 
@@ -366,15 +416,19 @@ describe("ConnectionManager", () => {
 			} as any);
 		}
 
-		it("shows failure dialog when loadURL throws", async () => {
-			mockBootPhase("initialize-connections");
-			loadURLMock.mockRejectedValueOnce(new Error("ERR_CONNECTION_REFUSED"));
+		it("shows failure dialog when health check fails on switchTo", async () => {
+			mockBootPhase("ready");
+			mockUnhealthy();
 			showDesktopFailureDialogMock.mockResolvedValueOnce("dismiss");
+			const cm = fakeCM();
 			const mgr = new ConnectionManager({
-				window: fakeWindow(), childManager: fakeCM(),
-				store: fakeStore(remoteConn.id, [remoteConn]),
+				window: fakeWindow(), childManager: cm,
+				store: fakeStore("local", [remoteConn]),
 			});
+			// Initialize with local first
 			await mgr.initialize();
+			// Switch to remote — health check fails
+			await mgr.switchTo(remoteConn.id);
 
 			expect(showDesktopFailureDialogMock).toHaveBeenCalledOnce();
 			const failure = showDesktopFailureDialogMock.mock.calls[0][1];
@@ -384,86 +438,57 @@ describe("ConnectionManager", () => {
 			expect(failure.message).toContain("Prod Server");
 		});
 
-		it("retries on retry action and succeeds", async () => {
-			mockBootPhase("initialize-connections");
-			loadURLMock
-				.mockRejectedValueOnce(new Error("timeout"))
-				.mockResolvedValueOnce(undefined);
-			showDesktopFailureDialogMock.mockResolvedValueOnce("retry");
-			const mgr = new ConnectionManager({
-				window: fakeWindow(), childManager: fakeCM(),
-				store: fakeStore(remoteConn.id, [remoteConn]),
-			});
-			await mgr.initialize();
-
-			expect(showDesktopFailureDialogMock).toHaveBeenCalledOnce();
-			expect(loadURLMock).toHaveBeenCalledTimes(2);
-			expect(loadURLMock).toHaveBeenCalledWith("https://prod.example.com");
-		});
-
-		it("falls back to local on fallback-local action", async () => {
-			mockBootPhase("initialize-connections");
-			loadURLMock.mockRejectedValueOnce(new Error("unreachable"));
+		it("falls back to local on fallback-local action when health check fails", async () => {
+			mockBootPhase("ready");
+			mockUnhealthy();
 			showDesktopFailureDialogMock.mockResolvedValueOnce("fallback-local");
 			const cm = fakeCM();
+			const store = fakeStore("local", [remoteConn]);
 			const mgr = new ConnectionManager({
-				window: fakeWindow(), childManager: cm,
-				store: fakeStore(remoteConn.id, [remoteConn]),
+				window: fakeWindow(), childManager: cm, store,
 			});
 			await mgr.initialize();
+			loadURLMock.mockClear();
+			await mgr.switchTo(remoteConn.id);
 
-			expect(showDesktopFailureDialogMock).toHaveBeenCalledOnce();
-			expect(cm.start).toHaveBeenCalled();
+			// Should have fallen back to local
 			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
 		});
 
-		it("records boot failure during startup when dismissed", async () => {
-			mockBootPhase("initialize-connections");
-			loadURLMock.mockRejectedValueOnce(new Error("DNS_PROBE_FAILED"));
-			showDesktopFailureDialogMock.mockResolvedValueOnce("dismiss");
+		it("initialize auto-falls-back to local when remote health check fails", async () => {
+			mockUnhealthy();
+			const cm = fakeCM();
+			const store = fakeStore(remoteConn.id, [remoteConn]);
 			const mgr = new ConnectionManager({
-				window: fakeWindow(), childManager: fakeCM(),
-				store: fakeStore(remoteConn.id, [remoteConn]),
+				window: fakeWindow(), childManager: cm, store,
 			});
 			await mgr.initialize();
 
-			expect(recordBootFailure).toHaveBeenCalledWith(
-				"REMOTE_CONNECTION_UNREACHABLE",
-				"DNS_PROBE_FAILED",
-			);
+			// Local child should always start
+			expect(cm.start).toHaveBeenCalledOnce();
+			// Should have auto-fallen back to local (no dialog)
+			expect(showDesktopFailureDialogMock).not.toHaveBeenCalled();
+			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
+			expect(store.setActiveConnection).toHaveBeenCalledWith("local");
 		});
 
 		it("does not record boot failure when already ready (post-startup)", async () => {
 			mockBootPhase("ready");
-			loadURLMock.mockRejectedValueOnce(new Error("refused"));
+			mockUnhealthy();
 			showDesktopFailureDialogMock.mockResolvedValueOnce("dismiss");
 			const mgr = new ConnectionManager({
 				window: fakeWindow(), childManager: fakeCM(),
-				store: fakeStore(remoteConn.id, [remoteConn]),
+				store: fakeStore("local", [remoteConn]),
 			});
 			await mgr.initialize();
-
-			expect(showDesktopFailureDialogMock).toHaveBeenCalledOnce();
-			expect(recordBootFailure).not.toHaveBeenCalled();
-		});
-
-		it("does not record boot failure when failureCode already set", async () => {
-			mockBootPhase("failed", "RUNTIME_CHILD_START_FAILED");
-			loadURLMock.mockRejectedValueOnce(new Error("net error"));
-			showDesktopFailureDialogMock.mockResolvedValueOnce("dismiss");
-			const mgr = new ConnectionManager({
-				window: fakeWindow(), childManager: fakeCM(),
-				store: fakeStore(remoteConn.id, [remoteConn]),
-			});
-			await mgr.initialize();
+			await mgr.switchTo(remoteConn.id);
 
 			expect(showDesktopFailureDialogMock).toHaveBeenCalledOnce();
 			expect(recordBootFailure).not.toHaveBeenCalled();
 		});
 	});
 
-	// -- initialize fallback behavior (Task 9) --------------------------------
-	// Lock in existing behavior: how initialize() routes based on store state.
+	// -- initialize fallback behavior ----------------------------------------
 
 	describe("initialize fallback behavior", () => {
 		it("initialize() with empty store starts local", async () => {
@@ -477,7 +502,7 @@ describe("ConnectionManager", () => {
 			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
 		});
 
-		it("initialize() with persisted remote attempts remote (no local start)", async () => {
+		it("initialize() with persisted remote starts local child AND loads remote", async () => {
 			const remoteConn: SavedConnection = {
 				id: "remote-x", label: "Staging",
 				serverUrl: "https://staging.example.com", authToken: "tok",
@@ -489,9 +514,9 @@ describe("ConnectionManager", () => {
 			});
 			await mgr.initialize();
 
-			// Should NOT start local child.
-			expect(cm.start).not.toHaveBeenCalled();
-			// Should load the remote URL.
+			// Local child always starts for fallback.
+			expect(cm.start).toHaveBeenCalledOnce();
+			// Should load the remote URL (health check passes).
 			expect(loadURLMock).toHaveBeenCalledWith("https://staging.example.com");
 		});
 
@@ -509,31 +534,24 @@ describe("ConnectionManager", () => {
 			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
 		});
 
-		it("initialize() with failed remote falls back to local gracefully", async () => {
+		it("initialize() with unreachable remote auto-falls back to local", async () => {
+			mockUnhealthy();
 			const remoteConn: SavedConnection = {
 				id: "remote-broken", label: "Broken",
 				serverUrl: "https://broken.io", authToken: "t",
 			};
-			vi.mocked(getBootState).mockReturnValue({
-				currentPhase: "initialize-connections",
-				lastSuccessfulPhase: "create-window",
-				failureCode: null,
-				failureMessage: null,
-				startedAt: new Date().toISOString(),
-				phaseHistory: [],
-			} as any);
-			loadURLMock.mockRejectedValueOnce(new Error("connection refused"));
-			showDesktopFailureDialogMock.mockResolvedValueOnce("fallback-local");
 			const cm = fakeCM();
+			const store = fakeStore(remoteConn.id, [remoteConn]);
 			const mgr = new ConnectionManager({
-				window: fakeWindow(), childManager: cm,
-				store: fakeStore(remoteConn.id, [remoteConn]),
+				window: fakeWindow(), childManager: cm, store,
 			});
 			await mgr.initialize();
 
-			// After fallback, local child should start.
+			// Local child always starts.
 			expect(cm.start).toHaveBeenCalledOnce();
+			// Auto-fallback to local, no dialog during init.
 			expect(loadURLMock).toHaveBeenCalledWith("http://127.0.0.1:12345");
+			expect(store.setActiveConnection).toHaveBeenCalledWith("local");
 		});
 	});
 });
