@@ -79,7 +79,7 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		surfaceRaised: "#1F2E1C",
 		selectionBackground: "#5DB85D4D",
 		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#263823666",
+		selectionInactiveBackground: "#26382366",
 	},
 	sunset: {
 		textPrimary: "#F0E4D8",
