@@ -446,9 +446,9 @@ async function updateTaskCommand(input: {
 			startInPlanMode: input.startInPlanMode ?? taskRecord.task.startInPlanMode,
 			autoReviewEnabled: input.autoReviewEnabled ?? taskRecord.task.autoReviewEnabled === true,
 			autoReviewMode: input.autoReviewMode ?? taskRecord.task.autoReviewMode ?? "commit",
-			agentId: input.agentId !== undefined ? input.agentId : undefined,
-			clineProviderId: input.clineProviderId !== undefined ? input.clineProviderId : undefined,
-			clineModelId: input.clineModelId !== undefined ? input.clineModelId : undefined,
+			agentId: input.agentId,
+			clineProviderId: input.clineProviderId,
+			clineModelId: input.clineModelId,
 		});
 		if (!updatedTask.updated || !updatedTask.task) {
 			throw new Error(`Task "${input.taskId}" could not be updated.`);
