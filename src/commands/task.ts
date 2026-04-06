@@ -10,6 +10,7 @@ import type {
 import {
 	buildKanbanRuntimeUrl,
 	getKanbanRuntimeOrigin,
+	getRuntimeFetch,
 	type ResolvedRuntimeConnection,
 	resolveRuntimeConnection,
 } from "../core/runtime-endpoint";
@@ -123,6 +124,10 @@ function createRuntimeTrpcClient(workspaceId: string | null) {
 					if (workspaceId) h["x-kanban-workspace-id"] = workspaceId;
 					if (authToken) h.authorization = `Bearer ${authToken}`;
 					return h;
+				},
+				fetch: async (url, options) => {
+					const runtimeFetch = await getRuntimeFetch();
+					return runtimeFetch(url, options);
 				},
 			}),
 		],

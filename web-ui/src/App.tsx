@@ -78,10 +78,11 @@ import {
 	replaceWorkspaceMetadata,
 	resetWorkspaceMetadataStore,
 } from "@/stores/workspace-metadata-store";
-import { TERMINAL_THEME_COLORS } from "@/terminal/theme-colors";
+import { useTerminalThemeColors } from "@/terminal/theme-colors";
 import type { BoardData } from "@/types";
 
 export default function App(): ReactElement {
+	const terminalThemeColors = useTerminalThemeColors();
 	const [board, setBoard] = useState<BoardData>(() => createInitialBoardData());
 	const [sessions, setSessions] = useState<Record<string, RuntimeTaskSessionSummary>>({});
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -1037,9 +1038,9 @@ export default function App(): ReactElement {
 													onClose={closeHomeTerminal}
 													minimalHeaderTitle="Terminal"
 													minimalHeaderSubtitle={homeTerminalSubtitle}
-													panelBackgroundColor={TERMINAL_THEME_COLORS.surfaceRaised}
-													terminalBackgroundColor={TERMINAL_THEME_COLORS.surfaceRaised}
-													cursorColor={TERMINAL_THEME_COLORS.textPrimary}
+													panelBackgroundColor={terminalThemeColors.surfaceRaised}
+													terminalBackgroundColor={terminalThemeColors.surfaceRaised}
+													cursorColor={terminalThemeColors.textPrimary}
 													onConnectionReady={markTerminalConnectionReady}
 													agentCommand={agentCommand}
 													onSendAgentCommand={handleSendAgentCommandToHomeTerminal}

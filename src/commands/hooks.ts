@@ -5,7 +5,7 @@ import { createTRPCProxyClient, httpBatchLink, TRPCClientError } from "@trpc/cli
 import type { Command } from "commander";
 import type { RuntimeHookEvent, RuntimeTaskHookActivity } from "../core/api-contract";
 import { buildKanbanCommandParts } from "../core/kanban-command";
-import { resolveRuntimeConnection } from "../core/runtime-endpoint";
+import { getRuntimeFetch, resolveRuntimeConnection } from "../core/runtime-endpoint";
 import { buildWindowsCmdArgsArray, resolveWindowsComSpec, shouldUseWindowsCmdLaunch } from "../core/windows-cmd-launch";
 import { parseHookRuntimeContextFromEnv } from "../terminal/hook-runtime-context";
 import type { RuntimeAppRouter } from "../trpc/app-router";
@@ -402,6 +402,10 @@ async function ingestHookEvent(args: HooksIngestArgs): Promise<void> {
 				url: `${conn.origin}/api/trpc`,
 				maxItems: 1,
 				headers: () => (conn.authToken ? { authorization: `Bearer ${conn.authToken}` } : {}),
+				fetch: async (url, options) => {
+					const runtimeFetch = await getRuntimeFetch();
+					return runtimeFetch(url, options);
+				},
 			}),
 		],
 	});
