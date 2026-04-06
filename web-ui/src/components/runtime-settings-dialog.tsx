@@ -22,7 +22,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
 import { useRuntimeSettingsClineMcpController } from "@/hooks/use-runtime-settings-cline-mcp-controller";
-import { THEMES, useTheme } from "@/hooks/use-theme";
+import { previewThemeId, readStoredThemeId, saveThemeId, THEMES, type ThemeId } from "@/hooks/use-theme";
 import { useLayoutCustomizations } from "@/resize/layout-customizations";
 import { openFileOnHost } from "@/runtime/runtime-config-query";
 import type {
@@ -299,10 +299,11 @@ export function RuntimeSettingsDialog({
 }): React.ReactElement {
 	const { config, isLoading, isSaving, save } = useRuntimeConfig(open, workspaceId, initialConfig);
 	const { resetLayoutCustomizations } = useLayoutCustomizations();
-	const { themeId, setThemeId } = useTheme();
 	const [selectedAgentId, setSelectedAgentId] = useState<RuntimeAgentId>("claude");
 	const [agentAutonomousModeEnabled, setAgentAutonomousModeEnabled] = useState(true);
 	const [readyForReviewNotificationsEnabled, setReadyForReviewNotificationsEnabled] = useState(true);
+	const [initialThemeId, setInitialThemeId] = useState<ThemeId>(readStoredThemeId);
+	const [draftThemeId, setDraftThemeId] = useState<ThemeId>(readStoredThemeId);
 	const [notificationPermission, setNotificationPermission] = useState<BrowserNotificationPermission>("unsupported");
 	const [shortcuts, setShortcuts] = useState<RuntimeProjectShortcut[]>([]);
 	const [commitPromptTemplate, setCommitPromptTemplate] = useState("");
@@ -401,6 +402,9 @@ export function RuntimeSettingsDialog({
 		if (clineMcpSettings.hasUnsavedChanges) {
 			return true;
 		}
+		if (draftThemeId !== initialThemeId) {
+			return true;
+		}
 		if (!areRuntimeProjectShortcutsEqual(shortcuts, initialShortcuts)) {
 			return true;
 		}
@@ -420,12 +424,14 @@ export function RuntimeSettingsDialog({
 		clineSettings.hasUnsavedChanges,
 		commitPromptTemplate,
 		config,
+		draftThemeId,
 		initialAgentAutonomousModeEnabled,
 		initialCommitPromptTemplate,
 		initialOpenPrPromptTemplate,
 		initialReadyForReviewNotificationsEnabled,
 		initialSelectedAgentId,
 		initialShortcuts,
+		initialThemeId,
 		openPrPromptTemplate,
 		readyForReviewNotificationsEnabled,
 		selectedAgentId,
@@ -453,6 +459,15 @@ export function RuntimeSettingsDialog({
 		fallbackAgentId,
 		open,
 	]);
+
+	useEffect(() => {
+		if (!open) {
+			return;
+		}
+		const persistedThemeId = readStoredThemeId();
+		setInitialThemeId(persistedThemeId);
+		setDraftThemeId(persistedThemeId);
+	}, [open]);
 
 	useEffect(() => {
 		if (!open) {
@@ -576,8 +591,12 @@ export function RuntimeSettingsDialog({
 			setSaveError("Could not save runtime settings. Check runtime logs and try again.");
 			return;
 		}
+		if (draftThemeId !== initialThemeId) {
+			saveThemeId(draftThemeId);
+			setInitialThemeId(draftThemeId);
+		}
 		onSaved?.();
-		onOpenChange(false);
+		handleDialogOpenChange(false);
 	};
 
 	const handleRequestPermission = () => {
@@ -598,8 +617,23 @@ export function RuntimeSettingsDialog({
 		[workspaceId],
 	);
 
+	const handleDialogOpenChange = useCallback(
+		(nextOpen: boolean) => {
+			if (!nextOpen) {
+				const persistedThemeId = readStoredThemeId();
+				if (draftThemeId !== persistedThemeId) {
+					previewThemeId(persistedThemeId);
+				}
+				setDraftThemeId(persistedThemeId);
+				setInitialThemeId(persistedThemeId);
+			}
+			onOpenChange(nextOpen);
+		},
+		[draftThemeId, onOpenChange],
+	);
+
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog open={open} onOpenChange={handleDialogOpenChange}>
 			<DialogHeader title="Settings" icon={<Settings size={16} />} />
 			<DialogBody>
 				<h5 className="font-semibold text-text-primary m-0">Global</h5>
@@ -750,10 +784,13 @@ export function RuntimeSettingsDialog({
 							type="button"
 							aria-label={theme.label}
 							title={theme.label}
-							onClick={() => setThemeId(theme.id)}
+							onClick={() => {
+								setDraftThemeId(theme.id);
+								previewThemeId(theme.id);
+							}}
 							className={cn(
 								"w-7 h-7 rounded-full border-2 cursor-pointer transition-all hover:scale-110",
-								themeId === theme.id ? "border-accent ring-2 ring-accent/40" : "border-transparent",
+								draftThemeId === theme.id ? "border-accent ring-2 ring-accent/40" : "border-transparent",
 							)}
 							style={{
 								background: `radial-gradient(circle at 60% 40%, ${theme.accent}, ${theme.surface})`,
@@ -762,7 +799,7 @@ export function RuntimeSettingsDialog({
 					))}
 				</div>
 				<p className="text-text-secondary text-[13px] mt-1.5 mb-0">
-					{THEMES.find((t) => t.id === themeId)?.label ?? "Default"} theme
+					{THEMES.find((t) => t.id === draftThemeId)?.label ?? "Default"} theme
 				</p>
 
 				<h6 className="font-semibold text-text-primary mt-4 mb-2">Layout</h6>
@@ -889,7 +926,7 @@ export function RuntimeSettingsDialog({
 				>
 					Read the docs
 				</Button>
-				<Button onClick={() => onOpenChange(false)} disabled={controlsDisabled}>
+				<Button onClick={() => handleDialogOpenChange(false)} disabled={controlsDisabled}>
 					Cancel
 				</Button>
 				<Button

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { LocalStorageKey, readLocalStorageItem, writeLocalStorageItem } from "@/storage/local-storage-store";
 
@@ -41,6 +41,11 @@ export const THEMES: readonly ThemeDefinition[] = [
 ] as const;
 
 const THEME_IDS = new Set<string>(THEMES.map((t) => t.id));
+const THEME_CHANGE_EVENT = "kanban:theme-change";
+
+interface ThemeChangeEventDetail {
+	readonly themeId: ThemeId;
+}
 
 // ---------------------------------------------------------------------------
 // Terminal color lookup per theme
@@ -147,17 +152,38 @@ function isValidThemeId(value: string | null): value is ThemeId {
 	return value !== null && THEME_IDS.has(value);
 }
 
-function readStoredThemeId(): ThemeId {
+function dispatchThemeChange(themeId: ThemeId): void {
+	if (typeof window === "undefined") {
+		return;
+	}
+	window.dispatchEvent(
+		new CustomEvent<ThemeChangeEventDetail>(THEME_CHANGE_EVENT, {
+			detail: { themeId },
+		}),
+	);
+}
+
+export function readStoredThemeId(): ThemeId {
 	const stored = readLocalStorageItem(LocalStorageKey.Theme);
 	return isValidThemeId(stored) ? stored : "default";
 }
 
-function applyThemeToDocument(themeId: ThemeId): void {
+export function applyThemeToDocument(themeId: ThemeId): void {
 	if (themeId === "default") {
 		document.documentElement.removeAttribute("data-theme");
 	} else {
 		document.documentElement.setAttribute("data-theme", themeId);
 	}
+}
+
+export function previewThemeId(themeId: ThemeId): void {
+	applyThemeToDocument(themeId);
+	dispatchThemeChange(themeId);
+}
+
+export function saveThemeId(themeId: ThemeId): void {
+	writeLocalStorageItem(LocalStorageKey.Theme, themeId);
+	previewThemeId(themeId);
 }
 
 /** Get terminal colors for the given theme (or the currently active theme). */
@@ -178,10 +204,43 @@ export interface UseThemeResult {
 export function useTheme(): UseThemeResult {
 	const [themeId, setThemeIdState] = useState<ThemeId>(readStoredThemeId);
 
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const syncThemeFromStorage = () => {
+			setThemeIdState(readStoredThemeId());
+		};
+
+		const handleStorage = (event: StorageEvent) => {
+			if (event.key !== null && event.key !== LocalStorageKey.Theme) {
+				return;
+			}
+			syncThemeFromStorage();
+		};
+
+		const handleThemeChange = (event: Event) => {
+			const customEvent = event as CustomEvent<ThemeChangeEventDetail>;
+			const nextThemeId = customEvent.detail?.themeId;
+			if (isValidThemeId(nextThemeId ?? null)) {
+				setThemeIdState(nextThemeId);
+				return;
+			}
+			syncThemeFromStorage();
+		};
+
+		window.addEventListener("storage", handleStorage);
+		window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange as EventListener);
+		return () => {
+			window.removeEventListener("storage", handleStorage);
+			window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange as EventListener);
+		};
+	}, []);
+
 	const setThemeId = useCallback((id: ThemeId) => {
 		setThemeIdState(id);
-		writeLocalStorageItem(LocalStorageKey.Theme, id);
-		applyThemeToDocument(id);
+		saveThemeId(id);
 	}, []);
 
 	return { themeId, setThemeId };
