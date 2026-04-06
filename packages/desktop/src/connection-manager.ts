@@ -255,6 +255,13 @@ export class ConnectionManager {
 
 	private async switchToLocal(): Promise<void> {
 		if (!this.childRunning) {
+			// Defensive: if the RuntimeChildManager still holds a child
+			// reference (e.g. shutdown/exit race when switching away from
+			// local), clean it up before starting a fresh child.
+			if (this.childManager.running) {
+				try { await this.childManager.shutdown(); } catch { /* best-effort */ }
+			}
+
 			this.localAuthToken = generateAuthToken();
 			try {
 				this.localUrl = await this.childManager.start({
