@@ -220,18 +220,18 @@ describe("RuntimeSettingsDialog", () => {
 
 		const saveButton = findButtonByText(document.body, "Save");
 		const cancelButton = findButtonByText(document.body, "Cancel");
-		const sunsetThemeButton = findButtonByAriaLabel(document.body, "Sunset");
+		const graphiteThemeButton = findButtonByAriaLabel(document.body, "Graphite");
 
 		expect(saveButton).toBeInstanceOf(HTMLButtonElement);
 		expect(cancelButton).toBeInstanceOf(HTMLButtonElement);
-		expect(sunsetThemeButton).toBeInstanceOf(HTMLButtonElement);
+		expect(graphiteThemeButton).toBeInstanceOf(HTMLButtonElement);
 		expect(saveButton?.disabled).toBe(true);
 
 		await act(async () => {
-			sunsetThemeButton?.click();
+			graphiteThemeButton?.click();
 		});
 
-		expect(document.documentElement.getAttribute("data-theme")).toBe("sunset");
+		expect(document.documentElement.getAttribute("data-theme")).toBe("graphite");
 		expect(saveButton?.disabled).toBe(false);
 		expect(window.localStorage.getItem("kanban.theme")).toBeNull();
 
@@ -258,13 +258,13 @@ describe("RuntimeSettingsDialog", () => {
 		});
 
 		const saveButton = findButtonByText(document.body, "Save");
-		const sunsetThemeButton = findButtonByAriaLabel(document.body, "Sunset");
+		const graphiteThemeButton = findButtonByAriaLabel(document.body, "Graphite");
 
 		expect(saveButton).toBeInstanceOf(HTMLButtonElement);
-		expect(sunsetThemeButton).toBeInstanceOf(HTMLButtonElement);
+		expect(graphiteThemeButton).toBeInstanceOf(HTMLButtonElement);
 
 		await act(async () => {
-			sunsetThemeButton?.click();
+			graphiteThemeButton?.click();
 		});
 
 		expect(window.localStorage.getItem("kanban.theme")).toBeNull();
@@ -274,7 +274,7 @@ describe("RuntimeSettingsDialog", () => {
 		});
 
 		expect(handleOpenChange).toHaveBeenCalledWith(false);
-		expect(window.localStorage.getItem("kanban.theme")).toBe("sunset");
-		expect(document.documentElement.getAttribute("data-theme")).toBe("sunset");
+		expect(window.localStorage.getItem("kanban.theme")).toBe("graphite");
+		expect(document.documentElement.getAttribute("data-theme")).toBe("graphite");
 	});
 });

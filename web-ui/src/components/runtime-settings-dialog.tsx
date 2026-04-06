@@ -22,7 +22,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
 import { useRuntimeSettingsClineMcpController } from "@/hooks/use-runtime-settings-cline-mcp-controller";
-import { previewThemeId, readStoredThemeId, saveThemeId, THEMES, type ThemeId } from "@/hooks/use-theme";
+import { previewThemeId, readStoredThemeId, saveThemeId, THEME_GROUPS, THEMES, type ThemeId } from "@/hooks/use-theme";
 import { useLayoutCustomizations } from "@/resize/layout-customizations";
 import { openFileOnHost } from "@/runtime/runtime-config-query";
 import type {
@@ -777,30 +777,49 @@ export function RuntimeSettingsDialog({
 				</div>
 
 				<h6 className="font-semibold text-text-primary mt-4 mb-2">Theme</h6>
-				<div className="flex flex-wrap gap-2">
-					{THEMES.map((theme) => (
-						<button
-							key={theme.id}
-							type="button"
-							aria-label={theme.label}
-							title={theme.label}
-							onClick={() => {
-								setDraftThemeId(theme.id);
-								previewThemeId(theme.id);
-							}}
-							className={cn(
-								"w-7 h-7 rounded-full border-2 cursor-pointer transition-all hover:scale-110",
-								draftThemeId === theme.id ? "border-accent ring-2 ring-accent/40" : "border-transparent",
-							)}
-							style={{
-								background: `radial-gradient(circle at 60% 40%, ${theme.accent}, ${theme.surface})`,
-							}}
-						/>
-					))}
+				<div className="flex flex-col gap-3">
+					{THEME_GROUPS.map((group) => {
+						const groupThemes = THEMES.filter((t) => t.group === group.key);
+						if (groupThemes.length === 0) return null;
+						return (
+							<div key={group.key}>
+								<p className="text-text-tertiary text-[11px] font-medium uppercase tracking-wider mb-1.5">
+									{group.label}
+								</p>
+								<div className="flex flex-col gap-0.5">
+									{groupThemes.map((theme) => {
+										const isSelected = draftThemeId === theme.id;
+										return (
+											<button
+												key={theme.id}
+												type="button"
+												aria-label={theme.label}
+												onClick={() => {
+													setDraftThemeId(theme.id);
+													previewThemeId(theme.id);
+												}}
+												className={cn(
+													"flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-left cursor-pointer transition-colors",
+													isSelected
+														? "bg-accent/15 text-text-primary"
+														: "text-text-secondary hover:bg-surface-3 hover:text-text-primary",
+												)}
+											>
+												{/* Color swatch strip */}
+												<span className="flex shrink-0 h-5 w-10 rounded overflow-hidden border border-border">
+													<span className="flex-1" style={{ background: theme.surface }} />
+													<span className="flex-1" style={{ background: theme.accent }} />
+												</span>
+												<span className="text-[13px] flex-1 truncate">{theme.label}</span>
+												{isSelected ? <Check size={14} className="text-accent shrink-0" /> : null}
+											</button>
+										);
+									})}
+								</div>
+							</div>
+						);
+					})}
 				</div>
-				<p className="text-text-secondary text-[13px] mt-1.5 mb-0">
-					{THEMES.find((t) => t.id === draftThemeId)?.label ?? "Default"} theme
-				</p>
 
 				<h6 className="font-semibold text-text-primary mt-4 mb-2">Layout</h6>
 				<Button size="sm" onClick={resetLayoutCustomizations}>

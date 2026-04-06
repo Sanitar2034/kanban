@@ -8,37 +8,79 @@ import { LocalStorageKey, readLocalStorageItem, writeLocalStorageItem } from "@/
 
 export type ThemeId =
 	| "default"
+	| "graphite"
 	| "midnight"
-	| "forest"
-	| "sunset"
-	| "ocean"
-	| "rose"
-	| "lavender"
-	| "slate"
-	| "ember"
-	| "nord";
+	| "pitch"
+	| "solarized-dark"
+	| "light"
+	| "overcast"
+	| "solarized-light"
+	| "high-contrast-dark"
+	| "high-contrast-light";
+
+export type ThemeGroup = "dark" | "light" | "high-contrast";
 
 export interface ThemeDefinition {
 	readonly id: ThemeId;
 	readonly label: string;
+	readonly group: ThemeGroup;
 	/** Accent color shown in the theme swatch. */
 	readonly accent: string;
 	/** Darkest surface color shown as the swatch background. */
 	readonly surface: string;
+	/** Text color to use on top of accent backgrounds (ensures contrast). */
+	readonly accentFg: string;
 }
 
 export const THEMES: readonly ThemeDefinition[] = [
-	{ id: "default", label: "Default", accent: "#0084FF", surface: "#1F2428" },
-	{ id: "midnight", label: "Midnight", accent: "#7C8AFF", surface: "#181B2E" },
-	{ id: "forest", label: "Forest", accent: "#5DB85D", surface: "#1A2418" },
-	{ id: "sunset", label: "Sunset", accent: "#E8943A", surface: "#261E18" },
-	{ id: "ocean", label: "Ocean", accent: "#34B5C8", surface: "#162028" },
-	{ id: "rose", label: "Rosé", accent: "#E05A8A", surface: "#261A22" },
-	{ id: "lavender", label: "Lavender", accent: "#A07CDB", surface: "#201C28" },
-	{ id: "slate", label: "Slate", accent: "#6094C0", surface: "#1C2028" },
-	{ id: "ember", label: "Ember", accent: "#D05A4A", surface: "#261C1A" },
-	{ id: "nord", label: "Nord", accent: "#88C0D0", surface: "#2E3440" },
+	/* Dark */
+	{ id: "default", label: "Default", group: "dark", accent: "#0084FF", surface: "#1F2428", accentFg: "#FFFFFF" },
+	{ id: "graphite", label: "Graphite", group: "dark", accent: "#A855F7", surface: "#1E1E1E", accentFg: "#FFFFFF" },
+	{ id: "midnight", label: "Midnight", group: "dark", accent: "#6366F1", surface: "#121214", accentFg: "#FFFFFF" },
+	{ id: "pitch", label: "Pitch", group: "dark", accent: "#22C55E", surface: "#000000", accentFg: "#000000" },
+	{
+		id: "solarized-dark",
+		label: "Solarized Dark",
+		group: "dark",
+		accent: "#268BD2",
+		surface: "#002B36",
+		accentFg: "#FFFFFF",
+	},
+	/* Light */
+	{ id: "light", label: "Light", group: "light", accent: "#0084FF", surface: "#FFFFFF", accentFg: "#FFFFFF" },
+	{ id: "overcast", label: "Overcast", group: "light", accent: "#7C3AED", surface: "#F0F0F0", accentFg: "#FFFFFF" },
+	{
+		id: "solarized-light",
+		label: "Solarized Light",
+		group: "light",
+		accent: "#268BD2",
+		surface: "#FDF6E3",
+		accentFg: "#FFFFFF",
+	},
+	/* High contrast */
+	{
+		id: "high-contrast-dark",
+		label: "High Contrast Dark",
+		group: "high-contrast",
+		accent: "#FFD700",
+		surface: "#000000",
+		accentFg: "#000000",
+	},
+	{
+		id: "high-contrast-light",
+		label: "High Contrast Light",
+		group: "high-contrast",
+		accent: "#0050A0",
+		surface: "#FFFFFF",
+		accentFg: "#FFFFFF",
+	},
 ] as const;
+
+export const THEME_GROUPS: readonly { key: ThemeGroup; label: string }[] = [
+	{ key: "dark", label: "Dark" },
+	{ key: "light", label: "Light" },
+	{ key: "high-contrast", label: "High Contrast" },
+];
 
 const THEME_IDS = new Set<string>(THEMES.map((theme) => theme.id));
 const themeStoreListeners = new Set<() => void>();
@@ -68,77 +110,77 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		selectionForeground: "#ffffff",
 		selectionInactiveBackground: "#2D333966",
 	},
+	graphite: {
+		textPrimary: "#E0E0E0",
+		surfacePrimary: "#1E1E1E",
+		surfaceRaised: "#252526",
+		selectionBackground: "#A855F74D",
+		selectionForeground: "#ffffff",
+		selectionInactiveBackground: "#2D2D2D66",
+	},
 	midnight: {
-		textPrimary: "#E0E4F0",
-		surfacePrimary: "#181B2E",
-		surfaceRaised: "#1E2140",
-		selectionBackground: "#7C8AFF4D",
+		textPrimary: "#E4E4E7",
+		surfacePrimary: "#121214",
+		surfaceRaised: "#18181B",
+		selectionBackground: "#6366F14D",
 		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#272B4A66",
+		selectionInactiveBackground: "#1F1F2366",
 	},
-	forest: {
-		textPrimary: "#DCE8D8",
-		surfacePrimary: "#1A2418",
-		surfaceRaised: "#1F2E1C",
-		selectionBackground: "#5DB85D4D",
+	pitch: {
+		textPrimary: "#E4E4E4",
+		surfacePrimary: "#000000",
+		surfaceRaised: "#0A0A0A",
+		selectionBackground: "#22C55E4D",
 		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#26382366",
+		selectionInactiveBackground: "#14141466",
 	},
-	sunset: {
-		textPrimary: "#F0E4D8",
-		surfacePrimary: "#261E18",
-		surfaceRaised: "#30251C",
-		selectionBackground: "#E8943A4D",
+	"solarized-dark": {
+		textPrimary: "#FDF6E3",
+		surfacePrimary: "#002B36",
+		surfaceRaised: "#073642",
+		selectionBackground: "#268BD24D",
 		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#3A2E2266",
+		selectionInactiveBackground: "#0E3E4A66",
 	},
-	ocean: {
-		textPrimary: "#D8ECF0",
-		surfacePrimary: "#162028",
-		surfaceRaised: "#1B2830",
-		selectionBackground: "#34B5C84D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#22323A66",
+	light: {
+		textPrimary: "#1F2328",
+		surfacePrimary: "#FFFFFF",
+		surfaceRaised: "#F6F8FA",
+		selectionBackground: "#0084FF33",
+		selectionForeground: "#1F2328",
+		selectionInactiveBackground: "#E5E7EB66",
 	},
-	rose: {
-		textPrimary: "#F0DCE6",
-		surfacePrimary: "#261A22",
-		surfaceRaised: "#30202A",
-		selectionBackground: "#E05A8A4D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#3A283466",
+	overcast: {
+		textPrimary: "#1A1A1A",
+		surfacePrimary: "#F0F0F0",
+		surfaceRaised: "#E8E8E8",
+		selectionBackground: "#7C3AED33",
+		selectionForeground: "#1A1A1A",
+		selectionInactiveBackground: "#D4D4D466",
 	},
-	lavender: {
-		textPrimary: "#E6E0F0",
-		surfacePrimary: "#201C28",
-		surfaceRaised: "#282330",
-		selectionBackground: "#A07CDB4D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#312C3A66",
+	"solarized-light": {
+		textPrimary: "#073642",
+		surfacePrimary: "#FDF6E3",
+		surfaceRaised: "#EEE8D5",
+		selectionBackground: "#268BD233",
+		selectionForeground: "#073642",
+		selectionInactiveBackground: "#DDD7C366",
 	},
-	slate: {
-		textPrimary: "#E0E6F0",
-		surfacePrimary: "#1C2028",
-		surfaceRaised: "#222830",
-		selectionBackground: "#6094C04D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#2A313A66",
+	"high-contrast-dark": {
+		textPrimary: "#FFFFFF",
+		surfacePrimary: "#000000",
+		surfaceRaised: "#0A0A0A",
+		selectionBackground: "#FFD7004D",
+		selectionForeground: "#000000",
+		selectionInactiveBackground: "#1A1A1A66",
 	},
-	ember: {
-		textPrimary: "#F0DCD8",
-		surfacePrimary: "#261C1A",
-		surfaceRaised: "#302220",
-		selectionBackground: "#D05A4A4D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#3A2A2866",
-	},
-	nord: {
-		textPrimary: "#ECEFF4",
-		surfacePrimary: "#2E3440",
-		surfaceRaised: "#3B4252",
-		selectionBackground: "#88C0D04D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#434C5E66",
+	"high-contrast-light": {
+		textPrimary: "#000000",
+		surfacePrimary: "#FFFFFF",
+		surfaceRaised: "#F5F5F5",
+		selectionBackground: "#0050A033",
+		selectionForeground: "#000000",
+		selectionInactiveBackground: "#DEDEDE66",
 	},
 };
 
