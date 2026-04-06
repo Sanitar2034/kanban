@@ -2,11 +2,13 @@ import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import type { Command } from "commander";
 
 import type {
+	RuntimeAgentId,
 	RuntimeBoardCard,
 	RuntimeBoardColumnId,
 	RuntimeBoardDependency,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
+import { runtimeAgentIdSchema } from "../core/api-contract";
 import { buildKanbanRuntimeUrl, getKanbanRuntimeOrigin, getRuntimeFetch } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
@@ -73,6 +75,19 @@ function parseAutoReviewMode(value: string | undefined): "commit" | "pr" | "move
 		return value;
 	}
 	throw new Error(`Invalid auto review mode "${value}". Expected: commit, pr, move_to_trash.`);
+}
+
+const VALID_AGENT_IDS = runtimeAgentIdSchema.options;
+
+function parseAgentId(value: string | undefined): RuntimeAgentId | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	const result = runtimeAgentIdSchema.safeParse(value);
+	if (result.success) {
+		return result.data;
+	}
+	throw new Error(`Invalid agent ID "${value}". Expected one of: ${VALID_AGENT_IDS.join(", ")}.`);
 }
 
 function resolveTaskCommandTarget(input: TaskCommandTarget, commandName: string): ResolvedTaskCommandTarget {
@@ -203,6 +218,9 @@ function formatTaskRecord(
 		startInPlanMode: task.startInPlanMode,
 		autoReviewEnabled: task.autoReviewEnabled === true,
 		autoReviewMode: task.autoReviewMode ?? "commit",
+		...(task.agentId ? { agentId: task.agentId } : {}),
+		...(task.clineProviderId ? { clineProviderId: task.clineProviderId } : {}),
+		...(task.clineModelId ? { clineModelId: task.clineModelId } : {}),
 		createdAt: task.createdAt,
 		updatedAt: task.updatedAt,
 		session: session
@@ -331,6 +349,9 @@ async function createTask(input: {
 	startInPlanMode?: boolean;
 	autoReviewEnabled?: boolean;
 	autoReviewMode?: "commit" | "pr" | "move_to_trash";
+	agentId?: RuntimeAgentId;
+	clineProviderId?: string;
+	clineModelId?: string;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
@@ -349,6 +370,9 @@ async function createTask(input: {
 				startInPlanMode: input.startInPlanMode,
 				autoReviewEnabled: input.autoReviewEnabled,
 				autoReviewMode: input.autoReviewMode,
+				agentId: input.agentId,
+				clineProviderId: input.clineProviderId,
+				clineModelId: input.clineModelId,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -371,6 +395,9 @@ async function createTask(input: {
 			startInPlanMode: created.startInPlanMode,
 			autoReviewEnabled: created.autoReviewEnabled === true,
 			autoReviewMode: created.autoReviewMode ?? "commit",
+			...(created.agentId ? { agentId: created.agentId } : {}),
+			...(created.clineProviderId ? { clineProviderId: created.clineProviderId } : {}),
+			...(created.clineModelId ? { clineModelId: created.clineModelId } : {}),
 		},
 	};
 }
@@ -385,6 +412,9 @@ async function updateTaskCommand(input: {
 	startInPlanMode?: boolean;
 	autoReviewEnabled?: boolean;
 	autoReviewMode?: "commit" | "pr" | "move_to_trash";
+	agentId?: RuntimeAgentId;
+	clineProviderId?: string;
+	clineModelId?: string;
 }): Promise<JsonRecord> {
 	if (
 		input.title === undefined &&
@@ -392,7 +422,10 @@ async function updateTaskCommand(input: {
 		input.baseRef === undefined &&
 		input.startInPlanMode === undefined &&
 		input.autoReviewEnabled === undefined &&
-		input.autoReviewMode === undefined
+		input.autoReviewMode === undefined &&
+		input.agentId === undefined &&
+		input.clineProviderId === undefined &&
+		input.clineModelId === undefined
 	) {
 		throw new Error("task update requires at least one field to change.");
 	}
@@ -413,6 +446,9 @@ async function updateTaskCommand(input: {
 			startInPlanMode: input.startInPlanMode ?? taskRecord.task.startInPlanMode,
 			autoReviewEnabled: input.autoReviewEnabled ?? taskRecord.task.autoReviewEnabled === true,
 			autoReviewMode: input.autoReviewMode ?? taskRecord.task.autoReviewMode ?? "commit",
+			agentId: input.agentId !== undefined ? input.agentId : undefined,
+			clineProviderId: input.clineProviderId !== undefined ? input.clineProviderId : undefined,
+			clineModelId: input.clineModelId !== undefined ? input.clineModelId : undefined,
 		});
 		if (!updatedTask.updated || !updatedTask.task) {
 			throw new Error(`Task "${input.taskId}" could not be updated.`);
@@ -948,6 +984,9 @@ export function registerTaskCommand(program: Command): void {
 		.option("--start-in-plan-mode [value]", "Set plan mode (true|false). Flag-only implies true.")
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr | move_to_trash.", parseAutoReviewMode)
+		.option("--agent-id <id>", "Agent override: cline | claude | codex | droid | gemini | opencode.")
+		.option("--cline-provider <id>", "Cline provider override (e.g. anthropic, openai, cline).")
+		.option("--cline-model <id>", "Cline model override (e.g. claude-sonnet-4-20250514).")
 		.action(
 			async (options: {
 				title?: string;
@@ -957,6 +996,9 @@ export function registerTaskCommand(program: Command): void {
 				startInPlanMode?: unknown;
 				autoReviewEnabled?: unknown;
 				autoReviewMode?: "commit" | "pr" | "move_to_trash";
+				agentId?: string;
+				clineProvider?: string;
+				clineModel?: string;
 			}) => {
 				await runTaskCommand(
 					async () =>
@@ -969,6 +1011,9 @@ export function registerTaskCommand(program: Command): void {
 							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
+							agentId: parseAgentId(options.agentId),
+							clineProviderId: options.clineProvider,
+							clineModelId: options.clineModel,
 						}),
 				);
 			},
@@ -985,6 +1030,9 @@ export function registerTaskCommand(program: Command): void {
 		.option("--start-in-plan-mode [value]", "Set plan mode (true|false). Flag-only implies true.")
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr | move_to_trash.", parseAutoReviewMode)
+		.option("--agent-id <id>", "Agent override: cline | claude | codex | droid | gemini | opencode.")
+		.option("--cline-provider <id>", "Cline provider override (e.g. anthropic, openai, cline).")
+		.option("--cline-model <id>", "Cline model override (e.g. claude-sonnet-4-20250514).")
 		.action(
 			async (options: {
 				taskId: string;
@@ -995,6 +1043,9 @@ export function registerTaskCommand(program: Command): void {
 				startInPlanMode?: unknown;
 				autoReviewEnabled?: unknown;
 				autoReviewMode?: "commit" | "pr" | "move_to_trash";
+				agentId?: string;
+				clineProvider?: string;
+				clineModel?: string;
 			}) => {
 				await runTaskCommand(
 					async () =>
@@ -1008,6 +1059,9 @@ export function registerTaskCommand(program: Command): void {
 							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
+							agentId: parseAgentId(options.agentId),
+							clineProviderId: options.clineProvider,
+							clineModelId: options.clineModel,
 						}),
 				);
 			},
