@@ -231,7 +231,7 @@ export function ProjectNavigationPanel({
 						Cline <span className="text-text-secondary font-normal text-xs">v{__APP_VERSION__}</span>
 					</div>
 				</div>
-				<div className="mt-2 rounded-md bg-surface-2 p-1">
+				<div className="mt-2 rounded-md bg-surface-2 border border-border p-1">
 					<div className="grid grid-cols-2 gap-1">
 						<button
 							type="button"
@@ -239,8 +239,8 @@ export function ProjectNavigationPanel({
 							className={cn(
 								"cursor-pointer rounded-sm px-2 py-1 text-xs font-medium",
 								activeSection === "projects"
-									? "bg-surface-4 text-text-primary"
-									: "text-text-secondary hover:text-text-primary",
+									? "bg-surface-4 text-text-primary border border-border"
+									: "text-text-secondary hover:text-text-primary border border-transparent",
 							)}
 						>
 							Projects
@@ -252,8 +252,8 @@ export function ProjectNavigationPanel({
 							className={cn(
 								"cursor-pointer rounded-sm px-2 py-1 text-xs font-medium",
 								activeSection === "agent"
-									? "bg-surface-4 text-text-primary"
-									: "text-text-secondary hover:text-text-primary",
+									? "bg-surface-4 text-text-primary border border-border"
+									: "text-text-secondary hover:text-text-primary border border-transparent",
 								!canShowAgentSection ? "cursor-not-allowed opacity-50" : null,
 							)}
 						>
