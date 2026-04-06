@@ -856,6 +856,9 @@ export const runtimeTaskSessionStartRequestSchema = z.object({
 	baseRef: z.string(),
 	cols: z.number().int().positive().optional(),
 	rows: z.number().int().positive().optional(),
+	agentId: runtimeAgentIdSchema.optional(),
+	clineProviderId: z.string().optional(),
+	clineModelId: z.string().optional(),
 });
 export type RuntimeTaskSessionStartRequest = z.infer<typeof runtimeTaskSessionStartRequestSchema>;
 

@@ -176,7 +176,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const previousTerminalAgentId = body.resumeFromTrash
 					? (terminalManager.getSummary(body.taskId)?.agentId ?? null)
 					: null;
-				const effectiveAgentId = previousTerminalAgentId ?? scopedRuntimeConfig.selectedAgentId;
+				const effectiveAgentId = previousTerminalAgentId ?? body.agentId ?? scopedRuntimeConfig.selectedAgentId;
 				let useClinePath = effectiveAgentId === "cline";
 				const shouldProbePersistedClineSession =
 					body.resumeFromTrash && !useClinePath && previousTerminalAgentId === null;
@@ -194,7 +194,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				}
 
 				if (useClinePath) {
-					const clineLaunchConfig = await clineProviderService.resolveLaunchConfig();
+					const clineLaunchConfig = await clineProviderService.resolveLaunchConfig({
+						providerIdOverride: body.clineProviderId ?? undefined,
+						modelIdOverride: body.clineModelId ?? undefined,
+					});
 					const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
 					const resolvedClineTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
 					const summary = await clineTaskSessionService.startTaskSession({
