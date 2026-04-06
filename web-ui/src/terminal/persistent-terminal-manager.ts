@@ -4,6 +4,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { getTerminalThemeColors, type ThemeTerminalColors } from "@/hooks/use-theme";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
@@ -11,7 +12,6 @@ import type {
 	RuntimeTerminalWsClientMessage,
 	RuntimeTerminalWsServerMessage,
 } from "@/runtime/types";
-import { getTerminalThemeColors, type ThemeTerminalColors } from "@/hooks/use-theme";
 import { clearTerminalGeometry, reportTerminalGeometry } from "@/terminal/terminal-geometry-registry";
 import { createKanbanTerminalOptions } from "@/terminal/terminal-options";
 import {
@@ -705,6 +705,7 @@ export function ensurePersistentTerminal(input: EnsurePersistentTerminalInput): 
 		terminal = new PersistentTerminal(input.taskId, input.workspaceId, {
 			cursorColor: input.cursorColor,
 			terminalBackgroundColor: input.terminalBackgroundColor,
+			themeColors: input.themeColors,
 		});
 		terminals.set(key, terminal);
 		return terminal;
@@ -712,6 +713,7 @@ export function ensurePersistentTerminal(input: EnsurePersistentTerminalInput): 
 	terminal.setAppearance({
 		cursorColor: input.cursorColor,
 		terminalBackgroundColor: input.terminalBackgroundColor,
+		themeColors: input.themeColors,
 	});
 	return terminal;
 }

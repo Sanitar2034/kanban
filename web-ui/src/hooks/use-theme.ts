@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 import { LocalStorageKey, readLocalStorageItem, writeLocalStorageItem } from "@/storage/local-storage-store";
 
@@ -40,12 +40,10 @@ export const THEMES: readonly ThemeDefinition[] = [
 	{ id: "nord", label: "Nord", accent: "#88C0D0", surface: "#2E3440" },
 ] as const;
 
-const THEME_IDS = new Set<string>(THEMES.map((t) => t.id));
-const THEME_CHANGE_EVENT = "kanban:theme-change";
-
-interface ThemeChangeEventDetail {
-	readonly themeId: ThemeId;
-}
+const THEME_IDS = new Set<string>(THEMES.map((theme) => theme.id));
+const themeStoreListeners = new Set<() => void>();
+let storageSyncInstalled = false;
+let currentThemeId: ThemeId = readStoredThemeId();
 
 // ---------------------------------------------------------------------------
 // Terminal color lookup per theme
@@ -148,27 +146,65 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function isValidThemeId(value: string | null): value is ThemeId {
+export function isThemeId(value: string | null): value is ThemeId {
 	return value !== null && THEME_IDS.has(value);
 }
 
-function dispatchThemeChange(themeId: ThemeId): void {
-	if (typeof window === "undefined") {
+function notifyThemeStoreListeners(): void {
+	for (const listener of themeStoreListeners) {
+		listener();
+	}
+}
+
+function readThemeSnapshot(): ThemeId {
+	return currentThemeId;
+}
+
+function subscribeThemeStore(listener: () => void): () => void {
+	installStorageSyncListener();
+	themeStoreListeners.add(listener);
+	return () => {
+		themeStoreListeners.delete(listener);
+	};
+}
+
+function installStorageSyncListener(): void {
+	if (storageSyncInstalled || typeof window === "undefined") {
 		return;
 	}
-	window.dispatchEvent(
-		new CustomEvent<ThemeChangeEventDetail>(THEME_CHANGE_EVENT, {
-			detail: { themeId },
-		}),
-	);
+	storageSyncInstalled = true;
+	window.addEventListener("storage", (event) => {
+		if (event.key !== null && event.key !== LocalStorageKey.Theme) {
+			return;
+		}
+		const nextThemeId = readStoredThemeId();
+		if (nextThemeId === currentThemeId) {
+			return;
+		}
+		currentThemeId = nextThemeId;
+		applyThemeToDocument(nextThemeId);
+		notifyThemeStoreListeners();
+	});
+}
+
+function applyThemeChange(themeId: ThemeId): void {
+	if (themeId === currentThemeId) {
+		return;
+	}
+	currentThemeId = themeId;
+	applyThemeToDocument(themeId);
+	notifyThemeStoreListeners();
 }
 
 export function readStoredThemeId(): ThemeId {
 	const stored = readLocalStorageItem(LocalStorageKey.Theme);
-	return isValidThemeId(stored) ? stored : "default";
+	return isThemeId(stored) ? stored : "default";
 }
 
 export function applyThemeToDocument(themeId: ThemeId): void {
+	if (typeof document === "undefined") {
+		return;
+	}
 	if (themeId === "default") {
 		document.documentElement.removeAttribute("data-theme");
 	} else {
@@ -177,18 +213,17 @@ export function applyThemeToDocument(themeId: ThemeId): void {
 }
 
 export function previewThemeId(themeId: ThemeId): void {
-	applyThemeToDocument(themeId);
-	dispatchThemeChange(themeId);
+	applyThemeChange(themeId);
 }
 
 export function saveThemeId(themeId: ThemeId): void {
 	writeLocalStorageItem(LocalStorageKey.Theme, themeId);
-	previewThemeId(themeId);
+	applyThemeChange(themeId);
 }
 
 /** Get terminal colors for the given theme (or the currently active theme). */
 export function getTerminalThemeColors(themeId?: ThemeId): ThemeTerminalColors {
-	const id = themeId ?? readStoredThemeId();
+	const id = themeId ?? readThemeSnapshot();
 	return TERMINAL_COLORS_BY_THEME[id];
 }
 
@@ -202,44 +237,9 @@ export interface UseThemeResult {
 }
 
 export function useTheme(): UseThemeResult {
-	const [themeId, setThemeIdState] = useState<ThemeId>(readStoredThemeId);
-
-	useEffect(() => {
-		if (typeof window === "undefined") {
-			return;
-		}
-
-		const syncThemeFromStorage = () => {
-			setThemeIdState(readStoredThemeId());
-		};
-
-		const handleStorage = (event: StorageEvent) => {
-			if (event.key !== null && event.key !== LocalStorageKey.Theme) {
-				return;
-			}
-			syncThemeFromStorage();
-		};
-
-		const handleThemeChange = (event: Event) => {
-			const customEvent = event as CustomEvent<ThemeChangeEventDetail>;
-			const nextThemeId = customEvent.detail?.themeId;
-			if (isValidThemeId(nextThemeId ?? null)) {
-				setThemeIdState(nextThemeId);
-				return;
-			}
-			syncThemeFromStorage();
-		};
-
-		window.addEventListener("storage", handleStorage);
-		window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange as EventListener);
-		return () => {
-			window.removeEventListener("storage", handleStorage);
-			window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange as EventListener);
-		};
-	}, []);
+	const themeId = useSyncExternalStore(subscribeThemeStore, readThemeSnapshot, readThemeSnapshot);
 
 	const setThemeId = useCallback((id: ThemeId) => {
-		setThemeIdState(id);
 		saveThemeId(id);
 	}, []);
 

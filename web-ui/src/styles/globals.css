@@ -193,7 +193,7 @@
 	--color-surface-2: #434C5E;
 	--color-surface-3: #4C566A;
 	--color-surface-4: #5A657A;
-	--color-border: #4C566A;
+	--color-border: #566176;
 	--color-border-bright: #606E82;
 	--color-border-focus: #88C0D0;
 	--color-divider: #242832;
@@ -947,4 +947,3 @@ body.kb-dependency-link-mode {
 		app-region: no-drag;
 	}
 }
-
