@@ -50,6 +50,12 @@ export interface UseTaskEditorResult {
 	isNewTaskStartInPlanModeDisabled: boolean;
 	newTaskBranchRef: string;
 	setNewTaskBranchRef: Dispatch<SetStateAction<string>>;
+	newTaskAgentId: RuntimeAgentId | undefined;
+	setNewTaskAgentId: Dispatch<SetStateAction<RuntimeAgentId | undefined>>;
+	newTaskClineProviderId: string | undefined;
+	setNewTaskClineProviderId: Dispatch<SetStateAction<string | undefined>>;
+	newTaskClineModelId: string | undefined;
+	setNewTaskClineModelId: Dispatch<SetStateAction<string | undefined>>;
 	editingTaskId: string | null;
 	editTaskTitle: string;
 	setEditTaskTitle: Dispatch<SetStateAction<string>>;
@@ -66,6 +72,12 @@ export interface UseTaskEditorResult {
 	isEditTaskStartInPlanModeDisabled: boolean;
 	editTaskBranchRef: string;
 	setEditTaskBranchRef: Dispatch<SetStateAction<string>>;
+	editTaskAgentId: RuntimeAgentId | undefined;
+	setEditTaskAgentId: Dispatch<SetStateAction<RuntimeAgentId | undefined>>;
+	editTaskClineProviderId: string | undefined;
+	setEditTaskClineProviderId: Dispatch<SetStateAction<string | undefined>>;
+	editTaskClineModelId: string | undefined;
+	setEditTaskClineModelId: Dispatch<SetStateAction<string | undefined>>;
 	handleOpenCreateTask: () => void;
 	handleCancelCreateTask: () => void;
 	handleOpenEditTask: (task: BoardCard, options?: OpenEditTaskOptions) => void;
@@ -117,6 +129,13 @@ export function useTaskEditor({
 	const [editTaskAutoReviewMode, setEditTaskAutoReviewMode] = useState<TaskAutoReviewMode>("commit");
 	const isEditTaskStartInPlanModeDisabled = editTaskAutoReviewEnabled && editTaskAutoReviewMode === "move_to_trash";
 	const [editTaskBranchRef, setEditTaskBranchRef] = useState("");
+
+	const [newTaskAgentId, setNewTaskAgentId] = useState<RuntimeAgentId | undefined>(undefined);
+	const [newTaskClineProviderId, setNewTaskClineProviderId] = useState<string | undefined>(undefined);
+	const [newTaskClineModelId, setNewTaskClineModelId] = useState<string | undefined>(undefined);
+	const [editTaskAgentId, setEditTaskAgentId] = useState<RuntimeAgentId | undefined>(undefined);
+	const [editTaskClineProviderId, setEditTaskClineProviderId] = useState<string | undefined>(undefined);
+	const [editTaskClineModelId, setEditTaskClineModelId] = useState<string | undefined>(undefined);
 
 	const lastCreatedTaskBranchRef = useMemo(() => {
 		if (!currentProjectId) {
@@ -229,6 +248,9 @@ export function useTaskEditor({
 			setEditTaskAutoReviewMode(resolveTaskAutoReviewMode(task.autoReviewMode));
 			const fallbackBranch = task.baseRef || resolvedDefaultTaskBranchRef;
 			setEditTaskBranchRef(fallbackBranch);
+			setEditTaskAgentId(task.agentId);
+			setEditTaskClineProviderId(task.clineProviderId);
+			setEditTaskClineModelId(task.clineModelId);
 		},
 		[resolvedDefaultTaskBranchRef, setSelectedTaskId],
 	);
@@ -268,6 +290,9 @@ export function useTaskEditor({
 				autoReviewEnabled: editTaskAutoReviewEnabled,
 				autoReviewMode: editTaskAutoReviewMode,
 				images: editTaskImages,
+				agentId: editTaskAgentId,
+				clineProviderId: editTaskClineProviderId,
+				clineModelId: editTaskClineModelId,
 				baseRef,
 			});
 			return updated.updated ? updated.board : currentBoard;
@@ -280,11 +305,17 @@ export function useTaskEditor({
 		setEditTaskAutoReviewMode("commit");
 		setEditTaskImages([]);
 		setEditTaskBranchRef("");
+		setEditTaskAgentId(undefined);
+		setEditTaskClineProviderId(undefined);
+		setEditTaskClineModelId(undefined);
 		return savedTaskId;
 	}, [
+		editTaskAgentId,
 		editTaskAutoReviewEnabled,
 		editTaskAutoReviewMode,
 		editTaskBranchRef,
+		editTaskClineModelId,
+		editTaskClineProviderId,
 		editTaskPrompt,
 		editTaskImages,
 		editTaskStartInPlanMode,
@@ -330,11 +361,14 @@ export function useTaskEditor({
 				autoReviewEnabled: newTaskAutoReviewEnabled,
 				autoReviewMode: newTaskAutoReviewMode,
 				images: newTaskImages,
+				agentId: newTaskAgentId,
+				clineProviderId: newTaskClineProviderId,
+				clineModelId: newTaskClineModelId,
 				baseRef,
 			});
 			setBoard(created.board);
 			trackTaskCreated({
-				selected_agent_id: toTelemetrySelectedAgentId(selectedAgentId),
+				selected_agent_id: toTelemetrySelectedAgentId(newTaskAgentId ?? selectedAgentId),
 				start_in_plan_mode: newTaskStartInPlanMode,
 				...(newTaskAutoReviewEnabled ? { auto_review_mode: newTaskAutoReviewMode } : {}),
 				prompt_character_count: prompt.length,
@@ -357,9 +391,12 @@ export function useTaskEditor({
 		[
 			board,
 			currentProjectId,
+			newTaskAgentId,
 			newTaskAutoReviewEnabled,
 			newTaskAutoReviewMode,
 			newTaskBranchRef,
+			newTaskClineModelId,
+			newTaskClineProviderId,
 			newTaskImages,
 			newTaskPrompt,
 			newTaskTitle,
@@ -444,7 +481,13 @@ export function useTaskEditor({
 		setEditTaskAutoReviewMode("commit");
 		setEditTaskImages([]);
 		setEditTaskBranchRef("");
+		setEditTaskAgentId(undefined);
+		setEditTaskClineProviderId(undefined);
+		setEditTaskClineModelId(undefined);
 		setNewTaskImages([]);
+		setNewTaskAgentId(undefined);
+		setNewTaskClineProviderId(undefined);
+		setNewTaskClineModelId(undefined);
 	}, []);
 
 	return {
@@ -464,6 +507,12 @@ export function useTaskEditor({
 		isNewTaskStartInPlanModeDisabled,
 		newTaskBranchRef,
 		setNewTaskBranchRef,
+		newTaskAgentId,
+		setNewTaskAgentId,
+		newTaskClineProviderId,
+		setNewTaskClineProviderId,
+		newTaskClineModelId,
+		setNewTaskClineModelId,
 		editingTaskId,
 		editTaskTitle,
 		setEditTaskTitle,
@@ -480,6 +529,12 @@ export function useTaskEditor({
 		isEditTaskStartInPlanModeDisabled,
 		editTaskBranchRef,
 		setEditTaskBranchRef,
+		editTaskAgentId,
+		setEditTaskAgentId,
+		editTaskClineProviderId,
+		setEditTaskClineProviderId,
+		editTaskClineModelId,
+		setEditTaskClineModelId,
 		handleOpenCreateTask,
 		handleCancelCreateTask,
 		handleOpenEditTask,

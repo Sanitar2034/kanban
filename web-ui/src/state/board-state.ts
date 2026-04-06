@@ -3,6 +3,7 @@ import { createShortTaskId } from "@runtime-task-id";
 import * as runtimeTaskState from "@runtime-task-state";
 
 import { createInitialBoardData } from "@/data/board-data";
+import type { RuntimeAgentId } from "@/runtime/types";
 import { isAllowedCrossColumnCardMove, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
 import {
 	type BoardCard,
@@ -24,6 +25,9 @@ export interface TaskDraft {
 	autoReviewEnabled?: boolean;
 	autoReviewMode?: TaskAutoReviewMode;
 	images?: TaskImage[];
+	agentId?: RuntimeAgentId;
+	clineProviderId?: string;
+	clineModelId?: string;
 	baseRef: string;
 }
 
@@ -281,6 +285,9 @@ export function addTaskToColumnWithResult(
 			autoReviewEnabled: draft.autoReviewEnabled,
 			autoReviewMode: draft.autoReviewMode,
 			images: draft.images,
+			agentId: draft.agentId,
+			clineProviderId: draft.clineProviderId,
+			clineModelId: draft.clineModelId,
 			baseRef: draft.baseRef,
 		},
 		createBrowserUuid,
@@ -477,6 +484,9 @@ export function updateTask(board: BoardData, taskId: string, draft: TaskDraft): 
 						: draft.images.length > 0
 							? draft.images.map((image) => ({ ...image }))
 							: undefined,
+				agentId: draft.agentId,
+				clineProviderId: draft.clineProviderId,
+				clineModelId: draft.clineModelId,
 				baseRef,
 				updatedAt: Date.now(),
 			};

@@ -363,6 +363,7 @@ export function CardDetailView({
 	onBottomTerminalToggleExpand,
 	isDocumentVisible = true,
 	onClineSettingsSaved,
+	onClineModelChanged,
 }: {
 	selection: CardSelection;
 	currentProjectId: string | null;
@@ -424,6 +425,7 @@ export function CardDetailView({
 	onBottomTerminalToggleExpand?: () => void;
 	isDocumentVisible?: boolean;
 	onClineSettingsSaved?: () => void;
+	onClineModelChanged?: (providerId: string, modelId: string) => void;
 }): React.ReactElement {
 	const isMobile = useIsMobile();
 	const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
@@ -631,6 +633,7 @@ export function CardDetailView({
 			workspaceId={currentProjectId}
 			runtimeConfig={runtimeConfig}
 			onClineSettingsSaved={onClineSettingsSaved}
+			onClineModelChanged={onClineModelChanged}
 			onSendMessage={onSendClineChatMessage}
 			onCancelTurn={onCancelClineChatTurn}
 			onLoadMessages={onLoadClineChatMessages}

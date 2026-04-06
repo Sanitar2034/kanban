@@ -84,6 +84,7 @@ export interface ClineAgentChatPanelProps {
 	workspaceId?: string | null;
 	runtimeConfig?: RuntimeConfigResponse | null;
 	onClineSettingsSaved?: () => void;
+	onClineModelChanged?: (providerId: string, modelId: string) => void;
 	onSendMessage?: (
 		taskId: string,
 		text: string,
@@ -116,6 +117,7 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			workspaceId = null,
 			runtimeConfig = null,
 			onClineSettingsSaved,
+			onClineModelChanged,
 			onSendMessage,
 			onCancelTurn,
 			onLoadMessages,
@@ -314,12 +316,14 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 						return false;
 					}
 					onClineSettingsSaved?.();
+					const savedModelId = overrides?.modelId ?? clineSettings.modelId;
+					onClineModelChanged?.(clineSettings.providerId, savedModelId);
 					return true;
 				} finally {
 					setIsSavingModel(false);
 				}
 			},
-			[clineSettings, onClineSettingsSaved, workspaceId],
+			[clineSettings, onClineModelChanged, onClineSettingsSaved, workspaceId],
 		);
 
 		const handleSelectModel = useCallback(

@@ -5,8 +5,10 @@ import { type Dispatch, type ReactElement, type SetStateAction, useCallback, use
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { BranchSelectDropdown, type BranchSelectOption } from "@/components/branch-select-dropdown";
+import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task-agent-model-picker";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
+import type { RuntimeAgentId } from "@/runtime/types";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { pasteShortcutLabel } from "@/utils/platform";
 import { useDocumentEvent, useMeasure } from "@/utils/react-use";
@@ -65,6 +67,12 @@ export function TaskInlineCreateCard({
 	enabled = true,
 	mode = "create",
 	idPrefix = "inline-task",
+	agentId,
+	onAgentIdChange,
+	clineProviderId,
+	onClineProviderIdChange,
+	clineModelId,
+	onClineModelIdChange,
 }: {
 	title?: string;
 	onTitleChange?: (value: string) => void;
@@ -89,6 +97,12 @@ export function TaskInlineCreateCard({
 	enabled?: boolean;
 	mode?: TaskInlineCardMode;
 	idPrefix?: string;
+	agentId?: RuntimeAgentId | undefined;
+	onAgentIdChange?: (value: RuntimeAgentId | undefined) => void;
+	clineProviderId?: string | undefined;
+	onClineProviderIdChange?: (value: string | undefined) => void;
+	clineModelId?: string | undefined;
+	onClineModelIdChange?: (value: string | undefined) => void;
 }): ReactElement {
 	const promptId = `${idPrefix}-prompt-input`;
 	const planModeId = `${idPrefix}-plan-mode-toggle`;
@@ -99,6 +113,7 @@ export function TaskInlineCreateCard({
 	const [measureRef, cardRect] = useMeasure<HTMLDivElement>();
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [isBranchPopoverOpen, setIsBranchPopoverOpen] = useState(false);
+	const [isModelPickerPopoverOpen, setIsModelPickerPopoverOpen] = useState(false);
 	const setCardRef = useCallback(
 		(node: HTMLDivElement | null) => {
 			containerRef.current = node;
@@ -113,6 +128,13 @@ export function TaskInlineCreateCard({
 	const hideCreateShortcut = mode === "create" && isCompactActions;
 	const cancelLabel = hideCancelShortcut ? "Cancel" : "Cancel (esc)";
 	const cardMarginBottom = mode === "create" ? 6 : 0;
+
+	const { clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } = useTaskAgentModelPicker({
+		active: true,
+		workspaceId,
+		agentId,
+		clineProviderId,
+	});
 
 	useHotkeys(
 		"escape",
@@ -138,7 +160,7 @@ export function TaskInlineCreateCard({
 	useDocumentEvent(
 		"pointerdown",
 		(event) => {
-			if (!enabled || mode !== "edit" || isBranchPopoverOpen) {
+			if (!enabled || mode !== "edit" || isBranchPopoverOpen || isModelPickerPopoverOpen) {
 				return;
 			}
 			const container = containerRef.current;
@@ -272,6 +294,21 @@ export function TaskInlineCreateCard({
 						/>
 					</div>
 				</div>
+				{onAgentIdChange && onClineProviderIdChange && onClineModelIdChange ? (
+					<TaskAgentModelPicker
+						agentId={agentId}
+						onAgentIdChange={onAgentIdChange}
+						clineProviderId={clineProviderId}
+						onClineProviderIdChange={onClineProviderIdChange}
+						clineModelId={clineModelId}
+						onClineModelIdChange={onClineModelIdChange}
+						clineProviderOptions={clineProviderOptions}
+						clineModelOptions={clineModelOptions}
+						isLoadingProviders={isLoadingProviders}
+						isLoadingModels={isLoadingModels}
+						onPopoverOpenChange={setIsModelPickerPopoverOpen}
+					/>
+				) : null}
 			</div>
 
 			<div className={`flex gap-2 mt-3 ${mode === "edit" ? "justify-end" : "justify-between"}`}>

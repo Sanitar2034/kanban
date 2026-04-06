@@ -21,9 +21,11 @@ import { useHotkeys } from "react-hotkeys-hook";
 
 import type { BranchSelectOption } from "@/components/branch-select-dropdown";
 import { BranchSelectDropdown } from "@/components/branch-select-dropdown";
+import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task-agent-model-picker";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
+import type { RuntimeAgentId } from "@/runtime/types";
 import { LocalStorageKey } from "@/storage/local-storage-store";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { isMacPlatform, pasteShortcutLabel } from "@/utils/platform";
@@ -118,6 +120,12 @@ export function TaskCreateDialog({
 	branchRef,
 	branchOptions,
 	onBranchRefChange,
+	agentId,
+	onAgentIdChange,
+	clineProviderId,
+	onClineProviderIdChange,
+	clineModelId,
+	onClineModelIdChange,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -143,6 +151,12 @@ export function TaskCreateDialog({
 	branchRef: string;
 	branchOptions: BranchSelectOption[];
 	onBranchRefChange: (value: string) => void;
+	agentId?: RuntimeAgentId | undefined;
+	onAgentIdChange?: (value: RuntimeAgentId | undefined) => void;
+	clineProviderId?: string | undefined;
+	onClineProviderIdChange?: (value: string | undefined) => void;
+	clineModelId?: string | undefined;
+	onClineModelIdChange?: (value: string | undefined) => void;
 }): ReactElement {
 	const [mode, setMode] = useState<"single" | "multi">("single");
 	const [createMore, setCreateMore] = useState(false);
@@ -158,6 +172,13 @@ export function TaskCreateDialog({
 		DEFAULT_PRIMARY_START_ACTION,
 		normalizeStoredTaskCreateStartAction,
 	);
+
+	const { clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } = useTaskAgentModelPicker({
+		active: open,
+		workspaceId,
+		agentId,
+		clineProviderId,
+	});
 
 	const detectedItems = useMemo(() => parseListItems(prompt), [prompt]);
 	const validTaskCount = useMemo(() => taskPrompts.filter((p) => p.trim()).length, [taskPrompts]);
@@ -556,6 +577,21 @@ export function TaskCreateDialog({
 							/>
 						</div>
 					</div>
+
+					{onAgentIdChange && onClineProviderIdChange && onClineModelIdChange ? (
+						<TaskAgentModelPicker
+							agentId={agentId}
+							onAgentIdChange={onAgentIdChange}
+							clineProviderId={clineProviderId}
+							onClineProviderIdChange={onClineProviderIdChange}
+							clineModelId={clineModelId}
+							onClineModelIdChange={onClineModelIdChange}
+							clineProviderOptions={clineProviderOptions}
+							clineModelOptions={clineModelOptions}
+							isLoadingProviders={isLoadingProviders}
+							isLoadingModels={isLoadingModels}
+						/>
+					) : null}
 				</div>
 			</DialogBody>
 			<DialogFooter>

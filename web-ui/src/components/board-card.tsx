@@ -1,4 +1,5 @@
 import { Draggable } from "@hello-pangea/dnd";
+import { getRuntimeAgentCatalogEntry } from "@runtime-agent-catalog";
 import { formatClineToolCallLabel } from "@runtime-cline-tool-call-display";
 import { buildTaskWorktreeDisplayPath } from "@runtime-task-worktree-path";
 import { AlertCircle, AlertTriangle, GitBranch, Play, RotateCcw, Trash2 } from "lucide-react";
@@ -684,6 +685,14 @@ export function BoardCard({
 									</p>
 								</div>
 							) : null}
+							{card.agentId || card.clineModelId ? (
+								<p className="m-0 mt-1 text-[11px] text-text-tertiary truncate">
+									{card.agentId ? (getRuntimeAgentCatalogEntry(card.agentId)?.label ?? card.agentId) : null}
+									{card.agentId && card.clineModelId ? " · " : null}
+									{card.clineModelId ?? null}
+								</p>
+							) : null}
+
 							{sessionActivity ? (
 								<div
 									className="flex gap-1.5 items-start mt-[6px]"
