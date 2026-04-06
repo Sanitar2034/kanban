@@ -878,9 +878,6 @@ export default function App(): ReactElement {
 						onActiveSectionChange={setHomeSidebarSection}
 						canShowAgentSection={!hasNoProjects && Boolean(currentProjectId)}
 						agentSectionContent={homeSidebarAgentPanel}
-						selectedAgentId={settingsRuntimeProjectConfig?.selectedAgentId ?? null}
-						clineProviderSettings={settingsRuntimeProjectConfig?.clineProviderSettings ?? null}
-						featurebaseFeedbackState={featurebaseFeedbackState}
 						onSelectProject={(projectId) => {
 							void handleSelectProject(projectId);
 						}}
@@ -1133,6 +1130,7 @@ export default function App(): ReactElement {
 					workspaceId={settingsWorkspaceId}
 					initialConfig={settingsRuntimeProjectConfig}
 					liveMcpAuthStatuses={latestMcpAuthStatuses}
+					featurebaseFeedbackState={featurebaseFeedbackState}
 					initialSection={settingsInitialSection}
 					onOpenChange={(nextOpen) => {
 						setIsSettingsOpen(nextOpen);

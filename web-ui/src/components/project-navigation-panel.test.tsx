@@ -1,9 +1,9 @@
-import { act, type ComponentProps } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
-import type { RuntimeClineProviderSettings, RuntimeProjectSummary } from "@/runtime/types";
+import type { RuntimeProjectSummary } from "@/runtime/types";
 import { LocalStorageKey } from "@/storage/local-storage-store";
 
 vi.mock("@/resize/layout-customizations", () => ({
@@ -27,19 +27,6 @@ const PROJECTS: RuntimeProjectSummary[] = [
 		},
 	},
 ];
-
-const CLINE_OAUTH_SETTINGS: RuntimeClineProviderSettings = {
-	providerId: null,
-	modelId: "cline-sonnet",
-	baseUrl: null,
-	reasoningEffort: null,
-	apiKeyConfigured: false,
-	oauthProvider: "cline",
-	oauthAccessTokenConfigured: true,
-	oauthRefreshTokenConfigured: true,
-	oauthAccountId: "acc-1",
-	oauthExpiresAt: 1_800_000_000_000,
-};
 
 function getSidebar(container: HTMLElement): HTMLElement {
 	const sidebar = container.querySelector("aside");
@@ -106,7 +93,7 @@ describe("ProjectNavigationPanel width persistence", () => {
 		});
 	});
 
-	function renderPanel(overrides: Partial<ComponentProps<typeof ProjectNavigationPanel>> = {}): void {
+	function renderPanel(): void {
 		act(() => {
 			root.render(
 				<ProjectNavigationPanel
@@ -116,13 +103,9 @@ describe("ProjectNavigationPanel width persistence", () => {
 					activeSection="projects"
 					onActiveSectionChange={() => {}}
 					canShowAgentSection
-					selectedAgentId={null}
-					clineProviderSettings={null}
-					featurebaseFeedbackState={undefined}
 					onSelectProject={() => {}}
 					onRemoveProject={async () => true}
 					onAddProject={() => {}}
-					{...overrides}
 				/>,
 			);
 		});
@@ -168,26 +151,5 @@ describe("ProjectNavigationPanel width persistence", () => {
 		renderPanel();
 		const sidebar = getSidebar(container);
 		expect(sidebar.style.width).toBe(`${expectedResizedWidth}px`);
-	});
-
-	it("renders beta hint card with report issue in the projects view", () => {
-		renderPanel();
-		expect(container.textContent).toContain("Kanban is in beta. Help us improve by sharing your experience.");
-		expect(container.textContent).toContain("Report issue");
-	});
-
-	it("shows send feedback instead of report issue when Cline OAuth is available", () => {
-		renderPanel({
-			selectedAgentId: "cline",
-			clineProviderSettings: CLINE_OAUTH_SETTINGS,
-			featurebaseFeedbackState: {
-				authState: "ready",
-				widgetOpenCount: 0,
-				openFeedbackWidget: vi.fn(async () => {}),
-			},
-		});
-		expect(container.textContent).toContain("Kanban is in beta. Help us improve by sharing your experience.");
-		expect(container.textContent).toContain("Send feedback");
-		expect(container.textContent).not.toContain("Report issue");
 	});
 });
