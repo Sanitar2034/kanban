@@ -11,6 +11,8 @@ const addClineProviderMock = vi.hoisted(() => vi.fn());
 const updateClineProviderMock = vi.hoisted(() => vi.fn());
 const saveClineProviderSettingsMock = vi.hoisted(() => vi.fn());
 const runClineProviderOauthLoginMock = vi.hoisted(() => vi.fn());
+const startClineDeviceAuthMock = vi.hoisted(() => vi.fn());
+const completeClineDeviceAuthMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/runtime/runtime-config-query", () => ({
 	addClineProvider: addClineProviderMock,
@@ -19,6 +21,8 @@ vi.mock("@/runtime/runtime-config-query", () => ({
 	fetchClineProviderModels: fetchClineProviderModelsMock,
 	saveClineProviderSettings: saveClineProviderSettingsMock,
 	runClineProviderOauthLogin: runClineProviderOauthLoginMock,
+	startClineDeviceAuth: startClineDeviceAuthMock,
+	completeClineDeviceAuth: completeClineDeviceAuthMock,
 }));
 
 interface HookSnapshot {
@@ -179,6 +183,8 @@ describe("useRuntimeSettingsClineController", () => {
 		updateClineProviderMock.mockReset();
 		saveClineProviderSettingsMock.mockReset();
 		runClineProviderOauthLoginMock.mockReset();
+		startClineDeviceAuthMock.mockReset();
+		completeClineDeviceAuthMock.mockReset();
 		fetchClineProviderCatalogMock.mockResolvedValue([]);
 		fetchClineProviderModelsMock.mockResolvedValue([]);
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -639,7 +645,14 @@ describe("useRuntimeSettingsClineController", () => {
 			oauthExpiresAt: null,
 		});
 		let latestSnapshot: HookSnapshot | null = null;
-		runClineProviderOauthLoginMock.mockResolvedValue({
+		startClineDeviceAuthMock.mockResolvedValue({
+			deviceCode: "device-code-1",
+			userCode: "ABCD-1234",
+			verificationUrl: "https://auth.cline.bot/verify",
+			expiresInSeconds: 300,
+			pollIntervalSeconds: 5,
+		});
+		completeClineDeviceAuthMock.mockResolvedValue({
 			ok: true,
 			provider: "cline",
 			settings: {
@@ -675,8 +688,11 @@ describe("useRuntimeSettingsClineController", () => {
 			expect(await requireSnapshot(latestSnapshot).runOauthLogin()).toEqual({ ok: true });
 		});
 
-		expect(runClineProviderOauthLoginMock).toHaveBeenCalledWith("workspace-1", {
-			provider: "cline",
+		expect(startClineDeviceAuthMock).toHaveBeenCalledWith("workspace-1");
+		expect(completeClineDeviceAuthMock).toHaveBeenCalledWith("workspace-1", {
+			deviceCode: "device-code-1",
+			expiresInSeconds: 300,
+			pollIntervalSeconds: 5,
 		});
 		expect(requireSnapshot(latestSnapshot).oauthConfigured).toBe(true);
 		expect(requireSnapshot(latestSnapshot).oauthAccountId).toBe("acct-123");
@@ -703,7 +719,14 @@ describe("useRuntimeSettingsClineController", () => {
 				baseUrl: "https://api.cline.bot/api/v1",
 			},
 		]);
-		runClineProviderOauthLoginMock.mockResolvedValue({
+		startClineDeviceAuthMock.mockResolvedValue({
+			deviceCode: "device-code-2",
+			userCode: "EFGH-5678",
+			verificationUrl: "https://auth.cline.bot/verify",
+			expiresInSeconds: 300,
+			pollIntervalSeconds: 5,
+		});
+		completeClineDeviceAuthMock.mockResolvedValue({
 			ok: true,
 			provider: "cline",
 			settings: {
@@ -743,8 +766,11 @@ describe("useRuntimeSettingsClineController", () => {
 			expect(await requireSnapshot(latestSnapshot).runOauthLogin()).toEqual({ ok: true });
 		});
 
-		expect(runClineProviderOauthLoginMock).toHaveBeenCalledWith("workspace-1", {
-			provider: "cline",
+		expect(startClineDeviceAuthMock).toHaveBeenCalledWith("workspace-1");
+		expect(completeClineDeviceAuthMock).toHaveBeenCalledWith("workspace-1", {
+			deviceCode: "device-code-2",
+			expiresInSeconds: 300,
+			pollIntervalSeconds: 5,
 		});
 		expect(requireSnapshot(latestSnapshot).modelId).toBe("claude-sonnet-4-6");
 		expect(requireSnapshot(latestSnapshot).oauthConfigured).toBe(true);
