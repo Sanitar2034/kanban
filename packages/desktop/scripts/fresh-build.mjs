@@ -62,7 +62,7 @@ const dirsToRemove = [
 for (const dir of dirsToRemove) {
 	if (existsSync(dir)) {
 		console.log(`  rm -rf ${dir}`);
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
 	}
 }
 
