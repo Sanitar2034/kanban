@@ -12,6 +12,7 @@ import {
 	type ClineAccountUser,
 	type ClineOrganization,
 	type CreateMcpToolsOptions,
+	completeClineDeviceAuth,
 	createMcpTools,
 	DEFAULT_EXTERNAL_IDCS_CLIENT_ID,
 	DEFAULT_EXTERNAL_IDCS_SCOPES,
@@ -31,6 +32,7 @@ import {
 	loginOpenAICodex,
 	type OcaOAuthProviderOptions,
 	ProviderSettingsManager,
+	startClineDeviceAuth,
 	type Tool,
 } from "@clinebot/core/node";
 
@@ -261,6 +263,35 @@ export async function loginManagedOauthProvider(input: {
 	return await loginOpenAICodex({
 		...input.callbacks,
 		originator: "kanban-runtime",
+	});
+}
+
+export interface DeviceAuthStartResult {
+	deviceCode: string;
+	userCode: string;
+	verificationUri: string;
+	verificationUriComplete?: string;
+	expiresInSeconds: number;
+	pollIntervalSeconds: number;
+}
+
+export async function startManagedDeviceAuth(): Promise<DeviceAuthStartResult> {
+	return await startClineDeviceAuth({});
+}
+
+export async function completeManagedDeviceAuth(input: {
+	deviceCode: string;
+	expiresInSeconds: number;
+	pollIntervalSeconds: number;
+	baseUrl?: string | null;
+	oauthProvider?: string | null;
+}): Promise<ManagedOauthCredentials> {
+	return await completeClineDeviceAuth({
+		deviceCode: input.deviceCode,
+		expiresInSeconds: input.expiresInSeconds,
+		pollIntervalSeconds: input.pollIntervalSeconds,
+		apiBaseUrl: input.baseUrl?.trim() || "https://api.cline.bot",
+		provider: input.oauthProvider?.trim() || undefined,
 	});
 }
 

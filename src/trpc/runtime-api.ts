@@ -502,6 +502,19 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				baseUrl: body.baseUrl,
 			});
 		},
+		startClineDeviceAuth: async (_workspaceScope) => {
+			return await clineProviderService.startDeviceAuth();
+		},
+		completeClineDeviceAuth: async (_workspaceScope, input) => {
+			const response = await clineProviderService.completeDeviceAuth({
+				deviceCode: input.deviceCode,
+				expiresInSeconds: input.expiresInSeconds,
+				pollIntervalSeconds: input.pollIntervalSeconds,
+				baseUrl: input.baseUrl,
+			});
+			deps.bumpClineSessionContextVersion?.();
+			return response;
+		},
 		sendTaskChatMessage: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatSendRequest(input);

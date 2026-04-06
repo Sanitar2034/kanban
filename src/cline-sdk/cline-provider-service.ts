@@ -18,6 +18,7 @@ import type {
 import { openInBrowser } from "../server/browser";
 import {
 	addSdkCustomProvider,
+	completeManagedDeviceAuth,
 	deleteSdkCustomProvider,
 	fetchSdkClineAccountProfile,
 	fetchSdkClineUserRemoteConfig,
@@ -36,6 +37,7 @@ import {
 	type SdkProviderModelRecord,
 	type SdkProviderSettings,
 	saveSdkProviderSettings,
+	startManagedDeviceAuth,
 	supportsSdkModelThinking,
 	updateSdkCustomProvider,
 } from "./sdk-provider-boundary";
@@ -933,6 +935,62 @@ export function createClineProviderService() {
 					provider: input.providerId,
 					error: toErrorMessage(error),
 				};
+			}
+		},
+
+		async startDeviceAuth(): Promise<{
+			deviceCode: string;
+			userCode: string;
+			verificationUrl: string;
+			expiresInSeconds: number;
+			pollIntervalSeconds: number;
+		}> {
+			const result = await startManagedDeviceAuth();
+			return {
+				deviceCode: result.deviceCode,
+				userCode: result.userCode,
+				verificationUrl: result.verificationUriComplete ?? result.verificationUri,
+				expiresInSeconds: result.expiresInSeconds,
+				pollIntervalSeconds: result.pollIntervalSeconds,
+			};
+		},
+
+		async completeDeviceAuth(input: {
+			deviceCode: string;
+			expiresInSeconds: number;
+			pollIntervalSeconds: number;
+			baseUrl?: string | null;
+		}): Promise<RuntimeClineOauthLoginResponse> {
+			try {
+				const existingSettings = getSdkProviderSettings("cline") ?? { provider: "cline" };
+				const baseUrl = input.baseUrl?.trim() || null;
+				const credentials = await completeManagedDeviceAuth({
+					deviceCode: input.deviceCode,
+					expiresInSeconds: input.expiresInSeconds,
+					pollIntervalSeconds: input.pollIntervalSeconds,
+					baseUrl,
+					oauthProvider: "cline",
+				});
+				const nextSettings: SdkProviderSettings = {
+					...existingSettings,
+					provider: "cline",
+					auth: {
+						...(existingSettings.auth ?? {}),
+						accessToken: toProviderApiKey("cline", credentials.access),
+						refreshToken: credentials.refresh,
+						accountId: credentials.accountId ?? undefined,
+						expiresAt: normalizeEpochMs(credentials.expires),
+					},
+				};
+				if (baseUrl) {
+					nextSettings.baseUrl = baseUrl;
+				} else {
+					delete nextSettings.baseUrl;
+				}
+				saveSdkProviderSettings({ settings: nextSettings, tokenSource: "oauth", setLastUsed: true });
+				return { ok: true, provider: "cline", settings: toProviderSettingsSummary(nextSettings) };
+			} catch (error) {
+				return { ok: false, provider: "cline", error: toErrorMessage(error) };
 			}
 		},
 	};
