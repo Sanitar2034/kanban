@@ -592,4 +592,34 @@ describe("board dependency state", () => {
 		expect(updatedTask?.prompt).toBe("Task A prompt");
 		expect(updatedTask?.baseRef).toBe("main");
 	});
+
+	it("preserves model fields when disabling auto-review", () => {
+		let board = createInitialBoardData();
+		board = addTaskToColumn(board, "review", {
+			prompt: "Task with model",
+			autoReviewEnabled: true,
+			autoReviewMode: "move_to_trash",
+			agentId: "codex",
+			clineProviderId: "my-provider",
+			clineModelId: "my-model",
+			baseRef: "main",
+		});
+		const task = board.columns.find((column) => column.id === "review")?.cards[0];
+		expect(task).toBeDefined();
+		if (!task) {
+			throw new Error("Expected review task to exist");
+		}
+		expect(task.agentId).toBe("codex");
+		expect(task.clineProviderId).toBe("my-provider");
+		expect(task.clineModelId).toBe("my-model");
+
+		const disabled = disableTaskAutoReview(board, task.id);
+		expect(disabled.updated).toBe(true);
+
+		const updatedTask = disabled.board.columns.find((column) => column.id === "review")?.cards[0];
+		expect(updatedTask?.autoReviewEnabled).toBe(false);
+		expect(updatedTask?.agentId).toBe("codex");
+		expect(updatedTask?.clineProviderId).toBe("my-provider");
+		expect(updatedTask?.clineModelId).toBe("my-model");
+	});
 });

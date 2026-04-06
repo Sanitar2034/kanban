@@ -632,6 +632,8 @@ export function CardDetailView({
 			showComposerModeToggle={false}
 			workspaceId={currentProjectId}
 			runtimeConfig={runtimeConfig}
+			taskClineProviderId={selection.card.clineProviderId}
+			taskClineModelId={selection.card.clineModelId}
 			onClineSettingsSaved={onClineSettingsSaved}
 			onClineModelChanged={onClineModelChanged}
 			onSendMessage={onSendClineChatMessage}

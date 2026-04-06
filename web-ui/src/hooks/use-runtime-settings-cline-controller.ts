@@ -27,6 +27,10 @@ interface UseRuntimeSettingsClineControllerOptions {
 	workspaceId: string | null;
 	selectedAgentId: RuntimeAgentId;
 	config: RuntimeConfigResponse | null;
+	/** Task-level provider override. When set, takes precedence over the global config on first render. */
+	taskClineProviderId?: string;
+	/** Task-level model override. When set, takes precedence over the global config on first render. */
+	taskClineModelId?: string;
 }
 
 interface SaveResult {
@@ -193,7 +197,7 @@ function getDefaultModelIdForProvider(providers: RuntimeClineProviderCatalogItem
 export function useRuntimeSettingsClineController(
 	options: UseRuntimeSettingsClineControllerOptions,
 ): UseRuntimeSettingsClineControllerResult {
-	const { open, workspaceId, selectedAgentId, config } = options;
+	const { open, workspaceId, selectedAgentId, config, taskClineProviderId, taskClineModelId } = options;
 	const [providerId, setProviderId] = useState("");
 	const [modelId, setModelId] = useState("");
 	const [apiKey, setApiKey] = useState("");
@@ -311,9 +315,10 @@ export function useRuntimeSettingsClineController(
 		if (!open) {
 			return;
 		}
-		const nextProviderId = configProviderSettings.providerId ?? configProviderSettings.oauthProvider ?? "";
+		const nextProviderId =
+			taskClineProviderId || (configProviderSettings.providerId ?? configProviderSettings.oauthProvider ?? "");
 		setProviderId(nextProviderId);
-		setModelId(configProviderSettings.modelId ?? "");
+		setModelId(taskClineModelId || (configProviderSettings.modelId ?? ""));
 		setApiKey("");
 		setBaseUrl(resolveBaseUrlForProvider(providerCatalog, nextProviderId, configProviderSettings.baseUrl));
 		setRegion("");
@@ -335,6 +340,8 @@ export function useRuntimeSettingsClineController(
 		configProviderSettings.providerId,
 		configProviderSettings.reasoningEffort,
 		open,
+		taskClineProviderId,
+		taskClineModelId,
 	]);
 
 	useEffect(() => {

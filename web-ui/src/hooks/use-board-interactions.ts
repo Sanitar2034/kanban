@@ -809,6 +809,10 @@ export function useBoardInteractions({
 					startInPlanMode: selection.card.startInPlanMode,
 					autoReviewEnabled: false,
 					autoReviewMode: resolveTaskAutoReviewMode(selection.card.autoReviewMode),
+					images: selection.card.images,
+					agentId: selection.card.agentId,
+					clineProviderId: selection.card.clineProviderId,
+					clineModelId: selection.card.clineModelId,
 					baseRef: selection.card.baseRef,
 				});
 				return updated.updated ? updated.board : currentBoard;

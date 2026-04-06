@@ -532,6 +532,9 @@ export function disableTaskAutoReview(board: BoardData, taskId: string): { board
 		autoReviewEnabled: false,
 		autoReviewMode: DEFAULT_TASK_AUTO_REVIEW_MODE,
 		images: selection.card.images,
+		agentId: selection.card.agentId,
+		clineProviderId: selection.card.clineProviderId,
+		clineModelId: selection.card.clineModelId,
 		baseRef: selection.card.baseRef,
 	});
 }
