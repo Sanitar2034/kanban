@@ -192,6 +192,19 @@ export class ConnectionManager {
 		return this.localAuthToken;
 	}
 
+	/**
+	 * Update the local runtime URL and mark the child as running.
+	 *
+	 * Called when the RuntimeChildManager auto-restarts the child after a
+	 * crash — the child gets a new port, but the ConnectionManager's
+	 * internal state still has the old URL. Without this update,
+	 * `reconnectActiveConnection()` would try to load the dead old URL.
+	 */
+	updateLocalRuntime(url: string): void {
+		this.localUrl = url;
+		this.childRunning = true;
+	}
+
 	getActiveConnectionId(): string {
 		return this.store.getActiveConnectionId();
 	}

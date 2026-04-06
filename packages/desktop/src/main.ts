@@ -554,6 +554,25 @@ function createRuntimeChildManager(): RuntimeChildManager {
 		authToken = connectionManager?.getLocalAuthToken() ?? authToken;
 		// Publish descriptor so CLI helpers can discover this runtime.
 		publishRuntimeDescriptor(url, authToken!);
+
+		// If boot already completed, this is an auto-restart after a crash.
+		// Update the ConnectionManager's local URL (the child got a new port)
+		// and reload the renderer so the user doesn't see a stale "Disconnected" page.
+		if (
+			getBootState().currentPhase === "ready" &&
+			connectionManager &&
+			mainWindow &&
+			!mainWindow.isDestroyed()
+		) {
+			console.log("[desktop] Runtime auto-restarted after crash — updating URL and reloading renderer.");
+			connectionManager.updateLocalRuntime(url);
+			connectionManager.reconnectActiveConnection().catch((err: unknown) => {
+				console.error(
+					"[desktop] Failed to reload renderer after auto-restart:",
+					err instanceof Error ? err.message : err,
+				);
+			});
+		}
 	});
 
 	manager.on("error", (message: string) => {
@@ -675,9 +694,8 @@ function setupPowerMonitorHealthCheck(): void {
 		const activeId = connectionManager?.getActiveConnectionId() ?? "local";
 		if (activeId !== "local") return;
 
-		// Send a heartbeat-ack immediately, then verify the HTTP server is
-		// still responsive. If health probing fails, restart the child.
 		if (runtimeManager?.running) {
+			// Child is still alive — send a heartbeat-ack and verify HTTP health.
 			runtimeManager.send({ type: "heartbeat-ack" });
 			void isRuntimeHealthy().then(async (healthy) => {
 				if (healthy) {
@@ -692,6 +710,17 @@ function setupPowerMonitorHealthCheck(): void {
 						error instanceof Error ? error.message : error,
 					);
 				}
+			});
+		} else {
+			// Child already died during sleep (heartbeat timeout killed it).
+			// The auto-restart may have fired, but the renderer still needs
+			// a full reconnect cycle to load the new URL.
+			console.warn("[desktop] Runtime child not running after resume; triggering full restart.");
+			void restartRuntimeChild().catch((error) => {
+				console.error(
+					"[desktop] Failed to restart runtime after resume (child was dead):",
+					error instanceof Error ? error.message : error,
+				);
 			});
 		}
 	});
