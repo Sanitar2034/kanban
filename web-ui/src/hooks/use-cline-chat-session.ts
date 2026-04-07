@@ -1,7 +1,7 @@
 // Manages the message list and send or cancel lifecycle for one native Cline session.
 // It merges loaded history with streamed updates and guards against stale task
 // switches so chat surfaces can stay reactive without duplicating logic.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClineChatActionResult } from "@/hooks/use-cline-chat-runtime-actions";
 import type { RuntimeTaskChatMessage, RuntimeTaskImage, RuntimeTaskSessionMode } from "@/runtime/types";
 
@@ -72,10 +72,12 @@ export function useClineChatSession({
 	const [isCanceling, setIsCanceling] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const hasReceivedIncomingMessages = useRef(false);
 
 	useEffect(() => {
 		setMessages([]);
 		setError(null);
+		hasReceivedIncomingMessages.current = false;
 	}, [taskId]);
 
 	useEffect(() => {
@@ -111,9 +113,17 @@ export function useClineChatSession({
 	}, [onLoadMessages, taskId]);
 
 	useEffect(() => {
-		if (!incomingMessages || incomingMessages.length === 0) {
+		if (!incomingMessages) {
 			return;
 		}
+		if (incomingMessages.length === 0) {
+			if (hasReceivedIncomingMessages.current) {
+				hasReceivedIncomingMessages.current = false;
+				setMessages([]);
+			}
+			return;
+		}
+		hasReceivedIncomingMessages.current = true;
 		setMessages((currentMessages) => mergeMessages(currentMessages, incomingMessages));
 	}, [incomingMessages]);
 

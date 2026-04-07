@@ -36,6 +36,7 @@ function HookHarness({
 	onSendMessage,
 	onLoadMessages,
 	incomingMessage,
+	incomingMessages,
 	onSnapshot,
 }: {
 	taskId: string;
@@ -46,6 +47,7 @@ function HookHarness({
 	) => Promise<{ ok: boolean; message?: string; chatMessage?: ClineChatMessage | null }>;
 	onLoadMessages?: (taskId: string) => Promise<ClineChatMessage[] | null>;
 	incomingMessage?: ClineChatMessage | null;
+	incomingMessages?: ClineChatMessage[] | null;
 	onSnapshot: (snapshot: HookSnapshot) => void;
 }): null {
 	const state = useClineChatSession({
@@ -53,6 +55,7 @@ function HookHarness({
 		onSendMessage,
 		onLoadMessages,
 		incomingMessage,
+		incomingMessages,
 	});
 
 	useEffect(() => {
@@ -379,6 +382,61 @@ describe("useClineChatSession", () => {
 		expect(snapshots.at(-1)?.lastMessageContent).toBe("Streaming first");
 	});
 
+	it("clears messages after a /clear send returns null chatMessage", async () => {
+		const existingMessages: ClineChatMessage[] = [
+			{
+				id: "msg-1",
+				role: "user",
+				content: "Hello",
+				createdAt: 1,
+			},
+			{
+				id: "msg-2",
+				role: "assistant",
+				content: "Hi there",
+				createdAt: 2,
+			},
+		];
+
+		// The first call loads existing messages; subsequent calls (after clear) return [].
+		const onLoadMessages = vi.fn<(taskId: string) => Promise<ClineChatMessage[] | null>>().mockResolvedValueOnce(existingMessages).mockResolvedValue([]);
+
+		// Simulate the /clear response: ok but no chatMessage.
+		const onSendMessage = vi.fn(async () => ({
+			ok: true,
+			chatMessage: null as ClineChatMessage | null,
+		}));
+
+		const snapshots: HookSnapshot[] = [];
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					taskId="task-1"
+					onSendMessage={onSendMessage}
+					onLoadMessages={onLoadMessages}
+					onSnapshot={(snapshot) => snapshots.push(snapshot)}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		// Verify existing messages are loaded.
+		expect(snapshots.at(-1)?.messageIds).toEqual(["msg-1", "msg-2"]);
+
+		// Send /clear.
+		await act(async () => {
+			await snapshots.at(-1)?.sendMessage("/clear");
+		});
+
+		// After /clear, messages should be empty because the send path fell
+		// through to onLoadMessages (chatMessage was null) which returned [].
+		expect(snapshots.at(-1)?.messageIds).toEqual([]);
+		expect(onSendMessage).toHaveBeenCalledWith("task-1", "/clear");
+		// onLoadMessages: once for initial mount, once for the post-clear reload.
+		expect(onLoadMessages).toHaveBeenCalledTimes(2);
+	});
+
 	it("clears stale messages when switching to another task", async () => {
 		const onLoadMessages = vi.fn(async (taskId: string) => {
 			if (taskId === "task-1") {
@@ -428,5 +486,106 @@ describe("useClineChatSession", () => {
 
 		expect(snapshots.at(-1)?.messageIds).toEqual(["task-2-message"]);
 		expect(snapshots.at(-1)?.lastMessageContent).toBe("Task two");
+	});
+
+	it("clears local messages when incomingMessages transitions from populated to empty (task_chat_cleared)", async () => {
+		const streamedMessages: ClineChatMessage[] = [
+			{
+				id: "ws-msg-1",
+				role: "user",
+				content: "Hello",
+				createdAt: 1,
+			},
+			{
+				id: "ws-msg-2",
+				role: "assistant",
+				content: "Hi there",
+				createdAt: 2,
+			},
+		];
+		const snapshots: HookSnapshot[] = [];
+
+		// Mount with streamed messages via incomingMessages prop (simulating
+		// messages that arrived through the runtime state stream WebSocket).
+		await act(async () => {
+			root.render(
+				<HookHarness
+					taskId="task-1"
+					incomingMessages={streamedMessages}
+					onSnapshot={(snapshot) => snapshots.push(snapshot)}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		// Messages from the stream should be visible in local state.
+		expect(snapshots.at(-1)?.messageIds).toEqual(["ws-msg-1", "ws-msg-2"]);
+
+		// Simulate the task_chat_cleared websocket event: the parent reducer
+		// removes the task from taskChatMessagesByTaskId, so incomingMessages
+		// becomes [].  The hook should clear its local messages to match.
+		await act(async () => {
+			root.render(
+				<HookHarness
+					taskId="task-1"
+					incomingMessages={[]}
+					onSnapshot={(snapshot) => snapshots.push(snapshot)}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		expect(snapshots.at(-1)?.messageIds).toEqual([]);
+	});
+
+	it("preserves loaded history when incomingMessages is empty-by-default across re-renders", async () => {
+		const loadedMessages: ClineChatMessage[] = [
+			{
+				id: "loaded-1",
+				role: "user",
+				content: "Hello",
+				createdAt: 1,
+			},
+			{
+				id: "loaded-2",
+				role: "assistant",
+				content: "Hi there",
+				createdAt: 2,
+			},
+		];
+		const onLoadMessages = vi.fn(async () => loadedMessages);
+		const snapshots: HookSnapshot[] = [];
+
+		// Initial render: onLoadMessages loads history, incomingMessages is []
+		// (the default fallback from the parent when no streamed messages exist).
+		await act(async () => {
+			root.render(
+				<HookHarness
+					taskId="task-1"
+					onLoadMessages={onLoadMessages}
+					incomingMessages={[]}
+					onSnapshot={(snapshot) => snapshots.push(snapshot)}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		expect(snapshots.at(-1)?.messageIds).toEqual(["loaded-1", "loaded-2"]);
+
+		// Simulate an unrelated parent re-render that passes a fresh [] reference.
+		// This must NOT wipe the locally loaded history.
+		await act(async () => {
+			root.render(
+				<HookHarness
+					taskId="task-1"
+					onLoadMessages={onLoadMessages}
+					incomingMessages={[]}
+					onSnapshot={(snapshot) => snapshots.push(snapshot)}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		expect(snapshots.at(-1)?.messageIds).toEqual(["loaded-1", "loaded-2"]);
 	});
 });
