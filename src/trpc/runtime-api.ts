@@ -169,9 +169,19 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						});
 				const shouldCaptureTurnCheckpoint = !body.resumeFromTrash && !isHomeAgentSessionId(body.taskId);
 
-				// When restoring from trash, resume with the original agent so conversation
-				// history is preserved. Terminal agents have their agentId preserved in the
-				// hydrated session summary; Cline tasks are detected via persisted SDK sessions.
+				// Per-task config source-of-truth precedence:
+				//
+				// agentId resolution (which agent runtime to use):
+				//   1. previousTerminalAgentId — persisted in the terminal session summary from
+				//      the last run; ensures trash-restore resumes with the same agent runtime.
+				//   2. body.agentId — the card's current per-task agent override.
+				//   3. scopedRuntimeConfig.selectedAgentId — the workspace-level default.
+				//
+				// clineProviderId / clineModelId (which LLM model the Cline agent uses):
+				//   Always taken from the card's current fields (body.clineProviderId /
+				//   body.clineModelId). There is no session-level persistence for these;
+				//   if the user changes the model on the card, the next session launch
+				//   (including trash-restore) uses the updated values.
 				const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
 				const previousTerminalAgentId = body.resumeFromTrash
 					? (terminalManager.getSummary(body.taskId)?.agentId ?? null)

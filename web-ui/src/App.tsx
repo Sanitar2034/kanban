@@ -738,7 +738,7 @@ export default function App(): ReactElement {
 					autoReviewEnabled: selection.card.autoReviewEnabled,
 					autoReviewMode: selection.card.autoReviewMode,
 					images: selection.card.images,
-					agentId: selection.card.agentId,
+					agentId: "cline",
 					clineProviderId: providerId || undefined,
 					clineModelId: modelId || undefined,
 					baseRef: selection.card.baseRef,

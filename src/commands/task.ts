@@ -79,15 +79,28 @@ function parseAutoReviewMode(value: string | undefined): "commit" | "pr" | "move
 
 const VALID_AGENT_IDS = runtimeAgentIdSchema.options;
 
-function parseAgentId(value: string | undefined): RuntimeAgentId | undefined {
+function parseAgentId(value: string | undefined): RuntimeAgentId | null | undefined {
 	if (value === undefined) {
 		return undefined;
+	}
+	if (value === "default") {
+		return null;
 	}
 	const result = runtimeAgentIdSchema.safeParse(value);
 	if (result.success) {
 		return result.data;
 	}
-	throw new Error(`Invalid agent ID "${value}". Expected one of: ${VALID_AGENT_IDS.join(", ")}.`);
+	throw new Error(`Invalid agent ID "${value}". Expected one of: ${VALID_AGENT_IDS.join(", ")}, default.`);
+}
+
+function parseOptionalStringOrDefault(value: string | undefined): string | null | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (value === "default") {
+		return null;
+	}
+	return value;
 }
 
 function resolveTaskCommandTarget(input: TaskCommandTarget, commandName: string): ResolvedTaskCommandTarget {
@@ -412,9 +425,9 @@ async function updateTaskCommand(input: {
 	startInPlanMode?: boolean;
 	autoReviewEnabled?: boolean;
 	autoReviewMode?: "commit" | "pr" | "move_to_trash";
-	agentId?: RuntimeAgentId;
-	clineProviderId?: string;
-	clineModelId?: string;
+	agentId?: RuntimeAgentId | null;
+	clineProviderId?: string | null;
+	clineModelId?: string | null;
 }): Promise<JsonRecord> {
 	if (
 		input.title === undefined &&
@@ -987,9 +1000,15 @@ export function registerTaskCommand(program: Command): void {
 		.option("--start-in-plan-mode [value]", "Set plan mode (true|false). Flag-only implies true.")
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr | move_to_trash.", parseAutoReviewMode)
-		.option("--agent-id <id>", "Agent override: cline | claude | codex | droid | gemini | opencode.")
-		.option("--cline-provider <id>", "Cline provider override (e.g. anthropic, openai, cline).")
-		.option("--cline-model <id>", "Cline model override (e.g. claude-sonnet-4-20250514).")
+		.option("--agent-id <id>", "Agent override: cline | claude | codex | droid | gemini | opencode | default.")
+		.option(
+			"--cline-provider <id>",
+			'Cline provider override (e.g. anthropic, openai, cline). Use "default" for workspace default.',
+		)
+		.option(
+			"--cline-model <id>",
+			'Cline model override (e.g. claude-sonnet-4-20250514). Use "default" for workspace default.',
+		)
 		.action(
 			async (options: {
 				title?: string;
@@ -1014,9 +1033,9 @@ export function registerTaskCommand(program: Command): void {
 							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
-							agentId: parseAgentId(options.agentId),
-							clineProviderId: options.clineProvider,
-							clineModelId: options.clineModel,
+							agentId: parseAgentId(options.agentId) ?? undefined,
+							clineProviderId: parseOptionalStringOrDefault(options.clineProvider) ?? undefined,
+							clineModelId: parseOptionalStringOrDefault(options.clineModel) ?? undefined,
 						}),
 				);
 			},
@@ -1033,9 +1052,15 @@ export function registerTaskCommand(program: Command): void {
 		.option("--start-in-plan-mode [value]", "Set plan mode (true|false). Flag-only implies true.")
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr | move_to_trash.", parseAutoReviewMode)
-		.option("--agent-id <id>", "Agent override: cline | claude | codex | droid | gemini | opencode.")
-		.option("--cline-provider <id>", "Cline provider override (e.g. anthropic, openai, cline).")
-		.option("--cline-model <id>", "Cline model override (e.g. claude-sonnet-4-20250514).")
+		.option(
+			"--agent-id <id>",
+			'Agent override: cline | claude | codex | droid | gemini | opencode. Use "default" to clear.',
+		)
+		.option(
+			"--cline-provider <id>",
+			'Cline provider override (e.g. anthropic, openai, cline). Use "default" to clear.',
+		)
+		.option("--cline-model <id>", 'Cline model override (e.g. claude-sonnet-4-20250514). Use "default" to clear.')
 		.action(
 			async (options: {
 				taskId: string;
@@ -1063,8 +1088,8 @@ export function registerTaskCommand(program: Command): void {
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
 							agentId: parseAgentId(options.agentId),
-							clineProviderId: options.clineProvider,
-							clineModelId: options.clineModel,
+							clineProviderId: parseOptionalStringOrDefault(options.clineProvider),
+							clineModelId: parseOptionalStringOrDefault(options.clineModel),
 						}),
 				);
 			},

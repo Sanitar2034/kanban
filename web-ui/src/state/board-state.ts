@@ -111,6 +111,9 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		autoReviewMode?: unknown;
 		images?: unknown;
 		baseRef?: unknown;
+		agentId?: unknown;
+		clineProviderId?: unknown;
+		clineModelId?: unknown;
 		createdAt?: unknown;
 		updatedAt?: unknown;
 	};
@@ -140,6 +143,11 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		),
 		images: normalizeTaskImages(card.images),
 		baseRef,
+		...(typeof card.agentId === "string" && card.agentId ? { agentId: card.agentId as RuntimeAgentId } : {}),
+		...(typeof card.clineProviderId === "string" && card.clineProviderId
+			? { clineProviderId: card.clineProviderId }
+			: {}),
+		...(typeof card.clineModelId === "string" && card.clineModelId ? { clineModelId: card.clineModelId } : {}),
 		createdAt: typeof card.createdAt === "number" ? card.createdAt : now,
 		updatedAt: typeof card.updatedAt === "number" ? card.updatedAt : now,
 	};
