@@ -130,12 +130,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				}
 				nextRuntimeConfig = await updateGlobalRuntimeConfig(activeRuntimeConfig, parsed);
 			}
-			if (workspaceScope && workspaceScope.workspaceId === deps.getActiveWorkspaceId()) {
-				deps.setActiveRuntimeConfig(nextRuntimeConfig);
-			}
-			if (!workspaceScope) {
-				deps.setActiveRuntimeConfig(nextRuntimeConfig);
-			}
+			// Always update the in-memory runtime config cache.
+			// Global settings such as selectedAgentId are shared across all
+			// workspaces, so the cache must reflect the latest persisted state
+			// regardless of which workspace scope triggered the save.
+			deps.setActiveRuntimeConfig(nextRuntimeConfig);
 			return buildConfigResponse(nextRuntimeConfig);
 		},
 		saveClineProviderSettings: async (_workspaceScope, input) => {
