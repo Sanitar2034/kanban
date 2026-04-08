@@ -6,39 +6,151 @@ import { LocalStorageKey, readLocalStorageItem, writeLocalStorageItem } from "@/
 // Theme definitions
 // ---------------------------------------------------------------------------
 
+export type ThemeMode = "dark" | "light";
+
 export type ThemeId =
 	| "default"
-	| "midnight"
+	| "high-contrast"
 	| "forest"
 	| "sunset"
 	| "ocean"
-	| "rose"
-	| "lavender"
-	| "slate"
-	| "ember"
-	| "nord";
+	| "nord"
+	| "light"
+	| "light-nord"
+	| "light-solarized"
+	| "light-rose"
+	| "light-lavender"
+	| "light-postit";
 
 export interface ThemeDefinition {
 	readonly id: ThemeId;
 	readonly label: string;
-	/** Accent color shown in the theme swatch. */
+	readonly mode: ThemeMode;
+	/** Accent color shown in the theme preview. */
 	readonly accent: string;
-	/** Darkest surface color shown as the swatch background. */
+	/** Darkest/lightest surface color (background). */
 	readonly surface: string;
+	/** Secondary surface for the preview strip. */
+	readonly surfaceAlt: string;
+	/** Primary text color for the preview strip. */
+	readonly text: string;
 }
 
 export const THEMES: readonly ThemeDefinition[] = [
-	{ id: "default", label: "Default", accent: "#0084FF", surface: "#1F2428" },
-	{ id: "midnight", label: "Midnight", accent: "#7C8AFF", surface: "#181B2E" },
-	{ id: "forest", label: "Forest", accent: "#5DB85D", surface: "#1A2418" },
-	{ id: "sunset", label: "Sunset", accent: "#E8943A", surface: "#261E18" },
-	{ id: "ocean", label: "Ocean", accent: "#34B5C8", surface: "#162028" },
-	{ id: "rose", label: "Rosé", accent: "#E05A8A", surface: "#261A22" },
-	{ id: "lavender", label: "Lavender", accent: "#A07CDB", surface: "#201C28" },
-	{ id: "slate", label: "Slate", accent: "#6094C0", surface: "#1C2028" },
-	{ id: "ember", label: "Ember", accent: "#D05A4A", surface: "#261C1A" },
-	{ id: "nord", label: "Nord", accent: "#88C0D0", surface: "#2E3440" },
+	// -- Dark themes --
+	{
+		id: "default",
+		label: "Default",
+		mode: "dark",
+		accent: "#0084FF",
+		surface: "#1F2428",
+		surfaceAlt: "#24292E",
+		text: "#E6EDF3",
+	},
+	{
+		id: "high-contrast",
+		label: "High Contrast",
+		mode: "dark",
+		accent: "#58A6FF",
+		surface: "#010409",
+		surfaceAlt: "#0D1117",
+		text: "#F0F6FC",
+	},
+	{
+		id: "forest",
+		label: "Forest",
+		mode: "dark",
+		accent: "#147340",
+		surface: "#1C1C1C",
+		surfaceAlt: "#212421",
+		text: "#F0E4D8",
+	},
+	{
+		id: "sunset",
+		label: "Sunset",
+		mode: "dark",
+		accent: "#D94A1E",
+		surface: "#1C1C1C",
+		surfaceAlt: "#252525",
+		text: "#F0E4D8",
+	},
+	{
+		id: "ocean",
+		label: "Ocean",
+		mode: "dark",
+		accent: "#34B5C8",
+		surface: "#162028",
+		surfaceAlt: "#1B2830",
+		text: "#D8ECF0",
+	},
+	{
+		id: "nord",
+		label: "Nord",
+		mode: "dark",
+		accent: "#88C0D0",
+		surface: "#2E3440",
+		surfaceAlt: "#3B4252",
+		text: "#ECEFF4",
+	},
+	// -- Light themes --
+	{
+		id: "light",
+		label: "Light",
+		mode: "light",
+		accent: "#0969DA",
+		surface: "#FFFFFF",
+		surfaceAlt: "#F6F8FA",
+		text: "#1F2328",
+	},
+	{
+		id: "light-nord",
+		label: "Light Nord",
+		mode: "light",
+		accent: "#5E81AC",
+		surface: "#ECEFF4",
+		surfaceAlt: "#E5E9F0",
+		text: "#2E3440",
+	},
+	{
+		id: "light-solarized",
+		label: "Solarized Light",
+		mode: "light",
+		accent: "#268BD2",
+		surface: "#FDF6E3",
+		surfaceAlt: "#EEE8D5",
+		text: "#657B83",
+	},
+	{
+		id: "light-rose",
+		label: "Light Rosé",
+		mode: "light",
+		accent: "#D6336C",
+		surface: "#FFFBFC",
+		surfaceAlt: "#FFF0F3",
+		text: "#3D1F29",
+	},
+	{
+		id: "light-lavender",
+		label: "Light Lavender",
+		mode: "light",
+		accent: "#7C4DFF",
+		surface: "#FDFBFF",
+		surfaceAlt: "#F4F0FA",
+		text: "#2D2440",
+	},
+	{
+		id: "light-postit",
+		label: "Post-it",
+		mode: "light",
+		accent: "#FFDD63",
+		surface: "#FCF9E1",
+		surfaceAlt: "#FFF9D1",
+		text: "#3E2723",
+	},
 ] as const;
+
+export const DARK_THEMES: readonly ThemeDefinition[] = THEMES.filter((t) => t.mode === "dark");
+export const LIGHT_THEMES: readonly ThemeDefinition[] = THEMES.filter((t) => t.mode === "light");
 
 const THEME_IDS = new Set<string>(THEMES.map((theme) => theme.id));
 const themeStoreListeners = new Set<() => void>();
@@ -68,29 +180,29 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		selectionForeground: "#ffffff",
 		selectionInactiveBackground: "#2D333966",
 	},
-	midnight: {
-		textPrimary: "#E0E4F0",
-		surfacePrimary: "#181B2E",
-		surfaceRaised: "#1E2140",
-		selectionBackground: "#7C8AFF4D",
+	"high-contrast": {
+		textPrimary: "#F0F6FC",
+		surfacePrimary: "#010409",
+		surfaceRaised: "#0D1117",
+		selectionBackground: "#58A6FF4D",
 		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#272B4A66",
+		selectionInactiveBackground: "#16192466",
 	},
 	forest: {
-		textPrimary: "#DCE8D8",
-		surfacePrimary: "#1A2418",
-		surfaceRaised: "#1F2E1C",
-		selectionBackground: "#5DB85D4D",
+		textPrimary: "#F0E4D8",
+		surfacePrimary: "#1C1C1C",
+		surfaceRaised: "#212421",
+		selectionBackground: "#1473404D",
 		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#26382366",
+		selectionInactiveBackground: "#33333366",
 	},
 	sunset: {
 		textPrimary: "#F0E4D8",
-		surfacePrimary: "#261E18",
-		surfaceRaised: "#30251C",
-		selectionBackground: "#E8943A4D",
+		surfacePrimary: "#1C1C1C",
+		surfaceRaised: "#252525",
+		selectionBackground: "#D94A1E4D",
 		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#3A2E2266",
+		selectionInactiveBackground: "#33333366",
 	},
 	ocean: {
 		textPrimary: "#D8ECF0",
@@ -100,38 +212,6 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		selectionForeground: "#ffffff",
 		selectionInactiveBackground: "#22323A66",
 	},
-	rose: {
-		textPrimary: "#F0DCE6",
-		surfacePrimary: "#261A22",
-		surfaceRaised: "#30202A",
-		selectionBackground: "#E05A8A4D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#3A283466",
-	},
-	lavender: {
-		textPrimary: "#E6E0F0",
-		surfacePrimary: "#201C28",
-		surfaceRaised: "#282330",
-		selectionBackground: "#A07CDB4D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#312C3A66",
-	},
-	slate: {
-		textPrimary: "#E0E6F0",
-		surfacePrimary: "#1C2028",
-		surfaceRaised: "#222830",
-		selectionBackground: "#6094C04D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#2A313A66",
-	},
-	ember: {
-		textPrimary: "#F0DCD8",
-		surfacePrimary: "#261C1A",
-		surfaceRaised: "#302220",
-		selectionBackground: "#D05A4A4D",
-		selectionForeground: "#ffffff",
-		selectionInactiveBackground: "#3A2A2866",
-	},
 	nord: {
 		textPrimary: "#ECEFF4",
 		surfacePrimary: "#2E3440",
@@ -139,6 +219,55 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		selectionBackground: "#88C0D04D",
 		selectionForeground: "#ffffff",
 		selectionInactiveBackground: "#434C5E66",
+	},
+	// -- Light terminal colors --
+	light: {
+		textPrimary: "#1F2328",
+		surfacePrimary: "#FFFFFF",
+		surfaceRaised: "#F6F8FA",
+		selectionBackground: "#0969DA33",
+		selectionForeground: "#1F2328",
+		selectionInactiveBackground: "#D0D7DE66",
+	},
+	"light-nord": {
+		textPrimary: "#2E3440",
+		surfacePrimary: "#ECEFF4",
+		surfaceRaised: "#E5E9F0",
+		selectionBackground: "#5E81AC33",
+		selectionForeground: "#2E3440",
+		selectionInactiveBackground: "#D8DEE966",
+	},
+	"light-solarized": {
+		textPrimary: "#657B83",
+		surfacePrimary: "#FDF6E3",
+		surfaceRaised: "#EEE8D5",
+		selectionBackground: "#268BD233",
+		selectionForeground: "#657B83",
+		selectionInactiveBackground: "#D6CABF66",
+	},
+	"light-rose": {
+		textPrimary: "#3D1F29",
+		surfacePrimary: "#FFFBFC",
+		surfaceRaised: "#FFF0F3",
+		selectionBackground: "#D6336C33",
+		selectionForeground: "#3D1F29",
+		selectionInactiveBackground: "#F5D0DC66",
+	},
+	"light-lavender": {
+		textPrimary: "#2D2440",
+		surfacePrimary: "#FDFBFF",
+		surfaceRaised: "#F4F0FA",
+		selectionBackground: "#7C4DFF33",
+		selectionForeground: "#2D2440",
+		selectionInactiveBackground: "#DCD4EC66",
+	},
+	"light-postit": {
+		textPrimary: "#3E2723",
+		surfacePrimary: "#FCF9E1",
+		surfaceRaised: "#FFF9D1",
+		selectionBackground: "#FFDD6366",
+		selectionForeground: "#3E2723",
+		selectionInactiveBackground: "#F0D8A866",
 	},
 };
 
@@ -148,6 +277,15 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 
 export function isThemeId(value: string | null): value is ThemeId {
 	return value !== null && THEME_IDS.has(value);
+}
+
+export function getThemeDefinition(themeId: ThemeId): ThemeDefinition {
+	const found = THEMES.find((t) => t.id === themeId);
+	if (!found) {
+		// ThemeId is a closed union so this should never happen, but satisfy the compiler.
+		return THEMES[0] as ThemeDefinition;
+	}
+	return found;
 }
 
 function notifyThemeStoreListeners(): void {

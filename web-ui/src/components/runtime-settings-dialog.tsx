@@ -22,7 +22,14 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
 import { useRuntimeSettingsClineMcpController } from "@/hooks/use-runtime-settings-cline-mcp-controller";
-import { previewThemeId, readStoredThemeId, saveThemeId, THEMES, type ThemeId } from "@/hooks/use-theme";
+import {
+	DARK_THEMES,
+	LIGHT_THEMES,
+	previewThemeId,
+	readStoredThemeId,
+	saveThemeId,
+	type ThemeId,
+} from "@/hooks/use-theme";
 import { useLayoutCustomizations } from "@/resize/layout-customizations";
 import { openFileOnHost } from "@/runtime/runtime-config-query";
 import type {
@@ -276,6 +283,130 @@ function ShortcutIconPicker({
 					</div>
 				</RadixPopover.Content>
 			</RadixPopover.Portal>
+		</RadixPopover.Root>
+	);
+}
+
+function ThemeColorStrip({ theme }: { theme: (typeof DARK_THEMES)[number] }): React.ReactElement {
+	return (
+		<span className="flex gap-0.5 shrink-0">
+			<span className="w-4 h-4 rounded-sm border border-border" style={{ background: theme.surface }} />
+			<span className="w-4 h-4 rounded-sm border border-border" style={{ background: theme.surfaceAlt }} />
+			<span className="w-4 h-4 rounded-sm border border-border" style={{ background: theme.accent }} />
+			<span className="w-4 h-4 rounded-sm border border-border" style={{ background: theme.text }} />
+		</span>
+	);
+}
+
+function ThemePickerDropdown({
+	selectedThemeId,
+	selectedTheme,
+	onSelect,
+	onPreview,
+	onPreviewEnd,
+}: {
+	selectedThemeId: ThemeId;
+	selectedTheme: (typeof DARK_THEMES)[number];
+	onSelect: (id: ThemeId) => void;
+	onPreview: (id: ThemeId) => void;
+	onPreviewEnd: () => void;
+}): React.ReactElement {
+	const [open, setOpen] = useState(false);
+
+	const handleSelect = (id: ThemeId) => {
+		onSelect(id);
+		setOpen(false);
+	};
+
+	return (
+		<RadixPopover.Root
+			open={open}
+			onOpenChange={(nextOpen) => {
+				setOpen(nextOpen);
+				if (!nextOpen) {
+					onPreviewEnd();
+				}
+			}}
+		>
+			<RadixPopover.Trigger asChild>
+				<button
+					type="button"
+					className="flex items-center gap-2.5 w-full h-8 px-2.5 rounded-md border border-border bg-surface-2 text-text-primary hover:bg-surface-3 cursor-pointer"
+				>
+					<ThemeColorStrip theme={selectedTheme} />
+					<span className="text-[13px] flex-1 min-w-0 text-left">{selectedTheme.label}</span>
+					<ChevronDown size={14} className="text-text-tertiary shrink-0" />
+				</button>
+			</RadixPopover.Trigger>
+			<RadixPopover.Content
+				side="bottom"
+				align="start"
+				sideOffset={4}
+				className="z-50 w-[var(--radix-popover-trigger-width)] rounded-md border border-border bg-surface-2 shadow-lg"
+				style={{ animation: "kb-tooltip-show 100ms ease" }}
+				onMouseLeave={onPreviewEnd}
+			>
+				<div className="max-h-[320px] overflow-y-auto p-1" style={{ overscrollBehavior: "contain" }}>
+					<p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider px-2 pt-1 pb-1">
+						Dark
+					</p>
+					{DARK_THEMES.map((theme) => {
+						const isSelected = theme.id === selectedThemeId;
+						return (
+							<button
+								key={theme.id}
+								type="button"
+								aria-label={theme.label}
+								onClick={() => handleSelect(theme.id)}
+								onMouseEnter={() => onPreview(theme.id)}
+								className={cn(
+									"flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-left cursor-pointer transition-colors",
+									isSelected
+										? "bg-accent/15 text-text-primary"
+										: "text-text-secondary hover:bg-surface-3 hover:text-text-primary",
+								)}
+							>
+								{isSelected ? (
+									<Check size={14} className="text-accent shrink-0" />
+								) : (
+									<span className="w-3.5 shrink-0" />
+								)}
+								<span className="text-[13px] flex-1 min-w-0">{theme.label}</span>
+								<ThemeColorStrip theme={theme} />
+							</button>
+						);
+					})}
+					<p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider px-2 pt-2 pb-1">
+						Light
+					</p>
+					{LIGHT_THEMES.map((theme) => {
+						const isSelected = theme.id === selectedThemeId;
+						return (
+							<button
+								key={theme.id}
+								type="button"
+								aria-label={theme.label}
+								onClick={() => handleSelect(theme.id)}
+								onMouseEnter={() => onPreview(theme.id)}
+								className={cn(
+									"flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-left cursor-pointer transition-colors",
+									isSelected
+										? "bg-accent/15 text-text-primary"
+										: "text-text-secondary hover:bg-surface-3 hover:text-text-primary",
+								)}
+							>
+								{isSelected ? (
+									<Check size={14} className="text-accent shrink-0" />
+								) : (
+									<span className="w-3.5 shrink-0" />
+								)}
+								<span className="text-[13px] flex-1 min-w-0">{theme.label}</span>
+								<ThemeColorStrip theme={theme} />
+							</button>
+						);
+					})}
+				</div>
+			</RadixPopover.Content>
 		</RadixPopover.Root>
 	);
 }
@@ -777,30 +908,19 @@ export function RuntimeSettingsDialog({
 				</div>
 
 				<h6 className="font-semibold text-text-primary mt-4 mb-2">Theme</h6>
-				<div className="flex flex-wrap gap-2">
-					{THEMES.map((theme) => (
-						<button
-							key={theme.id}
-							type="button"
-							aria-label={theme.label}
-							title={theme.label}
-							onClick={() => {
-								setDraftThemeId(theme.id);
-								previewThemeId(theme.id);
-							}}
-							className={cn(
-								"w-7 h-7 rounded-full border-2 cursor-pointer transition-all hover:scale-110",
-								draftThemeId === theme.id ? "border-accent ring-2 ring-accent/40" : "border-transparent",
-							)}
-							style={{
-								background: `radial-gradient(circle at 60% 40%, ${theme.accent}, ${theme.surface})`,
-							}}
-						/>
-					))}
-				</div>
-				<p className="text-text-secondary text-[13px] mt-1.5 mb-0">
-					{THEMES.find((t) => t.id === draftThemeId)?.label ?? "Default"} theme
-				</p>
+				<ThemePickerDropdown
+					selectedThemeId={draftThemeId}
+					selectedTheme={
+						([...DARK_THEMES, ...LIGHT_THEMES].find((t) => t.id === draftThemeId) ??
+							DARK_THEMES[0]) as (typeof DARK_THEMES)[number]
+					}
+					onSelect={(id: ThemeId) => {
+						setDraftThemeId(id);
+						previewThemeId(id);
+					}}
+					onPreview={(id: ThemeId) => previewThemeId(id)}
+					onPreviewEnd={() => previewThemeId(draftThemeId)}
+				/>
 
 				<h6 className="font-semibold text-text-primary mt-4 mb-2">Layout</h6>
 				<Button size="sm" onClick={resetLayoutCustomizations}>
