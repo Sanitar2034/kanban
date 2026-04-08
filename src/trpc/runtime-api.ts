@@ -130,11 +130,32 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				}
 				nextRuntimeConfig = await updateGlobalRuntimeConfig(activeRuntimeConfig, parsed);
 			}
-			// Always update the in-memory runtime config cache.
-			// Global settings such as selectedAgentId are shared across all
-			// workspaces, so the cache must reflect the latest persisted state
-			// regardless of which workspace scope triggered the save.
-			deps.setActiveRuntimeConfig(nextRuntimeConfig);
+			// Always propagate global settings (selectedAgentId, autonomous mode,
+			// notifications, etc.) into the active cache so they take effect
+			// immediately.  When the saving workspace differs from the active
+			// workspace we must NOT overwrite workspace-scoped fields (shortcuts,
+			// projectConfigPath, prompt templates) because nextRuntimeConfig
+			// carries the *saving* workspace's scoped values, not the active one's.
+			const isActiveWorkspace = !workspaceScope || workspaceScope.workspaceId === deps.getActiveWorkspaceId();
+			if (isActiveWorkspace) {
+				deps.setActiveRuntimeConfig(nextRuntimeConfig);
+			} else {
+				const activeConfig = deps.getActiveRuntimeConfig?.();
+				if (activeConfig) {
+					deps.setActiveRuntimeConfig({
+						...activeConfig,
+						// Propagate only global-config fields from the save result.
+						selectedAgentId: nextRuntimeConfig.selectedAgentId,
+						selectedShortcutLabel: nextRuntimeConfig.selectedShortcutLabel,
+						agentAutonomousModeEnabled: nextRuntimeConfig.agentAutonomousModeEnabled,
+						readyForReviewNotificationsEnabled: nextRuntimeConfig.readyForReviewNotificationsEnabled,
+						commitPromptTemplateDefault: nextRuntimeConfig.commitPromptTemplateDefault,
+						openPrPromptTemplateDefault: nextRuntimeConfig.openPrPromptTemplateDefault,
+					});
+				} else {
+					deps.setActiveRuntimeConfig(nextRuntimeConfig);
+				}
+			}
 			return buildConfigResponse(nextRuntimeConfig);
 		},
 		saveClineProviderSettings: async (_workspaceScope, input) => {
