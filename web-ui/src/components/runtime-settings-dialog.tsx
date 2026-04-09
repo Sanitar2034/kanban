@@ -3,6 +3,7 @@
 // side effects should stay in use-runtime-settings-cline-controller.ts.
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
 import * as RadixPopover from "@radix-ui/react-popover";
+import * as RadixSelect from "@radix-ui/react-select";
 import * as RadixSwitch from "@radix-ui/react-switch";
 import { getRuntimeAgentCatalogEntry, getRuntimeLaunchSupportedAgentCatalog } from "@runtime-agent-catalog";
 import { areRuntimeProjectShortcutsEqual } from "@runtime-shortcuts";
@@ -106,6 +107,17 @@ function getNextShortcutLabel(shortcuts: RuntimeProjectShortcut[], baseLabel: st
 		suffix += 1;
 	}
 	return `${baseLabel} ${suffix}`;
+}
+
+function ThemeSwatch({ themeId }: { themeId: ThemeId }): React.ReactElement {
+	const theme = THEMES.find((t) => t.id === themeId);
+	return (
+		<span className="flex shrink-0 h-5 w-10 rounded overflow-hidden border border-border">
+			<span className="flex-1" style={{ background: theme?.surface ?? "#1F2428" }} />
+			<span className="flex-1" style={{ background: theme?.accent ?? "#0084FF" }} />
+			<span className="flex-1" style={{ background: theme?.accent2 ?? "#7C5CFF" }} />
+		</span>
+	);
 }
 
 function AgentRow({
@@ -777,50 +789,68 @@ export function RuntimeSettingsDialog({
 				</div>
 
 				<h6 className="font-semibold text-text-primary mt-4 mb-2">Theme</h6>
-				<div className="flex flex-col gap-3">
-					{THEME_GROUPS.map((group) => {
-						const groupThemes = THEMES.filter((t) => t.group === group.key);
-						if (groupThemes.length === 0) return null;
-						return (
-							<div key={group.key}>
-								<p className="text-text-tertiary text-[11px] font-medium uppercase tracking-wider mb-1.5">
-									{group.label}
-								</p>
-								<div className="flex flex-col gap-0.5">
-									{groupThemes.map((theme) => {
-										const isSelected = draftThemeId === theme.id;
-										return (
-											<button
-												key={theme.id}
-												type="button"
-												aria-label={theme.label}
-												onClick={() => {
-													setDraftThemeId(theme.id);
-													previewThemeId(theme.id);
-												}}
-												className={cn(
-													"flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-left cursor-pointer transition-colors",
-													isSelected
-														? "bg-accent/15 text-text-primary"
-														: "text-text-secondary hover:bg-surface-3 hover:text-text-primary",
-												)}
-											>
-												{/* Color swatch strip */}
-												<span className="flex shrink-0 h-5 w-12 rounded overflow-hidden border border-border">
-													<span className="flex-1" style={{ background: theme.surface }} />
-													<span className="flex-1" style={{ background: theme.accent }} />
-													<span className="flex-1" style={{ background: theme.accent2 }} />
-												</span>
-												<span className="text-[13px] flex-1 truncate">{theme.label}</span>
-												{isSelected ? <Check size={14} className="text-accent-2 shrink-0" /> : null}
-											</button>
-										);
-									})}
-								</div>
-							</div>
-						);
-					})}
-				</div>
+				<RadixSelect.Root
+					value={draftThemeId}
+					onValueChange={(value) => {
+						setDraftThemeId(value as ThemeId);
+						previewThemeId(value as ThemeId);
+					}}
+					onOpenChange={(open) => {
+						if (!open) {
+							previewThemeId(draftThemeId);
+						}
+					}}
+				>
+					<RadixSelect.Trigger
+						className="flex h-9 w-full items-center justify-between rounded-md border border-border bg-surface-2 px-3 text-[13px] text-text-primary outline-none transition-colors hover:bg-surface-3 focus:border-border-focus"
+						aria-label="Theme"
+					>
+						<span className="flex items-center gap-2.5">
+							<ThemeSwatch themeId={draftThemeId} />
+							<RadixSelect.Value />
+						</span>
+						<RadixSelect.Icon>
+							<ChevronDown size={14} className="text-text-tertiary" />
+						</RadixSelect.Icon>
+					</RadixSelect.Trigger>
+					<RadixSelect.Portal>
+						<RadixSelect.Content
+							className="z-50 max-h-72 w-(--radix-select-trigger-width) overflow-auto rounded-lg border border-border bg-surface-1 p-1 shadow-xl"
+							position="popper"
+							sideOffset={4}
+							align="start"
+						>
+							<RadixSelect.Viewport>
+								{THEME_GROUPS.map((group) => {
+									const groupThemes = THEMES.filter((t) => t.group === group.key);
+									if (groupThemes.length === 0) return null;
+									return (
+										<RadixSelect.Group key={group.key}>
+											<RadixSelect.Label className="px-2 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+												{group.label}
+											</RadixSelect.Label>
+											{groupThemes.map((theme) => (
+												<RadixSelect.Item
+													key={theme.id}
+													value={theme.id}
+													className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-text-secondary outline-none data-highlighted:bg-surface-3 data-highlighted:text-text-primary data-[state=checked]:text-text-primary"
+													onMouseEnter={() => previewThemeId(theme.id)}
+													onFocus={() => previewThemeId(theme.id)}
+												>
+													<ThemeSwatch themeId={theme.id} />
+													<RadixSelect.ItemText>{theme.label}</RadixSelect.ItemText>
+													<RadixSelect.ItemIndicator className="ml-auto">
+														<Check size={14} className="text-accent-2" />
+													</RadixSelect.ItemIndicator>
+												</RadixSelect.Item>
+											))}
+										</RadixSelect.Group>
+									);
+								})}
+							</RadixSelect.Viewport>
+						</RadixSelect.Content>
+					</RadixSelect.Portal>
+				</RadixSelect.Root>
 
 				<h6 className="font-semibold text-text-primary mt-4 mb-2">Layout</h6>
 				<Button size="sm" onClick={resetLayoutCustomizations}>
