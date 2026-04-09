@@ -63,7 +63,7 @@ const ClineCreditLimitNotice = React.memo(function ClineCreditLimitNotice() {
 					href={CLINE_BUY_CREDITS_URL}
 					target="_blank"
 					rel="noreferrer"
-					className="text-accent underline-offset-2 hover:text-accent-hover hover:underline"
+					className="text-accent-2 underline-offset-2 hover:text-accent-2-hover hover:underline"
 				>
 					Buy more credits
 				</a>{" "}

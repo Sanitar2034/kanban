@@ -15,8 +15,11 @@ export type ThemeId =
 	| "light"
 	| "overcast"
 	| "solarized-light"
+	| "latte"
 	| "high-contrast-dark"
-	| "high-contrast-light";
+	| "high-contrast-light"
+	| "soft-contrast-dark"
+	| "soft-contrast-light";
 
 export type ThemeGroup = "dark" | "light" | "high-contrast";
 
@@ -24,55 +27,151 @@ export interface ThemeDefinition {
 	readonly id: ThemeId;
 	readonly label: string;
 	readonly group: ThemeGroup;
-	/** Accent color shown in the theme swatch. */
+	/** Primary accent color shown in the theme swatch. */
 	readonly accent: string;
+	/** Secondary accent color for visual variety. */
+	readonly accent2: string;
 	/** Darkest surface color shown as the swatch background. */
 	readonly surface: string;
 	/** Text color to use on top of accent backgrounds (ensures contrast). */
 	readonly accentFg: string;
+	/** Text color to use on top of accent-2 backgrounds (ensures contrast). */
+	readonly accent2Fg: string;
 }
 
 export const THEMES: readonly ThemeDefinition[] = [
 	/* Dark */
-	{ id: "default", label: "Default", group: "dark", accent: "#0084FF", surface: "#1F2428", accentFg: "#FFFFFF" },
-	{ id: "graphite", label: "Graphite", group: "dark", accent: "#A855F7", surface: "#1E1E1E", accentFg: "#FFFFFF" },
-	{ id: "midnight", label: "Midnight", group: "dark", accent: "#6366F1", surface: "#121214", accentFg: "#FFFFFF" },
-	{ id: "pitch", label: "Pitch", group: "dark", accent: "#22C55E", surface: "#000000", accentFg: "#000000" },
+	{
+		id: "default",
+		label: "Default",
+		group: "dark",
+		accent: "#0084FF",
+		accent2: "#7C5CFF",
+		surface: "#1F2428",
+		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
+	},
+	{
+		id: "graphite",
+		label: "Graphite",
+		group: "dark",
+		accent: "#D4915C",
+		accent2: "#7A8F9C",
+		surface: "#1E1E1E",
+		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
+	},
+	{
+		id: "midnight",
+		label: "Midnight",
+		group: "dark",
+		accent: "#6366F1",
+		accent2: "#EC4899",
+		surface: "#121214",
+		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
+	},
+	{
+		id: "pitch",
+		label: "Pitch",
+		group: "dark",
+		accent: "#2DD4BF",
+		accent2: "#6B7280",
+		surface: "#000000",
+		accentFg: "#000000",
+		accent2Fg: "#FFFFFF",
+	},
 	{
 		id: "solarized-dark",
 		label: "Solarized Dark",
 		group: "dark",
 		accent: "#268BD2",
+		accent2: "#2AA198",
 		surface: "#002B36",
 		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
 	},
 	/* Light */
-	{ id: "light", label: "Light", group: "light", accent: "#0084FF", surface: "#FFFFFF", accentFg: "#FFFFFF" },
-	{ id: "overcast", label: "Overcast", group: "light", accent: "#7C3AED", surface: "#F0F0F0", accentFg: "#FFFFFF" },
+	{
+		id: "light",
+		label: "Light",
+		group: "light",
+		accent: "#0084FF",
+		accent2: "#7C5CFF",
+		surface: "#FFFFFF",
+		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
+	},
+	{
+		id: "overcast",
+		label: "Overcast",
+		group: "light",
+		accent: "#0D9488",
+		accent2: "#D97706",
+		surface: "#F0F0F0",
+		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
+	},
 	{
 		id: "solarized-light",
 		label: "Solarized Light",
 		group: "light",
-		accent: "#268BD2",
+		accent: "#4A7C96",
+		accent2: "#D33682",
 		surface: "#FDF6E3",
 		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
+	},
+	{
+		id: "latte",
+		label: "Latte",
+		group: "light",
+		accent: "#9C8878",
+		accent2: "#7A8F9C",
+		surface: "#FFFFFF",
+		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
 	},
 	/* High contrast */
 	{
 		id: "high-contrast-dark",
-		label: "High Contrast Dark",
+		label: "Dark High Contrast+",
 		group: "high-contrast",
-		accent: "#00E5FF",
+		accent: "#FFFFFF",
+		accent2: "#FF4081",
 		surface: "#000000",
 		accentFg: "#000000",
+		accent2Fg: "#FFFFFF",
 	},
 	{
 		id: "high-contrast-light",
-		label: "High Contrast Light",
+		label: "Light High Contrast+",
 		group: "high-contrast",
 		accent: "#0050A0",
+		accent2: "#B91C1C",
 		surface: "#FFFFFF",
 		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
+	},
+	{
+		id: "soft-contrast-dark",
+		label: "Dark High Contrast",
+		group: "high-contrast",
+		accent: "#38BDF8",
+		accent2: "#F472B6",
+		surface: "#0F0F0F",
+		accentFg: "#000000",
+		accent2Fg: "#000000",
+	},
+	{
+		id: "soft-contrast-light",
+		label: "Light High Contrast",
+		group: "high-contrast",
+		accent: "#1565C0",
+		accent2: "#C62828",
+		surface: "#FAFAFA",
+		accentFg: "#FFFFFF",
+		accent2Fg: "#FFFFFF",
 	},
 ] as const;
 
@@ -114,7 +213,7 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		textPrimary: "#E0E0E0",
 		surfacePrimary: "#1E1E1E",
 		surfaceRaised: "#252526",
-		selectionBackground: "#A855F74D",
+		selectionBackground: "#D4915C4D",
 		selectionForeground: "#ffffff",
 		selectionInactiveBackground: "#2D2D2D66",
 	},
@@ -130,7 +229,7 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		textPrimary: "#E4E4E4",
 		surfacePrimary: "#000000",
 		surfaceRaised: "#0A0A0A",
-		selectionBackground: "#22C55E4D",
+		selectionBackground: "#2DD4BF4D",
 		selectionForeground: "#ffffff",
 		selectionInactiveBackground: "#14141466",
 	},
@@ -154,7 +253,7 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		textPrimary: "#1A1A1A",
 		surfacePrimary: "#F0F0F0",
 		surfaceRaised: "#E8E8E8",
-		selectionBackground: "#7C3AED33",
+		selectionBackground: "#0D948833",
 		selectionForeground: "#1A1A1A",
 		selectionInactiveBackground: "#D4D4D466",
 	},
@@ -162,15 +261,23 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		textPrimary: "#073642",
 		surfacePrimary: "#FDF6E3",
 		surfaceRaised: "#EEE8D5",
-		selectionBackground: "#268BD233",
+		selectionBackground: "#4A7C9633",
 		selectionForeground: "#073642",
 		selectionInactiveBackground: "#DDD7C366",
+	},
+	latte: {
+		textPrimary: "#3D2E1F",
+		surfacePrimary: "#FFFFFF",
+		surfaceRaised: "#FDFCFB",
+		selectionBackground: "#9C887833",
+		selectionForeground: "#3D2E1F",
+		selectionInactiveBackground: "#E8E2DA66",
 	},
 	"high-contrast-dark": {
 		textPrimary: "#FFFFFF",
 		surfacePrimary: "#000000",
 		surfaceRaised: "#0A0A0A",
-		selectionBackground: "#00E5FF4D",
+		selectionBackground: "#FFFFFF4D",
 		selectionForeground: "#000000",
 		selectionInactiveBackground: "#1A1A1A66",
 	},
@@ -181,6 +288,22 @@ const TERMINAL_COLORS_BY_THEME: Record<ThemeId, ThemeTerminalColors> = {
 		selectionBackground: "#0050A033",
 		selectionForeground: "#000000",
 		selectionInactiveBackground: "#EEEEEE66",
+	},
+	"soft-contrast-dark": {
+		textPrimary: "#F0F0F0",
+		surfacePrimary: "#0F0F0F",
+		surfaceRaised: "#1A1A1A",
+		selectionBackground: "#38BDF84D",
+		selectionForeground: "#000000",
+		selectionInactiveBackground: "#22222266",
+	},
+	"soft-contrast-light": {
+		textPrimary: "#111111",
+		surfacePrimary: "#FAFAFA",
+		surfaceRaised: "#F0F0F0",
+		selectionBackground: "#1565C033",
+		selectionForeground: "#111111",
+		selectionInactiveBackground: "#E0E0E066",
 	},
 };
 

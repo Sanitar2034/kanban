@@ -186,7 +186,7 @@ export function ProjectNavigationPanel({
 							className={cn(
 								"w-8 h-8 rounded-md text-xs font-semibold shrink-0 border-0 cursor-pointer flex items-center justify-center",
 								isCurrent
-									? "bg-accent text-white"
+									? "bg-accent text-accent-fg"
 									: "bg-surface-3 text-text-secondary hover:text-text-primary hover:bg-surface-4",
 							)}
 						>
@@ -577,7 +577,7 @@ function ProjectRow({
 			id: "review",
 			title: "Review",
 			shortLabel: "R",
-			toneClassName: "bg-status-green/20 text-status-green",
+			toneClassName: "bg-accent-2/20 text-accent-2",
 			count: project.taskCounts.review,
 		},
 		{
@@ -612,7 +612,7 @@ function ProjectRow({
 				<div
 					className={cn(
 						"font-medium whitespace-nowrap overflow-hidden text-ellipsis text-sm",
-						isCurrent ? "text-white" : "text-text-primary",
+						isCurrent ? "text-accent-fg" : "text-text-primary",
 					)}
 				>
 					{project.name}
@@ -620,7 +620,7 @@ function ProjectRow({
 				<div
 					className={cn(
 						"font-mono text-[10px] whitespace-nowrap overflow-hidden text-ellipsis",
-						isCurrent ? "text-white/60" : "text-text-secondary",
+						isCurrent ? "text-accent-fg/60" : "text-text-secondary",
 					)}
 				>
 					{displayPath}
@@ -632,7 +632,7 @@ function ProjectRow({
 								key={badge.id}
 								className={cn(
 									"inline-flex items-center gap-1 rounded-full text-[10px] px-1.5 py-px font-medium",
-									isCurrent ? "bg-white/20 text-white" : badge.toneClassName,
+									isCurrent ? "bg-accent-fg/20 text-accent-fg" : badge.toneClassName,
 								)}
 								title={badge.title}
 							>
@@ -653,7 +653,9 @@ function ProjectRow({
 							icon={isRemovingProject ? <Spinner size={12} /> : <Ellipsis size={14} />}
 							disabled={hasAnyProjectRemoval && !isRemovingProject}
 							className={
-								isCurrent ? "text-white hover:bg-white/20 hover:text-white active:bg-white/30" : undefined
+								isCurrent
+									? "text-accent-fg hover:bg-accent-fg/20 hover:text-accent-fg active:bg-accent-fg/30"
+									: undefined
 							}
 							onClick={(e) => {
 								e.stopPropagation();

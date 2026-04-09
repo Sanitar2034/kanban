@@ -806,12 +806,13 @@ export function RuntimeSettingsDialog({
 												)}
 											>
 												{/* Color swatch strip */}
-												<span className="flex shrink-0 h-5 w-10 rounded overflow-hidden border border-border">
+												<span className="flex shrink-0 h-5 w-12 rounded overflow-hidden border border-border">
 													<span className="flex-1" style={{ background: theme.surface }} />
 													<span className="flex-1" style={{ background: theme.accent }} />
+													<span className="flex-1" style={{ background: theme.accent2 }} />
 												</span>
 												<span className="text-[13px] flex-1 truncate">{theme.label}</span>
-												{isSelected ? <Check size={14} className="text-accent shrink-0" /> : null}
+												{isSelected ? <Check size={14} className="text-accent-2 shrink-0" /> : null}
 											</button>
 										);
 									})}
