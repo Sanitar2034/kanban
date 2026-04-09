@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,7 @@ import { prepareAgentLaunch } from "../../../src/terminal/agent-session-adapters
 const originalHome = process.env.HOME;
 const originalAppData = process.env.APPDATA;
 const originalLocalAppData = process.env.LOCALAPPDATA;
+const originalPath = process.env.PATH;
 let tempHome: string | null = null;
 const originalArgv = [...process.argv];
 const originalExecArgv = [...process.execArgv];
@@ -48,6 +49,11 @@ afterEach(() => {
 		delete process.env.LOCALAPPDATA;
 	} else {
 		process.env.LOCALAPPDATA = originalLocalAppData;
+	}
+	if (originalPath === undefined) {
+		delete process.env.PATH;
+	} else {
+		process.env.PATH = originalPath;
 	}
 	process.argv = [...originalArgv];
 	process.execArgv = [...originalExecArgv];
@@ -116,13 +122,45 @@ describe("prepareAgentLaunch hook strategies", () => {
 			prompt: "",
 		});
 
-		const configArgIndex = launch.args.indexOf("-c");
-		expect(configArgIndex).toBeGreaterThanOrEqual(0);
-		expect(launch.args[configArgIndex + 1]).toContain("developer_instructions=");
-		expect(launch.args[configArgIndex + 1]).toContain("Kanban sidebar agent");
-		expect(launch.args[configArgIndex + 1]).toContain(
+		const developerInstructionsOverride = launch.args.find((arg) => arg.startsWith("developer_instructions="));
+		expect(developerInstructionsOverride).toBeDefined();
+		expect(developerInstructionsOverride).toContain("Kanban sidebar agent");
+		expect(developerInstructionsOverride).toContain(
 			"'/usr/local/bin/node' '/Users/example/repo/dist/cli.js' task create",
 		);
+	});
+
+	it("prefers a non-node_modules Codex binary and disables startup update prompts", async () => {
+		setupTempHome();
+		const pathRoot = mkdtempSync(join(tmpdir(), "kanban-codex-path-"));
+		const npmScriptBin = join(pathRoot, "project", "node_modules", ".bin");
+		const globalBin = join(pathRoot, "global");
+		mkdirSync(npmScriptBin, { recursive: true });
+		mkdirSync(globalBin, { recursive: true });
+
+		const npmScriptCodex = join(npmScriptBin, "codex");
+		writeFileSync(npmScriptCodex, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+		chmodSync(npmScriptCodex, 0o755);
+
+		const globalCodex = join(globalBin, "codex");
+		writeFileSync(globalCodex, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+		chmodSync(globalCodex, 0o755);
+
+		process.env.PATH = `${npmScriptBin}:${globalBin}`;
+		const launch = await prepareAgentLaunch({
+			taskId: "task-1",
+			agentId: "codex",
+			binary: "codex",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			workspaceId: "workspace-1",
+		});
+
+		const realBinaryIndex = launch.args.indexOf("--real-binary");
+		expect(realBinaryIndex).toBeGreaterThanOrEqual(0);
+		expect(launch.args[realBinaryIndex + 1]).toBe(globalCodex);
+		expect(launch.args).toContain("check_for_update_on_startup=false");
 	});
 
 	it("writes Claude settings with explicit permission hook", async () => {
@@ -493,6 +531,24 @@ describe("prepareAgentLaunch hook strategies", () => {
 			resumeFromTrash: true,
 		});
 		expect(clineLaunch.args).toContain("--continue");
+	});
+
+	it("uses explicit codex session id for restore when available", async () => {
+		setupTempHome();
+
+		const codexLaunch = await prepareAgentLaunch({
+			taskId: "task-codex",
+			agentId: "codex",
+			binary: "codex",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			resumeFromTrash: true,
+			resumeSessionId: "019d6157-0586-7652-8600-bb3975ea008f",
+		});
+
+		expect(codexLaunch.args).toEqual(expect.arrayContaining(["resume", "019d6157-0586-7652-8600-bb3975ea008f"]));
+		expect(codexLaunch.args).not.toContain("--last");
 	});
 
 	it("applies autonomous mode flags in adapters for non-droid CLIs", async () => {

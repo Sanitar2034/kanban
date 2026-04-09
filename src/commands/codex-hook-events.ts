@@ -22,6 +22,7 @@ interface CodexWatcherState {
 	offset: number;
 	remainder: string;
 	currentSessionScope: "unknown" | "root" | "descendant";
+	rootSessionId: string;
 }
 
 interface CodexEventPayload {
@@ -621,6 +622,7 @@ export function createCodexWatcherState(): CodexWatcherState {
 		offset: 0,
 		remainder: "",
 		currentSessionScope: "unknown",
+		rootSessionId: "",
 	};
 }
 
@@ -639,7 +641,13 @@ export function parseCodexEventLine(line: string, state: CodexWatcherState): Cod
 	}
 	const normalizedType = type.toLowerCase();
 	if (normalizedType === "session_meta") {
-		state.currentSessionScope = isCodexDescendantSession(message) ? "descendant" : "root";
+		const sessionMetaPayload = asRecord((message as Record<string, unknown>).payload);
+		const sessionId = pickFirstString([sessionMetaPayload?.id, message.id, parsed.id]);
+		const isDescendant = isCodexDescendantSession(message);
+		state.currentSessionScope = isDescendant ? "descendant" : "root";
+		if (!isDescendant && sessionId) {
+			state.rootSessionId = sessionId;
+		}
 		return null;
 	}
 	if (state.currentSessionScope === "descendant") {
@@ -732,6 +740,7 @@ export function parseCodexEventLine(line: string, state: CodexWatcherState): Cod
 				hookEventName: type,
 				activityText: finalText ? `Final: ${finalText}` : "Waiting for review",
 				finalMessage: finalText || undefined,
+				codexSessionId: state.rootSessionId || undefined,
 			},
 		};
 	}
@@ -765,6 +774,7 @@ export function parseCodexEventLine(line: string, state: CodexWatcherState): Cod
 					source: "codex",
 					activityText: "Waiting for approval",
 					hookEventName: type,
+					codexSessionId: state.rootSessionId || undefined,
 				},
 			};
 		}

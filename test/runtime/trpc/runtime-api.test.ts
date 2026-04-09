@@ -524,7 +524,23 @@ describe("createRuntimeApi startTaskSession", () => {
 		});
 
 		const terminalManager = {
-			getSummary: vi.fn(() => createSummary({ agentId: "codex", state: "idle", pid: null })),
+			getSummary: vi.fn(() =>
+				createSummary({
+					agentId: "codex",
+					state: "idle",
+					pid: null,
+					latestHookActivity: {
+						source: "codex",
+						activityText: "Waiting for review",
+						toolName: null,
+						toolInputSummary: null,
+						finalMessage: "Done",
+						hookEventName: "task_complete",
+						notificationType: null,
+						codexSessionId: "019d6157-0586-7652-8600-bb3975ea008f",
+					},
+				}),
+			),
 			startTaskSession: vi.fn(async () => createSummary({ agentId: "codex" })),
 			applyTurnCheckpoint: vi.fn(),
 		};
@@ -567,6 +583,7 @@ describe("createRuntimeApi startTaskSession", () => {
 				taskId: "task-1",
 				agentId: "codex",
 				resumeFromTrash: true,
+				resumeSessionId: "019d6157-0586-7652-8600-bb3975ea008f",
 			}),
 		);
 		expect(turnCheckpointMocks.captureTaskTurnCheckpoint).not.toHaveBeenCalled();

@@ -171,9 +171,12 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				// history is preserved. Terminal agents have their agentId preserved in the
 				// hydrated session summary; Cline tasks are detected via persisted SDK sessions.
 				const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
-				const previousTerminalAgentId = body.resumeFromTrash
-					? (terminalManager.getSummary(body.taskId)?.agentId ?? null)
-					: null;
+				const previousTerminalSummary = body.resumeFromTrash ? terminalManager.getSummary(body.taskId) : null;
+				const previousTerminalAgentId = previousTerminalSummary?.agentId ?? null;
+				const previousCodexSessionId =
+					previousTerminalAgentId === "codex"
+						? (previousTerminalSummary?.latestHookActivity?.codexSessionId ?? null)
+						: null;
 				const effectiveAgentId = previousTerminalAgentId ?? scopedRuntimeConfig.selectedAgentId;
 				let useClinePath = effectiveAgentId === "cline";
 				const shouldProbePersistedClineSession =
@@ -252,6 +255,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					images: body.images,
 					startInPlanMode: body.startInPlanMode,
 					resumeFromTrash: body.resumeFromTrash,
+					...(previousCodexSessionId ? { resumeSessionId: previousCodexSessionId } : {}),
 					cols: body.cols,
 					rows: body.rows,
 					workspaceId: workspaceScope.workspaceId,

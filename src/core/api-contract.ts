@@ -199,6 +199,7 @@ export const runtimeTaskHookActivitySchema = z.object({
 	hookEventName: z.string().nullable().default(null),
 	notificationType: z.string().nullable().default(null),
 	source: z.string().nullable().default(null),
+	codexSessionId: z.string().nullable().optional(),
 });
 export type RuntimeTaskHookActivity = z.infer<typeof runtimeTaskHookActivitySchema>;
 

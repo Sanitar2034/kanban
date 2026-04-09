@@ -19,6 +19,16 @@ function getWindowsExecutableCandidates(binary: string): string[] {
 	return [binary, ...pathext.map((extension) => `${binary}${extension}`)];
 }
 
+function isNodeModulesBinEntry(pathEntry: string): boolean {
+	const normalized = pathEntry.replaceAll("\\", "/").replace(/\/+$/u, "");
+	return normalized.endsWith("/node_modules/.bin");
+}
+
+export interface ResolveBinaryOnPathOptions {
+	path?: string;
+	preferOutsideNodeModulesBin?: boolean;
+}
+
 // Intentionally perform PATH inspection in-process instead of spawning `which`, `where`,
 // `command -v`, or an interactive shell.
 //
@@ -44,35 +54,58 @@ function getWindowsExecutableCandidates(binary: string): string[] {
 // environment the Kanban process already has, instead of silently relying on hidden shell
 // side effects.
 export function isBinaryAvailableOnPath(binary: string): boolean {
+	return resolveBinaryOnPath(binary) !== null;
+}
+
+export function resolveBinaryOnPath(binary: string, options: ResolveBinaryOnPathOptions = {}): string | null {
 	const trimmed = binary.trim();
 	if (!trimmed) {
-		return false;
+		return null;
 	}
 	if (trimmed.includes("/") || trimmed.includes("\\")) {
-		return canAccessPath(trimmed);
+		return canAccessPath(trimmed) ? trimmed : null;
 	}
 
-	const pathEntries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+	const pathValue = options.path ?? process.env.PATH ?? "";
+	const pathEntries = pathValue.split(delimiter).filter(Boolean);
 	if (pathEntries.length === 0) {
-		return false;
+		return null;
 	}
 
 	if (process.platform === "win32") {
 		const candidates = getWindowsExecutableCandidates(trimmed);
+		let firstMatch: string | null = null;
 		for (const entry of pathEntries) {
 			for (const candidate of candidates) {
-				if (canAccessPath(join(entry, candidate))) {
-					return true;
+				const fullPath = join(entry, candidate);
+				if (!canAccessPath(fullPath)) {
+					continue;
 				}
+				if (!firstMatch) {
+					firstMatch = fullPath;
+				}
+				if (options.preferOutsideNodeModulesBin && isNodeModulesBinEntry(entry)) {
+					continue;
+				}
+				return fullPath;
 			}
 		}
-		return false;
+		return firstMatch;
 	}
 
+	let firstMatch: string | null = null;
 	for (const entry of pathEntries) {
-		if (canAccessPath(join(entry, trimmed))) {
-			return true;
+		const fullPath = join(entry, trimmed);
+		if (!canAccessPath(fullPath)) {
+			continue;
 		}
+		if (!firstMatch) {
+			firstMatch = fullPath;
+		}
+		if (options.preferOutsideNodeModulesBin && isNodeModulesBinEntry(entry)) {
+			continue;
+		}
+		return fullPath;
 	}
-	return false;
+	return firstMatch;
 }

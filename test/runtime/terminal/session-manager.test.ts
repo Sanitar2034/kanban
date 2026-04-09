@@ -61,11 +61,13 @@ describe("TerminalSessionManager", () => {
 			source: "claude",
 			activityText: "Using Read",
 			toolName: "Read",
+			codexSessionId: "019d6157-0586-7652-8600-bb3975ea008f",
 		});
 
 		expect(updated?.latestHookActivity?.source).toBe("claude");
 		expect(updated?.latestHookActivity?.activityText).toBe("Using Read");
 		expect(updated?.latestHookActivity?.toolName).toBe("Read");
+		expect(updated?.latestHookActivity?.codexSessionId).toBe("019d6157-0586-7652-8600-bb3975ea008f");
 		expect(typeof updated?.lastHookAt).toBe("number");
 	});
 

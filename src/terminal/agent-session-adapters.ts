@@ -13,6 +13,7 @@ import { quoteShellArg } from "../core/shell";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { getRuntimeHomePath } from "../state/workspace-state";
+import { resolveBinaryOnPath } from "./command-discovery";
 import { createHookRuntimeEnv } from "./hook-runtime-context";
 import {
 	getOpenCodeAuthPathCandidates,
@@ -34,6 +35,7 @@ export interface AgentAdapterLaunchInput {
 	images?: RuntimeTaskImage[];
 	startInPlanMode?: boolean;
 	resumeFromTrash?: boolean;
+	resumeSessionId?: string;
 	env?: Record<string, string | undefined>;
 	workspaceId?: string;
 }
@@ -123,6 +125,15 @@ function hasCliOption(args: string[], optionName: string): boolean {
 		}
 	}
 	return false;
+}
+
+function removeCliOption(args: string[], optionName: string): void {
+	for (let i = args.length - 1; i >= 0; i -= 1) {
+		const arg = args[i];
+		if (arg === optionName || arg.startsWith(`${optionName}=`)) {
+			args.splice(i, 1);
+		}
+	}
 }
 
 function hasCodexConfigOverride(args: string[], key: string): boolean {
@@ -748,6 +759,15 @@ const codexAdapter: AgentSessionAdapter = {
 		let binary = input.binary;
 		let deferredStartupInput: string | undefined;
 		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
+		if ((input.binary ?? "").trim() === "codex") {
+			const preferredCodexBinary = resolveBinaryOnPath("codex", {
+				path: input.env?.PATH,
+				preferOutsideNodeModulesBin: true,
+			});
+			if (preferredCodexBinary) {
+				binary = preferredCodexBinary;
+			}
+		}
 
 		if (input.autonomousModeEnabled && !hasCliOption(codexArgs, "--dangerously-bypass-approvals-and-sandbox")) {
 			codexArgs.push("--dangerously-bypass-approvals-and-sandbox");
@@ -757,9 +777,20 @@ const codexAdapter: AgentSessionAdapter = {
 			if (!codexArgs.includes("resume")) {
 				codexArgs.push("resume");
 			}
-			if (!hasCliOption(codexArgs, "--last")) {
+			const resumeSessionId = input.resumeSessionId?.trim();
+			if (resumeSessionId) {
+				removeCliOption(codexArgs, "--last");
+				if (!codexArgs.includes(resumeSessionId)) {
+					codexArgs.push(resumeSessionId);
+				}
+			} else if (!hasCliOption(codexArgs, "--last")) {
 				codexArgs.push("--last");
 			}
+		}
+
+		// Kanban-managed sessions should not block on the Codex startup update modal.
+		if (!hasCodexConfigOverride(codexArgs, "check_for_update_on_startup")) {
+			codexArgs.push("-c", "check_for_update_on_startup=false");
 		}
 
 		if (appendedSystemPrompt && !hasCodexConfigOverride(codexArgs, "developer_instructions")) {
@@ -789,7 +820,7 @@ const codexAdapter: AgentSessionAdapter = {
 			const wrapperParts = buildHooksCommandParts([
 				"codex-wrapper",
 				"--real-binary",
-				input.binary ?? "codex",
+				binary ?? "codex",
 				"--",
 				...codexArgs,
 			]);
