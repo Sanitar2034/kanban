@@ -2,6 +2,7 @@
 // Shows active account, organization dropdown, credit balance, and dashboard link.
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SearchSelectDropdown } from "@/components/search-select-dropdown";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -133,15 +134,6 @@ export function AccountOrganizationSection({
 		[workspaceId, refreshBalance, refreshOrgs, onAccountSwitched],
 	);
 
-	// Don't render if we've never had authenticated data and nothing is loading.
-	const hasAuthenticatedData =
-		(balanceData !== null && balanceData.activeAccountLabel !== null) ||
-		organizations.length > 0 ||
-		hadAccountContext;
-	if (!isLoadingOrgs && !isLoadingBalance && !hasAuthenticatedData) {
-		return null;
-	}
-
 	const dropdownValue = selectedOrgId ?? "personal";
 	const hasAccountData = balanceData !== null && balanceData.activeAccountLabel !== null;
 	const showSelector = hasAccountData || organizations.length > 0 || hadAccountContext;
@@ -149,71 +141,88 @@ export function AccountOrganizationSection({
 	const activeOrg = selectedOrgId ? organizations.find((org) => org.organizationId === selectedOrgId) : null;
 	const roleLabel = activeOrg?.roles?.[0];
 	const formattedRole = roleLabel ? roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1) : null;
+	const hasAuthenticatedData = hasAccountData || organizations.length > 0 || hadAccountContext;
+	// Don't render if we've never had authenticated data and nothing is loading.
+	if (!isLoadingOrgs && !isLoadingBalance && !hasAuthenticatedData) {
+		return null;
+	}
+	const accountOptions = [
+		{ value: "personal", label: "Personal" },
+		...organizations.map((org) => ({
+			value: org.organizationId,
+			label: org.name,
+		})),
+	];
+	const accountButtonText =
+		accountOptions.find((option) => option.value === dropdownValue)?.label ??
+		balanceData?.activeAccountLabel ??
+		"Personal";
 
 	return (
 		<div>
-			<h6 className="font-semibold text-text-primary mt-4 mb-2">Account</h6>
-
 			{showSelector ? (
-				<div className="flex items-center gap-2 mb-2">
-					<label htmlFor="account-org-select" className="text-[13px] text-text-secondary shrink-0">
-						Active account
-					</label>
-					<select
-						id="account-org-select"
-						value={dropdownValue}
-						disabled={isSwitching || isLoadingOrgs}
-						onChange={(event) => {
-							void handleAccountChange(event.target.value);
-						}}
-						className="h-8 flex-1 min-w-0 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary focus:border-border-focus focus:outline-none disabled:opacity-40"
-					>
-						<option value="personal">Personal</option>
-						{organizations.map((org) => (
-							<option key={org.organizationId} value={org.organizationId}>
-								{org.name}
-							</option>
-						))}
-					</select>
-					{isSwitching ? <Spinner size={14} /> : null}
-					{formattedRole ? (
-						<span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-accent/10 text-accent">
-							{formattedRole}
-						</span>
-					) : null}
+				<div className="mb-3">
+					<p className="text-text-secondary text-[12px] mt-0 mb-1">Account</p>
+					<div className="flex items-center gap-2">
+						<div className="min-w-0 w-1/2 max-w-full">
+							<SearchSelectDropdown
+								options={accountOptions}
+								selectedValue={dropdownValue}
+								onSelect={(value) => {
+									void handleAccountChange(value);
+								}}
+								disabled={isSwitching || isLoadingOrgs}
+								fill
+								size="sm"
+								buttonText={accountButtonText}
+								emptyText="Select account"
+								noResultsText="No matching accounts"
+								placeholder="Search accounts..."
+								showSelectedIndicator
+							/>
+						</div>
+						{isSwitching ? <Spinner size={14} /> : null}
+						{formattedRole ? (
+							<span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-accent/10 text-accent">
+								{formattedRole}
+							</span>
+						) : null}
+					</div>
 				</div>
 			) : null}
 
-			<div className="flex items-center justify-between mb-2">
-				<div className="flex items-center gap-1.5">
-					<span className="text-[13px] text-text-secondary">Credits:</span>
-					{isLoadingBalance && balanceData === null ? (
-						<Spinner size={14} />
-					) : (
-						<span className="text-[13px] text-text-primary font-medium">
-							{formatBalance(balanceData?.balance ?? null)}
-						</span>
-					)}
-					<Tooltip side="bottom" content="Refresh balance">
-						<button
-							type="button"
-							onClick={() => void refreshBalance()}
-							disabled={isLoadingBalance}
-							aria-label="Refresh balance"
-							className="inline-flex items-center justify-center rounded-md p-0.5 text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-colors disabled:opacity-40"
-						>
-							<RefreshCw size={12} className={isLoadingBalance ? "animate-spin" : ""} />
-						</button>
-					</Tooltip>
+			<div className="mb-2">
+				<p className="text-text-secondary text-[12px] mt-0 mb-1">Credits</p>
+				<div className="flex items-center gap-2">
+					<div className="flex items-center gap-1.5">
+						{isLoadingBalance && balanceData === null ? (
+							<Spinner size={14} />
+						) : (
+							<span className="text-[13px] text-text-primary font-medium">
+								{formatBalance(balanceData?.balance ?? null)}
+							</span>
+						)}
+						<Tooltip side="bottom" content="Refresh balance">
+							<button
+								type="button"
+								onClick={() => void refreshBalance()}
+								disabled={isLoadingBalance}
+								aria-label="Refresh balance"
+								className="inline-flex cursor-pointer items-center justify-center rounded-md p-0.5 text-text-secondary transition-colors hover:bg-surface-3 hover:text-text-primary disabled:cursor-default disabled:opacity-40"
+							>
+								<RefreshCw size={12} className={isLoadingBalance ? "animate-spin" : ""} />
+							</button>
+						</Tooltip>
+					</div>
+					<Button
+						variant="default"
+						size="sm"
+						icon={<ExternalLink size={14} />}
+						onClick={() => window.open(getCreditsUrl(selectedOrgId !== null), "_blank", "noopener,noreferrer")}
+					>
+						Add Credits
+					</Button>
 				</div>
-				<Button
-					variant="default"
-					size="sm"
-					icon={<ExternalLink size={14} />}
-					onClick={() => window.open(getCreditsUrl(selectedOrgId !== null), "_blank", "noopener,noreferrer")}
-				>
-					Add Credits
-				</Button>
 			</div>
 
 			{loadError ? (

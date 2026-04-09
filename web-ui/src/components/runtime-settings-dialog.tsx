@@ -696,15 +696,16 @@ export function RuntimeSettingsDialog({
 						mcpController={clineMcpSettings}
 						controlsDisabled={controlsDisabled}
 						workspaceId={workspaceId}
+						accountSection={
+							clineSettings.providerId.trim() === "cline" ? (
+								<AccountOrganizationSection
+									workspaceId={workspaceId}
+									open={open}
+									onAccountSwitched={onAccountSwitched}
+								/>
+							) : null
+						}
 						onError={setSaveError}
-					/>
-				) : null}
-
-				{selectedAgentId === "cline" && clineSettings.providerId.trim() === "cline" ? (
-					<AccountOrganizationSection
-						workspaceId={workspaceId}
-						open={open}
-						onAccountSwitched={onAccountSwitched}
 					/>
 				) : null}
 
