@@ -32,7 +32,7 @@ import {
 	type TerminalProtocolFilterState,
 } from "./terminal-protocol-filter";
 import type { TerminalSessionListener, TerminalSessionService } from "./terminal-session-service";
-import { type TerminalRestoreSnapshot, TerminalStateMirror } from "./terminal-state-mirror";
+import { TerminalStateMirror } from "./terminal-state-mirror";
 
 const MAX_WORKSPACE_TRUST_BUFFER_CHARS = 16_384;
 const AUTO_RESTART_WINDOW_MS = 5_000;
@@ -86,7 +86,6 @@ export interface StartTaskSessionRequest {
 	images?: RuntimeTaskImage[];
 	startInPlanMode?: boolean;
 	resumeFromTrash?: boolean;
-	resumeSessionId?: string;
 	cols?: number;
 	rows?: number;
 	env?: Record<string, string | undefined>;
@@ -303,11 +302,6 @@ export class TerminalSessionManager implements TerminalSessionService {
 			return cloneSummary(entry.summary);
 		}
 
-		let previousRestoreSnapshot: TerminalRestoreSnapshot | null = null;
-		if (request.resumeFromTrash && entry.terminalStateMirror) {
-			previousRestoreSnapshot = await entry.terminalStateMirror.getSnapshot().catch(() => null);
-		}
-
 		if (entry.active) {
 			stopWorkspaceTrustTimers(entry.active);
 			entry.active.session.stop();
@@ -326,13 +320,6 @@ export class TerminalSessionManager implements TerminalSessionService {
 				entry.active.session.write(data);
 			},
 		});
-		if (request.resumeFromTrash && previousRestoreSnapshot) {
-			terminalStateMirror.applySerializedSnapshot(
-				previousRestoreSnapshot.snapshot,
-				previousRestoreSnapshot.cols,
-				previousRestoreSnapshot.rows,
-			);
-		}
 
 		const launch = await prepareAgentLaunch({
 			taskId: request.taskId,
@@ -345,7 +332,6 @@ export class TerminalSessionManager implements TerminalSessionService {
 			images: request.images,
 			startInPlanMode: request.startInPlanMode,
 			resumeFromTrash: request.resumeFromTrash,
-			resumeSessionId: request.resumeSessionId,
 			env: request.env,
 			workspaceId: request.workspaceId,
 		});
@@ -837,8 +823,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 			typeof activity.finalMessage === "string" ||
 			typeof activity.hookEventName === "string" ||
 			typeof activity.notificationType === "string" ||
-			typeof activity.source === "string" ||
-			typeof activity.codexSessionId === "string";
+			typeof activity.source === "string";
 		if (!hasActivityUpdate) {
 			return cloneSummary(entry.summary);
 		}
@@ -861,8 +846,6 @@ export class TerminalSessionManager implements TerminalSessionService {
 					? activity.notificationType
 					: (previous?.notificationType ?? null),
 			source: typeof activity.source === "string" ? activity.source : (previous?.source ?? null),
-			codexSessionId:
-				typeof activity.codexSessionId === "string" ? activity.codexSessionId : (previous?.codexSessionId ?? null),
 		};
 
 		const didChange =
@@ -872,8 +855,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 			next.finalMessage !== (previous?.finalMessage ?? null) ||
 			next.hookEventName !== (previous?.hookEventName ?? null) ||
 			next.notificationType !== (previous?.notificationType ?? null) ||
-			next.source !== (previous?.source ?? null) ||
-			next.codexSessionId !== (previous?.codexSessionId ?? null);
+			next.source !== (previous?.source ?? null);
 		if (!didChange) {
 			return cloneSummary(entry.summary);
 		}

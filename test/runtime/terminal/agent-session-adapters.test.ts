@@ -116,10 +116,11 @@ describe("prepareAgentLaunch hook strategies", () => {
 			prompt: "",
 		});
 
-		const developerInstructionsOverride = launch.args.find((arg) => arg.startsWith("developer_instructions="));
-		expect(developerInstructionsOverride).toBeDefined();
-		expect(developerInstructionsOverride).toContain("Kanban sidebar agent");
-		expect(developerInstructionsOverride).toContain(
+		const configArgIndex = launch.args.indexOf("-c");
+		expect(configArgIndex).toBeGreaterThanOrEqual(0);
+		expect(launch.args[configArgIndex + 1]).toContain("developer_instructions=");
+		expect(launch.args[configArgIndex + 1]).toContain("Kanban sidebar agent");
+		expect(launch.args[configArgIndex + 1]).toContain(
 			"'/usr/local/bin/node' '/Users/example/repo/dist/cli.js' task create",
 		);
 	});
@@ -492,24 +493,6 @@ describe("prepareAgentLaunch hook strategies", () => {
 			resumeFromTrash: true,
 		});
 		expect(clineLaunch.args).toContain("--continue");
-	});
-
-	it("uses explicit codex session id for restore when available", async () => {
-		setupTempHome();
-
-		const codexLaunch = await prepareAgentLaunch({
-			taskId: "task-codex",
-			agentId: "codex",
-			binary: "codex",
-			args: [],
-			cwd: "/tmp",
-			prompt: "",
-			resumeFromTrash: true,
-			resumeSessionId: "019d6157-0586-7652-8600-bb3975ea008f",
-		});
-
-		expect(codexLaunch.args).toEqual(expect.arrayContaining(["resume", "019d6157-0586-7652-8600-bb3975ea008f"]));
-		expect(codexLaunch.args).not.toContain("--last");
 	});
 
 	it("applies autonomous mode flags in adapters for non-droid CLIs", async () => {

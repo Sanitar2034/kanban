@@ -40,7 +40,6 @@ interface HookCommandMetadataOptionValues {
 	finalMessage?: string;
 	hookEventName?: string;
 	notificationType?: string;
-	codexSessionId?: string;
 	metadataBase64?: string;
 }
 
@@ -134,7 +133,6 @@ function parseMetadataFromOptions(options: HookCommandMetadataOptionValues): Par
 	const hookEventName = options.hookEventName;
 	const notificationType = options.notificationType;
 	const source = options.source;
-	const codexSessionId = options.codexSessionId;
 
 	if (activityText) {
 		metadata.activityText = normalizeWhitespace(activityText);
@@ -153,9 +151,6 @@ function parseMetadataFromOptions(options: HookCommandMetadataOptionValues): Par
 	}
 	if (source) {
 		metadata.source = normalizeWhitespace(source);
-	}
-	if (codexSessionId) {
-		metadata.codexSessionId = normalizeWhitespace(codexSessionId);
 	}
 
 	return metadata;
@@ -356,31 +351,17 @@ function normalizeHookMetadata(
 			readNestedString(payload, ["taskComplete", "taskMetadata", "result"]) ??
 			readNestedString(payload, ["taskComplete", "result"]))
 		: null;
-	const codexSessionIdFromPayload = payload
-		? (readStringField(payload, "codex_session_id") ??
-			readStringField(payload, "codexSessionId") ??
-			readStringField(payload, "session_id") ??
-			readStringField(payload, "sessionId") ??
-			readNestedString(payload, ["payload", "id"]))
-		: null;
 
 	const inferredSource = inferHookSourceFromPayload(payload);
-	const normalizedSource = flagMetadata.source ?? inferredSource ?? null;
 
 	const activityText = inferActivityText(event, payload, toolName, finalMessage, notificationType);
 	const merged: Partial<RuntimeTaskHookActivity> = {
-		source: normalizedSource,
+		source: flagMetadata.source ?? inferredSource ?? null,
 		hookEventName: flagMetadata.hookEventName ?? hookEventName ?? null,
 		toolName: flagMetadata.toolName ?? toolName ?? null,
 		notificationType: flagMetadata.notificationType ?? notificationType ?? null,
 		finalMessage: flagMetadata.finalMessage ?? (finalMessage ? normalizeWhitespace(finalMessage) : null),
 		activityText: flagMetadata.activityText ?? (activityText ? normalizeWhitespace(activityText) : null),
-		codexSessionId:
-			typeof flagMetadata.codexSessionId === "string"
-				? flagMetadata.codexSessionId
-				: normalizedSource === "codex" && codexSessionIdFromPayload
-					? normalizeWhitespace(codexSessionIdFromPayload)
-					: null,
 	};
 
 	const hasValue = Object.values(merged).some((value) => typeof value === "string" && value.trim().length > 0);
@@ -476,9 +457,6 @@ function appendMetadataFlags(args: string[], metadata?: Partial<RuntimeTaskHookA
 	}
 	if (metadata.notificationType) {
 		args.push("--notification-type", metadata.notificationType);
-	}
-	if (metadata.codexSessionId) {
-		args.push("--codex-session-id", metadata.codexSessionId);
 	}
 	return args;
 }
@@ -791,7 +769,6 @@ export function registerHooksCommand(program: Command): void {
 		.option("--final-message <message>", "Final message.")
 		.option("--hook-event-name <name>", "Original hook event name.")
 		.option("--notification-type <type>", "Notification type.")
-		.option("--codex-session-id <id>", "Codex session id for deterministic resume.")
 		.option("--metadata-base64 <base64>", "Base64-encoded JSON metadata payload.")
 		.action(
 			async (
@@ -812,7 +789,6 @@ export function registerHooksCommand(program: Command): void {
 		.option("--final-message <message>", "Final message.")
 		.option("--hook-event-name <name>", "Original hook event name.")
 		.option("--notification-type <type>", "Notification type.")
-		.option("--codex-session-id <id>", "Codex session id for deterministic resume.")
 		.option("--metadata-base64 <base64>", "Base64-encoded JSON metadata payload.")
 		.action(
 			async (

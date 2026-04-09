@@ -754,7 +754,6 @@ export function DiffViewerPanel({
 
 	const hasAnyComments = comments.size > 0;
 	const nonEmptyCount = nonEmptyComments.length;
-	const defaultExpandedPath = selectedPath ?? groupedByPath[0]?.path ?? null;
 
 	useHotkeys(
 		"meta+enter,ctrl+enter",
@@ -837,7 +836,7 @@ export function DiffViewerPanel({
 						}}
 					>
 						{groupedByPath.map((group) => {
-							const isExpanded = expandedPaths[group.path] ?? group.path === defaultExpandedPath;
+							const isExpanded = expandedPaths[group.path] ?? true;
 							const hasBinaryEntry = group.entries.some((entry) => entry.isBinary);
 							return (
 								<section

@@ -268,44 +268,6 @@ describe("DiffViewerPanel", () => {
 		expect(container.querySelector(".kb-diff-row")).toBeNull();
 	});
 
-	it("expands only the selected path by default to reduce initial render cost", async () => {
-		const workspaceFiles: RuntimeWorkspaceFileChange[] = [
-			{
-				path: "src/a.ts",
-				status: "modified",
-				additions: 1,
-				deletions: 0,
-				oldText: "const a = 1;\n",
-				newText: "const a = 2;\n",
-			},
-			{
-				path: "src/b.ts",
-				status: "modified",
-				additions: 1,
-				deletions: 0,
-				oldText: "const b = 1;\n",
-				newText: "const b = 2;\n",
-			},
-		];
-
-		await act(async () => {
-			root.render(
-				<DiffViewerPanel
-					workspaceFiles={workspaceFiles}
-					selectedPath="src/b.ts"
-					onSelectedPathChange={() => {}}
-					comments={new Map<string, DiffLineComment>()}
-					onCommentsChange={() => {}}
-				/>,
-			);
-		});
-
-		const headers = Array.from(container.querySelectorAll("button.kb-diff-file-header"));
-		expect(headers).toHaveLength(2);
-		expect(headers[0]?.getAttribute("aria-expanded")).toBe("false");
-		expect(headers[1]?.getAttribute("aria-expanded")).toBe("true");
-	});
-
 	it("shows shortcut indicators on Add and Send", async () => {
 		const workspaceFiles: RuntimeWorkspaceFileChange[] = [
 			{

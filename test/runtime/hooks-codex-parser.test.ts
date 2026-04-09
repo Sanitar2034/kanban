@@ -184,7 +184,6 @@ describe("parseCodexEventLine", () => {
 				hookEventName: "task_complete",
 				activityText: "Final: Root complete",
 				finalMessage: "Root complete",
-				codexSessionId: "root-session",
 			},
 		});
 	});

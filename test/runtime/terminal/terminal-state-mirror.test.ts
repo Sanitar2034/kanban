@@ -55,32 +55,6 @@ describe("TerminalStateMirror", () => {
 		expect(snapshot.snapshot).toContain("after resize");
 	});
 
-	it("applies serialized snapshots and dimensions", async () => {
-		const mirror = createMirror(80, 24);
-		mirror.applySerializedSnapshot("seeded terminal", 100, 30);
-		const snapshot = await mirror.getSnapshot();
-		expect(snapshot.cols).toBe(100);
-		expect(snapshot.rows).toBe(30);
-		expect(snapshot.snapshot).toContain("seeded terminal");
-	});
-
-	it("reuses cached serialization when no output changes occur", async () => {
-		const mirror = createMirror();
-		const addonSerializeSpy = vi.spyOn(
-			(mirror as unknown as { serializeAddon: { serialize: () => string } }).serializeAddon,
-			"serialize",
-		);
-
-		await mirror.getSnapshot();
-		await mirror.getSnapshot();
-
-		expect(addonSerializeSpy).toHaveBeenCalledTimes(1);
-
-		mirror.applyOutput(Buffer.from("changed", "utf8"));
-		await mirror.getSnapshot();
-		expect(addonSerializeSpy).toHaveBeenCalledTimes(2);
-	});
-
 	it("emits terminal query responses through the optional callback", async () => {
 		const onInputResponse = vi.fn();
 		const mirror = new TerminalStateMirror(80, 24, {

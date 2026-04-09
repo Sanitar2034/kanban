@@ -34,7 +34,6 @@ export interface AgentAdapterLaunchInput {
 	images?: RuntimeTaskImage[];
 	startInPlanMode?: boolean;
 	resumeFromTrash?: boolean;
-	resumeSessionId?: string;
 	env?: Record<string, string | undefined>;
 	workspaceId?: string;
 }
@@ -124,15 +123,6 @@ function hasCliOption(args: string[], optionName: string): boolean {
 		}
 	}
 	return false;
-}
-
-function removeCliOption(args: string[], optionName: string): void {
-	for (let i = args.length - 1; i >= 0; i -= 1) {
-		const arg = args[i];
-		if (arg === optionName || arg.startsWith(`${optionName}=`)) {
-			args.splice(i, 1);
-		}
-	}
 }
 
 function hasCodexConfigOverride(args: string[], key: string): boolean {
@@ -767,13 +757,7 @@ const codexAdapter: AgentSessionAdapter = {
 			if (!codexArgs.includes("resume")) {
 				codexArgs.push("resume");
 			}
-			const resumeSessionId = input.resumeSessionId?.trim();
-			if (resumeSessionId) {
-				removeCliOption(codexArgs, "--last");
-				if (!codexArgs.includes(resumeSessionId)) {
-					codexArgs.push(resumeSessionId);
-				}
-			} else if (!hasCliOption(codexArgs, "--last")) {
+			if (!hasCliOption(codexArgs, "--last")) {
 				codexArgs.push("--last");
 			}
 		}
@@ -805,7 +789,7 @@ const codexAdapter: AgentSessionAdapter = {
 			const wrapperParts = buildHooksCommandParts([
 				"codex-wrapper",
 				"--real-binary",
-				binary ?? "codex",
+				input.binary ?? "codex",
 				"--",
 				...codexArgs,
 			]);
