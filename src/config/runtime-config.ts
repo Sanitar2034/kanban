@@ -4,14 +4,11 @@
 import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-
-import type { RuntimeAgentId, RuntimeProjectShortcut } from "../core/api-contract.js";
-import {
-	isRuntimeAgentLaunchSupported,
-} from "../core/agent-catalog.js";
-import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system.js";
-import { detectInstalledCommands } from "../terminal/agent-registry.js";
-import { areRuntimeProjectShortcutsEqual } from "./shortcut-utils.js";
+import { isRuntimeAgentLaunchSupported } from "../core/agent-catalog";
+import type { RuntimeAgentId, RuntimeProjectShortcut } from "../core/api-contract";
+import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
+import { detectInstalledCommands } from "../terminal/agent-registry";
+import { areRuntimeProjectShortcutsEqual } from "./shortcut-utils";
 
 interface RuntimeGlobalConfigFileShape {
 	selectedAgentId?: RuntimeAgentId;
@@ -57,7 +54,7 @@ const PROJECT_CONFIG_PARENT_DIR = ".cline";
 const PROJECT_CONFIG_DIR = "kanban";
 const PROJECT_CONFIG_FILENAME = "config.json";
 const DEFAULT_AGENT_ID: RuntimeAgentId = "cline";
-const AUTO_SELECT_AGENT_PRIORITY: readonly RuntimeAgentId[] = ["claude", "codex"];
+const AUTO_SELECT_AGENT_PRIORITY: readonly RuntimeAgentId[] = ["claude", "codex", "droid"];
 const DEFAULT_AGENT_AUTONOMOUS_MODE_ENABLED = true;
 const DEFAULT_READY_FOR_REVIEW_NOTIFICATIONS_ENABLED = true;
 const DEFAULT_COMMIT_PROMPT_TEMPLATE = `You are in a worktree on a detached HEAD. When you are finished with the task, commit the working changes onto {{base_ref}}.
@@ -74,9 +71,9 @@ Steps:
    - If not checked out anywhere, use current worktree as P by checking out {{base_ref}} there.
 3. In P, verify current branch is {{base_ref}}.
 4. If P has uncommitted changes, stash them: git -C P stash push -u -m "kanban-pre-cherry-pick"
-5. Cherry-pick the task commit into P.
+5. Cherry-pick the task commit into P. If this fails because .git/index.lock exists, wait briefly for any active git process to finish. If the lock remains and no git process is active, treat the lock as stale, remove it, and retry.
 6. If cherry-pick conflicts, resolve carefully, preserving both the intended task changes and existing user edits.
-7. If a stash was created, restore it with: git -C P stash pop
+7. If step 4 created a new stash entry, restore that stash with: git -C P stash pop <stash-ref>
 8. If stash pop conflicts, resolve them while preserving pre-existing user edits.
 9. Report:
    - Final commit hash
@@ -624,7 +621,9 @@ export async function updateGlobalRuntimeConfig(
 			const nextConfig = {
 				selectedAgentId: updates.selectedAgentId ?? current.selectedAgentId,
 				selectedShortcutLabel:
-					updates.selectedShortcutLabel === undefined ? current.selectedShortcutLabel : updates.selectedShortcutLabel,
+					updates.selectedShortcutLabel === undefined
+						? current.selectedShortcutLabel
+						: updates.selectedShortcutLabel,
 				agentAutonomousModeEnabled: updates.agentAutonomousModeEnabled ?? current.agentAutonomousModeEnabled,
 				readyForReviewNotificationsEnabled:
 					updates.readyForReviewNotificationsEnabled ?? current.readyForReviewNotificationsEnabled,

@@ -2,11 +2,11 @@ import { realpathSync } from "node:fs";
 
 import packageJson from "../../package.json" with { type: "json" };
 
-import type { RuntimeAgentId } from "../core/api-contract.js";
-import { resolveKanbanCommandParts } from "../core/kanban-command.js";
-import { buildShellCommandLine } from "../core/shell.js";
-import { isHomeAgentSessionId } from "../core/home-agent-session.js";
-import { AutoUpdatePackageManager, detectAutoUpdateInstallation } from "../update/auto-update.js";
+import type { RuntimeAgentId } from "../core/api-contract";
+import { isHomeAgentSessionId } from "../core/home-agent-session";
+import { resolveKanbanCommandParts } from "../core/kanban-command";
+import { buildShellCommandLine } from "../core/shell";
+import { detectAutoUpdateInstallation, UpdatePackageManager } from "../update/update";
 
 const DEFAULT_COMMAND_PREFIX = "kanban";
 const KANBAN_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.1.0";
@@ -24,14 +24,7 @@ export interface RenderAppendSystemPromptOptions {
 	agentId?: RuntimeAgentId | null;
 }
 
-const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = [
-	"claude",
-	"codex",
-	"cline",
-	"droid",
-	"gemini",
-	"opencode",
-];
+const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = ["claude", "codex", "cline", "droid", "gemini", "opencode"];
 
 function isRuntimeAgentId(value: string): value is RuntimeAgentId {
 	return APPEND_PROMPT_AGENT_IDS.includes(value as RuntimeAgentId);
@@ -42,7 +35,7 @@ function resolveHomeAgentId(taskId: string): RuntimeAgentId | null {
 		return null;
 	}
 	const parts = taskId.split(":");
-	const maybeAgentId = parts.at(-2) ?? null;
+	const maybeAgentId = parts.at(-1) ?? null;
 	if (!maybeAgentId || !isRuntimeAgentId(maybeAgentId)) {
 		return null;
 	}
@@ -52,17 +45,17 @@ function resolveHomeAgentId(taskId: string): RuntimeAgentId | null {
 function renderLinearSetupGuidanceForAgent(agentId: RuntimeAgentId | null): string {
 	switch (agentId) {
 		case "cline":
-			return "- If Linear MCP is not available in the current agent (Cline), open MCP settings in the app, add server name `linear`, URL `https://mcp.linear.app/mcp`, transport `http`, then complete OAuth.";
+			return "- If Linear MCP is not available in the current agent (Cline), direct the user to open settings and go to the MCP section where they can add the Linear integration.";
 		case "claude":
-			return "- If Linear MCP is not available in the current agent (Claude Code), run: `claude mcp add --transport http --scope user linear https://mcp.linear.app/mcp`";
+			return "- If Linear MCP is not available in the current agent (Claude Code), suggest running: `claude mcp add --transport http --scope user linear https://mcp.linear.app/mcp`";
 		case "codex":
-			return "- If Linear MCP is not available in the current agent (OpenAI Codex), run: `codex mcp add linear --url https://mcp.linear.app/mcp`";
+			return "- If Linear MCP is not available in the current agent (OpenAI Codex), suggest running: `codex mcp add linear --url https://mcp.linear.app/mcp`";
 		case "gemini":
-			return "- If Linear MCP is not available in the current agent (Gemini CLI), run: `gemini mcp add linear https://mcp.linear.app/mcp --transport http --scope user`";
+			return "- If Linear MCP is not available in the current agent (Gemini CLI), suggest running: `gemini mcp add linear https://mcp.linear.app/mcp --transport http --scope user`";
 		case "opencode":
-			return "- If Linear MCP is not available in the current agent (OpenCode), run `opencode mcp add`, then use name `linear` and URL `https://mcp.linear.app/mcp`.";
+			return "- If Linear MCP is not available in the current agent (OpenCode), suggest running `opencode mcp add`, then use name `linear` and URL `https://mcp.linear.app/mcp`.";
 		case "droid":
-			return "- If Linear MCP is not available in the current agent (Droid), run: `droid mcp add linear https://mcp.linear.app/mcp --type http`";
+			return "- If Linear MCP is not available in the current agent (Droid), suggest running: `droid mcp add linear https://mcp.linear.app/mcp --type http`";
 		default:
 			return "- If Linear MCP is not available, provide setup instructions for the active agent only, then continue once OAuth is complete.";
 	}
@@ -105,26 +98,23 @@ export function resolveAppendSystemPromptCommandPrefix(
 		return fallbackCommandPrefix;
 	}
 
-	if (installation.packageManager === AutoUpdatePackageManager.NPX) {
+	if (installation.packageManager === UpdatePackageManager.NPX) {
 		return "npx -y kanban";
 	}
-	if (installation.packageManager === AutoUpdatePackageManager.PNPM) {
+	if (installation.packageManager === UpdatePackageManager.PNPM) {
 		return "pnpm dlx kanban";
 	}
-	if (installation.packageManager === AutoUpdatePackageManager.YARN) {
+	if (installation.packageManager === UpdatePackageManager.YARN) {
 		return "yarn dlx kanban";
 	}
-	if (installation.packageManager === AutoUpdatePackageManager.BUN) {
+	if (installation.packageManager === UpdatePackageManager.BUN) {
 		return "bun x kanban";
 	}
 
 	return fallbackCommandPrefix;
 }
 
-export function renderAppendSystemPrompt(
-	commandPrefix: string,
-	options: RenderAppendSystemPromptOptions = {},
-): string {
+export function renderAppendSystemPrompt(commandPrefix: string, options: RenderAppendSystemPromptOptions = {}): string {
 	const kanbanCommand = commandPrefix.trim() || DEFAULT_COMMAND_PREFIX;
 	const selectedAgentId = options.agentId ?? null;
 	return `# Kanban Sidebar
@@ -133,9 +123,18 @@ You are the Kanban sidebar agent for this workspace. Help the user interact with
 
 Kanban is a CLI tool for orchestrating multiple coding agents working on tasks in parallel on a kanban board. It manages git worktrees automatically so that each task can run a dedicated CLI agent in its own worktree.
 
+You are a Kanban board management helper: your job is to create, organize, link, start, and manage tasks using the Kanban CLI.
+
+# CRITICAL: You are NOT a coding agent
+
+NEVER edit, create, delete, or modify any files in the workspace. NEVER write code, fix bugs, refactor, or do any implementation work yourself. You do not have the role of a coding assistant. Your only job is to manage the Kanban board using the Kanban CLI commands listed below.
+
+If the user asks you to write code, fix a bug, implement a feature, refactor, or do any hands-on development work, do NOT attempt it. Instead, help them by creating tasks on the Kanban board so a dedicated coding agent can do that work in its own worktree. Always redirect implementation requests to task creation.
+
 - If the user asks to add tasks to kb, ask kb, kanban, or says add tasks without other context, they likely want to add tasks in Kanban. This includes phrases like "create tasks", "make 3 tasks", "add a task", "break down into tasks", "split into tasks", "decompose into tasks", and "turn into tasks".
 - Kanban also supports linking tasks. Linking is useful both for parallelization and for dependencies: when work is easy to decompose into multiple pieces that can be done in parallel, link multiple backlog tasks to the same dependency so they all become ready to start once that dependency finishes; when one piece of work depends on another, use links to represent that follow-on dependency. If both linked tasks are in backlog, Kanban preserves the order you pass to the command: \`--task-id\` waits on \`--linked-task-id\`, and on the board the arrow points into \`--linked-task-id\`. Once only one linked task remains in backlog, Kanban reorients the saved dependency so the backlog task is the waiting dependent task and the other task is the prerequisite. The board arrow points into the prerequisite task so the user can see what must finish first. A link requires at least one backlog task, and when the linked review task is moved to trash, that backlog task becomes ready to start.
-- Tasks can also enable automatic review actions: auto-commit, auto-open-pr, or auto-move-to-trash once completed, sending the task to trash and kicking off any linked tasks.
+- How linking works: when a task in the review column is moved to trash, any linked backlog tasks automatically start. This is how you chain work so tasks kick off autonomously without manual intervention.
+- Tasks can also enable automatic review actions: auto-commit, auto-open-pr, or auto-move-to-trash once completed, sending the task to trash and kicking off any linked tasks. Combining auto-review with linking is how you can set up fully autonomous pipelines when the user wants it. For example, enabling auto-commit on each task in a chain: task A finishes, auto-commits and is trashed, task B auto-starts from backlog, auto-commits and is trashed, task C auto-starts, and so on.
 - If your current working directory is inside \`.cline/worktrees/\`, you are inside a Kanban task worktree. In that case, create or manage tasks against the main workspace path, not the task worktree path. Pass the main workspace with \`--project-path\`.
 - If a task command fails because the runtime is unavailable, tell the user to start Kanban in that workspace first with \`${kanbanCommand}\`, then retry the task command.
 
@@ -146,6 +145,7 @@ Use this prefix for every Kanban command in this session:
 
 # Tool Invocation Notes
 
+- NEVER use file-editing tools. You are not a coding agent. If you catch yourself about to edit a file, stop and suggest creating a Kanban task instead.
 - When using the \`run_commands\` tool, always pass \`commands\` as an array, even when running only one command.
 
 # GitHub and Linear Guidance
@@ -260,7 +260,7 @@ Notes:
 - If both linked tasks are in backlog, Kanban preserves the order you pass: \`--task-id\` waits on \`--linked-task-id\`.
 - On the board, the dependency arrow points into the task that must finish first.
 - Once only one linked task remains in backlog, Kanban reorients the saved dependency so the backlog task is the waiting dependent task and the other task is the prerequisite.
-- When the prerequisite task finishes review and is moved to trash, the waiting backlog task becomes ready to start.
+- When the prerequisite task finishes review and is moved to trash, the waiting backlog task auto-starts.
 
 ## task unlink
 

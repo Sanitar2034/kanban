@@ -4,10 +4,10 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { getCommitDiff, getGitLog, getGitRefs } from "../../src/workspace/git-history.js";
-import { discardGitChanges, getGitSyncSummary } from "../../src/workspace/git-sync.js";
-import { createGitTestEnv } from "../utilities/git-env.js";
-import { createTempDir } from "../utilities/temp-dir.js";
+import { getCommitDiff, getGitLog, getGitRefs } from "../../src/workspace/git-history";
+import { discardGitChanges, getGitSyncSummary } from "../../src/workspace/git-sync";
+import { createGitTestEnv } from "../utilities/git-env";
+import { createTempDir } from "../utilities/temp-dir";
 
 function runGit(cwd: string, args: string[]): string {
 	const result = spawnSync("git", args, {
@@ -109,6 +109,34 @@ describe.sequential("git history runtime", () => {
 			expect(response.summary.changedFiles).toBe(0);
 			expect(readFileSync(join(repoPath, "tracked.txt"), "utf8").replace(/\r\n/gu, "\n")).toBe("original\n");
 			expect(existsSync(join(repoPath, "scratch", "note.txt"))).toBe(false);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("returns correct UTF-8 paths for non-ASCII filenames", async () => {
+		const { path: repoPath, cleanup } = createTempDir("kanban-git-history-nonascii-");
+		try {
+			initRepository(repoPath);
+			const dirName = "提出書類";
+			const fileName = "設計書.md";
+			const relativePath = `${dirName}/${fileName}`;
+			mkdirSync(join(repoPath, dirName), { recursive: true });
+			writeFileSync(join(repoPath, dirName, fileName), "# 設計書\n", "utf8");
+			const commitHash = commitAll(repoPath, "add non-ASCII path");
+
+			const response = await getCommitDiff({
+				cwd: repoPath,
+				commitHash,
+			});
+
+			expect(response.ok).toBe(true);
+			expect(response.files).toHaveLength(1);
+			expect(response.files[0]).toMatchObject({
+				path: relativePath,
+				status: "added",
+			});
+			expect(response.files[0]?.patch).toContain(`+++ b/${relativePath}`);
 		} finally {
 			cleanup();
 		}

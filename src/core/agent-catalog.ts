@@ -1,4 +1,4 @@
-import type { RuntimeAgentId } from "./api-contract.js";
+import type { RuntimeAgentId } from "./api-contract";
 
 export interface RuntimeAgentCatalogEntry {
 	id: RuntimeAgentId;
@@ -44,7 +44,7 @@ export const RUNTIME_AGENT_CATALOG: RuntimeAgentCatalogEntry[] = [
 	},
 	{
 		id: "droid",
-		label: "Droid CLI",
+		label: "Factory Droid",
 		binary: "droid",
 		baseArgs: [],
 		autonomousArgs: ["--auto", "high"],
@@ -66,8 +66,8 @@ export const RUNTIME_LAUNCH_SUPPORTED_AGENT_IDS: readonly RuntimeAgentId[] = [
 	"cline",
 	"claude",
 	"codex",
+	"droid",
 	// "opencode",
-	// "droid",
 	// "gemini",
 ];
 

@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createTempDir } from "../utilities/temp-dir.js";
+import { createTempDir } from "../utilities/temp-dir";
 
 const childProcessMocks = vi.hoisted(() => ({
 	execFile: vi.fn(),
@@ -52,7 +52,7 @@ vi.mock("../../src/workspace/task-worktree-path.js", () => ({
 	normalizeTaskIdForWorktreePath: taskWorktreePathMocks.normalizeTaskIdForWorktreePath,
 }));
 
-import { ensureTaskWorktreeIfDoesntExist } from "../../src/workspace/task-worktree.js";
+import { ensureTaskWorktreeIfDoesntExist } from "../../src/workspace/task-worktree";
 
 type ExecFileOptions = {
 	cwd?: string;
@@ -71,17 +71,30 @@ function createGitError(message: string): NodeJS.ErrnoException & { stdout: stri
 	return error as NodeJS.ErrnoException & { stdout: string; stderr: string; code: number };
 }
 
+function stripConfigFlags(args: readonly string[]): string[] {
+	const result: string[] = [];
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === "-c" && i + 1 < args.length) {
+			i += 1;
+			continue;
+		}
+		result.push(args[i] as string);
+	}
+	return result;
+}
+
 function getCommandArgs(args: readonly string[], options?: ExecFileOptions): { cwd: string; command: string[] } {
-	if (args[0] === "-C" && typeof args[1] === "string") {
+	const cleaned = stripConfigFlags(args);
+	if (cleaned[0] === "-C" && typeof cleaned[1] === "string") {
 		return {
-			cwd: args[1],
-			command: args.slice(2),
+			cwd: cleaned[1],
+			command: cleaned.slice(2),
 		};
 	}
 	if (typeof options?.cwd === "string") {
 		return {
 			cwd: options.cwd,
-			command: [...args],
+			command: cleaned,
 		};
 	}
 	throw new Error(`Unexpected git args: ${args.join(" ")}`);
@@ -100,19 +113,21 @@ describe.sequential("task-worktree serialization", () => {
 		taskWorktreePathMocks.normalizeTaskIdForWorktreePath.mockReset();
 
 		let lockQueue = Promise.resolve();
-		lockedFileSystemMocks.withLock.mockImplementation(async (_request: unknown, operation: () => Promise<unknown>) => {
-			const waitForTurn = lockQueue;
-			let releaseLock: () => void = () => {};
-			lockQueue = new Promise<void>((resolve) => {
-				releaseLock = resolve;
-			});
-			await waitForTurn;
-			try {
-				return await operation();
-			} finally {
-				releaseLock();
-			}
-		});
+		lockedFileSystemMocks.withLock.mockImplementation(
+			async (_request: unknown, operation: () => Promise<unknown>) => {
+				const waitForTurn = lockQueue;
+				let releaseLock: () => void = () => {};
+				lockQueue = new Promise<void>((resolve) => {
+					releaseLock = resolve;
+				});
+				await waitForTurn;
+				try {
+					return await operation();
+				} finally {
+					releaseLock();
+				}
+			},
+		);
 		lockedFileSystemMocks.writeTextFileAtomic.mockResolvedValue(undefined);
 	});
 
@@ -192,7 +207,7 @@ describe.sequential("task-worktree serialization", () => {
 
 					if (command[0] === "config" && command[1] === "--file") {
 						return {
-							stdout: 'submodule.evals/cline-bench.path evals/cline-bench\n',
+							stdout: "submodule.evals/cline-bench.path evals/cline-bench\n",
 							stderr: "",
 						};
 					}

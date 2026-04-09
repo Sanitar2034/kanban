@@ -1,11 +1,11 @@
 import { Draggable } from "@hello-pangea/dnd";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { formatClineToolCallLabel } from "@runtime-cline-tool-call-display";
 import { buildTaskWorktreeDisplayPath } from "@runtime-task-worktree-path";
 import { AlertCircle, Ellipsis, GitBranch, Play, RotateCcw } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { formatClineToolCallLabel } from "@runtime-cline-tool-call-display";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
@@ -38,6 +38,7 @@ const SESSION_ACTIVITY_COLOR = {
 } as const;
 
 const DESCRIPTION_COLLAPSE_LINES = 3;
+const SESSION_PREVIEW_COLLAPSE_LINES = 6;
 const DESCRIPTION_EXPAND_LABEL = "See more";
 const DESCRIPTION_COLLAPSE_LABEL = "Less";
 const DESCRIPTION_COLLAPSE_SUFFIX = `… ${DESCRIPTION_EXPAND_LABEL}`;
@@ -55,7 +56,9 @@ function reconstructTaskWorktreeDisplayPath(taskId: string, workspacePath: strin
 
 function extractToolInputSummaryFromActivityText(activityText: string, toolName: string): string | null {
 	const escapedToolName = toolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const match = activityText.match(new RegExp(`^(?:Using|Completed|Failed|Calling)\\s+${escapedToolName}(?::\\s*(.+))?$`));
+	const match = activityText.match(
+		new RegExp(`^(?:Using|Completed|Failed|Calling)\\s+${escapedToolName}(?::\\s*(.+))?$`),
+	);
 	if (!match) {
 		return null;
 	}
@@ -70,7 +73,9 @@ function extractToolInputSummaryFromActivityText(activityText: string, toolName:
 	return rawSummary;
 }
 
-function parseToolCallFromActivityText(activityText: string): { toolName: string; toolInputSummary: string | null } | null {
+function parseToolCallFromActivityText(
+	activityText: string,
+): { toolName: string; toolInputSummary: string | null } | null {
 	const match = activityText.match(/^(?:Using|Completed|Failed|Calling)\s+([^:()]+?)(?::\s*(.+))?$/);
 	if (!match?.[1]) {
 		return null;
@@ -102,7 +107,10 @@ function resolveToolCallLabel(
 	toolInputSummary: string | null,
 ): string | null {
 	if (toolName) {
-		return formatClineToolCallLabel(toolName, toolInputSummary ?? extractToolInputSummaryFromActivityText(activityText ?? "", toolName));
+		return formatClineToolCallLabel(
+			toolName,
+			toolInputSummary ?? extractToolInputSummaryFromActivityText(activityText ?? "", toolName),
+		);
 	}
 	if (!activityText) {
 		return null;
@@ -122,7 +130,6 @@ function getCardSessionActivity(summary: RuntimeTaskSessionSummary | undefined):
 	const activityText = hookActivity?.activityText?.trim();
 	const toolName = hookActivity?.toolName?.trim() ?? null;
 	const toolInputSummary = hookActivity?.toolInputSummary?.trim() ?? null;
-	const source = hookActivity?.source?.trim() ?? null;
 	const finalMessage = hookActivity?.finalMessage?.trim();
 	const hookEventName = hookActivity?.hookEventName?.trim() ?? null;
 	if (summary.state === "awaiting_review" && finalMessage) {
@@ -139,7 +146,8 @@ function getCardSessionActivity(summary: RuntimeTaskSessionSummary | undefined):
 		};
 	}
 	if (activityText) {
-		let dotColor: string = summary.state === "failed" ? SESSION_ACTIVITY_COLOR.error : SESSION_ACTIVITY_COLOR.thinking;
+		let dotColor: string =
+			summary.state === "failed" ? SESSION_ACTIVITY_COLOR.error : SESSION_ACTIVITY_COLOR.thinking;
 		let text = activityText;
 		const toolCallLabel = resolveToolCallLabel(activityText, toolName, toolInputSummary);
 		if (toolCallLabel) {
@@ -228,21 +236,38 @@ export function BoardCard({
 	const [isHovered, setIsHovered] = useState(false);
 	const [titleContainerRef, titleRect] = useMeasure<HTMLDivElement>();
 	const [descriptionContainerRef, descriptionRect] = useMeasure<HTMLDivElement>();
+	const [sessionPreviewContainerRef, sessionPreviewRect] = useMeasure<HTMLDivElement>();
 	const titleRef = useRef<HTMLParagraphElement | null>(null);
 	const descriptionRef = useRef<HTMLParagraphElement | null>(null);
+	const sessionPreviewRef = useRef<HTMLParagraphElement | null>(null);
 	const [titleWidthFallback, setTitleWidthFallback] = useState(0);
 	const [descriptionWidthFallback, setDescriptionWidthFallback] = useState(0);
+	const [sessionPreviewWidthFallback, setSessionPreviewWidthFallback] = useState(0);
 	const [titleFont, setTitleFont] = useState(DEFAULT_TEXT_MEASURE_FONT);
 	const [descriptionFont, setDescriptionFont] = useState(DEFAULT_TEXT_MEASURE_FONT);
+	const [sessionPreviewFont, setSessionPreviewFont] = useState(DEFAULT_TEXT_MEASURE_FONT);
 	const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+	const [isSessionPreviewExpanded, setIsSessionPreviewExpanded] = useState(false);
 	const reviewWorkspaceSnapshot = useTaskWorkspaceSnapshotValue(card.id);
 	const isTrashCard = columnId === "trash";
 	const isCardInteractive = !isTrashCard;
 	const titleWidth = titleRect.width > 0 ? titleRect.width : titleWidthFallback;
 	const descriptionWidth = descriptionRect.width > 0 ? descriptionRect.width : descriptionWidthFallback;
+	const sessionPreviewWidth = sessionPreviewRect.width > 0 ? sessionPreviewRect.width : sessionPreviewWidthFallback;
 	const displayPrompt = useMemo(() => {
 		return card.prompt.trim();
 	}, [card.prompt]);
+	const rawSessionActivity = useMemo(() => getCardSessionActivity(sessionSummary), [sessionSummary]);
+	const lastSessionActivityRef = useRef<CardSessionActivity | null>(null);
+	const lastSessionActivityCardIdRef = useRef<string | null>(null);
+	if (lastSessionActivityCardIdRef.current !== card.id) {
+		lastSessionActivityCardIdRef.current = card.id;
+		lastSessionActivityRef.current = null;
+	}
+	if (rawSessionActivity) {
+		lastSessionActivityRef.current = rawSessionActivity;
+	}
+	const sessionActivity = rawSessionActivity ?? lastSessionActivityRef.current;
 	const displayPromptSplit = useMemo(() => {
 		const fallbackTitle = truncateTaskPromptLabel(card.prompt);
 		if (!displayPrompt) {
@@ -288,6 +313,16 @@ export function BoardCard({
 	}, [descriptionRect.width, descriptionWidthFallback, displayPromptSplit.description]);
 
 	useLayoutEffect(() => {
+		if (sessionPreviewRect.width > 0 || !isTrashCard || !sessionActivity?.text) {
+			return;
+		}
+		const nextWidth = sessionPreviewRef.current?.parentElement?.getBoundingClientRect().width ?? 0;
+		if (nextWidth > 0 && nextWidth !== sessionPreviewWidthFallback) {
+			setSessionPreviewWidthFallback(nextWidth);
+		}
+	}, [isTrashCard, sessionActivity?.text, sessionPreviewRect.width, sessionPreviewWidthFallback]);
+
+	useLayoutEffect(() => {
 		setTitleFont(readElementFontShorthand(titleRef.current, DEFAULT_TEXT_MEASURE_FONT));
 	}, [titleWidth]);
 
@@ -295,9 +330,17 @@ export function BoardCard({
 		setDescriptionFont(readElementFontShorthand(descriptionRef.current, DEFAULT_TEXT_MEASURE_FONT));
 	}, [descriptionWidth, displayPromptSplit.description]);
 
+	useLayoutEffect(() => {
+		setSessionPreviewFont(readElementFontShorthand(sessionPreviewRef.current, DEFAULT_TEXT_MEASURE_FONT));
+	}, [sessionActivity?.text, sessionPreviewWidth]);
+
 	useEffect(() => {
 		setIsDescriptionExpanded(false);
 	}, [card.id, displayPromptSplit.description]);
+
+	useEffect(() => {
+		setIsSessionPreviewExpanded(false);
+	}, [card.id, sessionActivity?.text]);
 
 	const stopEvent = (event: MouseEvent<HTMLElement>) => {
 		event.preventDefault();
@@ -305,6 +348,7 @@ export function BoardCard({
 	};
 
 	const isDescriptionMeasured = descriptionRect.width > 0;
+	const isSessionPreviewMeasured = sessionPreviewRect.width > 0;
 
 	const descriptionDisplay = useMemo(() => {
 		if (!displayPromptSplit.description) {
@@ -326,6 +370,27 @@ export function BoardCard({
 			measureText: (value) => measureTextWidth(value, descriptionFont),
 		});
 	}, [descriptionFont, descriptionWidth, displayPromptSplit.description]);
+
+	const sessionPreviewDisplay = useMemo(() => {
+		if (!sessionActivity?.text) {
+			return {
+				text: "",
+				isTruncated: false,
+			};
+		}
+		if (sessionPreviewWidth <= 0) {
+			return {
+				text: sessionActivity.text,
+				isTruncated: false,
+			};
+		}
+		return clampTextWithInlineSuffix(sessionActivity.text, {
+			maxWidthPx: sessionPreviewWidth,
+			maxLines: SESSION_PREVIEW_COLLAPSE_LINES,
+			suffix: DESCRIPTION_COLLAPSE_SUFFIX,
+			measureText: (value) => measureTextWidth(value, sessionPreviewFont),
+		});
+	}, [sessionActivity?.text, sessionPreviewFont, sessionPreviewWidth]);
 
 	const renderStatusMarker = () => {
 		if (columnId === "in_progress") {
@@ -355,17 +420,6 @@ export function BoardCard({
 		: null;
 	const showReviewGitActions = columnId === "review" && (reviewWorkspaceSnapshot?.changedFiles ?? 0) > 0;
 	const isAnyGitActionLoading = isCommitLoading || isOpenPrLoading;
-	const rawSessionActivity = useMemo(() => getCardSessionActivity(sessionSummary), [sessionSummary]);
-	const lastSessionActivityRef = useRef<CardSessionActivity | null>(null);
-	const lastSessionActivityCardIdRef = useRef<string | null>(null);
-	if (lastSessionActivityCardIdRef.current !== card.id) {
-		lastSessionActivityCardIdRef.current = card.id;
-		lastSessionActivityRef.current = null;
-	}
-	if (rawSessionActivity) {
-		lastSessionActivityRef.current = rawSessionActivity;
-	}
-	const sessionActivity = rawSessionActivity ?? lastSessionActivityRef.current;
 	const cancelAutomaticActionLabel =
 		!isTrashCard && card.autoReviewEnabled ? getTaskAutoReviewCancelButtonLabel(card.autoReviewMode) : null;
 
@@ -597,16 +651,61 @@ export function BoardCard({
 											marginTop: 4,
 										}}
 									/>
-									<span
-										className="font-mono line-clamp-6"
-										style={{
-											fontSize: 12,
-											whiteSpace: "normal",
-											overflowWrap: "anywhere",
-										}}
-									>
-										{sessionActivity.text}
-									</span>
+									<div ref={sessionPreviewContainerRef} className="min-w-0 flex-1">
+										<p
+											ref={sessionPreviewRef}
+											className={cn(
+												"m-0 font-mono",
+												!isSessionPreviewMeasured && !isSessionPreviewExpanded && "line-clamp-6",
+											)}
+											style={{
+												fontSize: 12,
+												whiteSpace: "normal",
+												overflowWrap: "anywhere",
+											}}
+										>
+											{isSessionPreviewExpanded || !sessionPreviewDisplay.isTruncated
+												? sessionActivity.text
+												: sessionPreviewDisplay.text}
+											{sessionPreviewDisplay.isTruncated ? (
+												isSessionPreviewExpanded ? (
+													<>
+														{" "}
+														<button
+															type="button"
+															className="inline cursor-pointer rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [color:inherit] [font:inherit]"
+															aria-expanded={isSessionPreviewExpanded}
+															aria-label="Collapse task agent preview"
+															onMouseDown={stopEvent}
+															onClick={(event) => {
+																stopEvent(event);
+																setIsSessionPreviewExpanded(false);
+															}}
+														>
+															{DESCRIPTION_COLLAPSE_LABEL}
+														</button>
+													</>
+												) : (
+													<>
+														{"… "}
+														<button
+															type="button"
+															className="inline cursor-pointer rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [color:inherit] [font:inherit]"
+															aria-expanded={isSessionPreviewExpanded}
+															aria-label="Expand task agent preview"
+															onMouseDown={stopEvent}
+															onClick={(event) => {
+																stopEvent(event);
+																setIsSessionPreviewExpanded(true);
+															}}
+														>
+															{DESCRIPTION_EXPAND_LABEL}
+														</button>
+													</>
+												)
+											) : null}
+										</p>
+									</div>
 								</div>
 							) : null}
 							{showWorkspaceStatus && reviewWorkspacePath ? (

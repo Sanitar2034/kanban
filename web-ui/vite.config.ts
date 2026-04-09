@@ -65,6 +65,7 @@ export default defineConfig({
 		// production bundle, which breaks full-screen TUIs like OpenCode at runtime.
 		// Keep xterm unminified, but selectively minify the rest of the app below.
 		minify: false,
+		sourcemap: true,
 		rollupOptions: {
 			output: {
 				manualChunks(id) {
@@ -90,13 +91,13 @@ export default defineConfig({
 	},
 	server: {
 		host: "127.0.0.1",
-		port: 4173,
+		port: Number(process.env.KANBAN_WEB_UI_PORT || "4173"),
 		strictPort: true,
 		proxy: {
 			"/api": {
-				target: "http://127.0.0.1:3484",
+				target: `http://127.0.0.1:${process.env.KANBAN_RUNTIME_PORT || "3484"}`,
 				changeOrigin: true,
-				ws: true
+				ws: true,
 			},
 		},
 	},

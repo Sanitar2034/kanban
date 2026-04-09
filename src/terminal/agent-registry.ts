@@ -1,15 +1,12 @@
-import type { RuntimeConfigState } from "../config/runtime-config.js";
-import {
-	getRuntimeLaunchSupportedAgentCatalog,
-	RUNTIME_AGENT_CATALOG,
-} from "../core/agent-catalog.js";
+import type { RuntimeConfigState } from "../config/runtime-config";
+import { getRuntimeLaunchSupportedAgentCatalog, RUNTIME_AGENT_CATALOG } from "../core/agent-catalog";
 import type {
 	RuntimeAgentDefinition,
 	RuntimeAgentId,
 	RuntimeClineProviderSettings,
 	RuntimeConfigResponse,
-} from "../core/api-contract.js";
-import { isBinaryAvailableOnPath } from "./command-discovery.js";
+} from "../core/api-contract";
+import { isBinaryAvailableOnPath } from "./command-discovery";
 
 export interface ResolvedAgentCommand {
 	agentId: RuntimeAgentId;
@@ -39,6 +36,16 @@ function joinCommand(binary: string, args: string[]): string {
 		return binary;
 	}
 	return [binary, ...args.map(quoteForDisplay)].join(" ");
+}
+
+function parseBooleanEnvValue(value: string | undefined): boolean {
+	const normalized = value?.trim().toLowerCase();
+	return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function isRuntimeDebugModeEnabled(): boolean {
+	const debugModeValue = process.env.KANBAN_DEBUG_MODE ?? process.env.DEBUG_MODE ?? process.env.debug_mode;
+	return parseBooleanEnvValue(debugModeValue);
 }
 
 export function detectInstalledCommands(): string[] {
@@ -104,6 +111,7 @@ export function buildRuntimeConfigResponse(
 		selectedAgentId: runtimeConfig.selectedAgentId,
 		selectedShortcutLabel: runtimeConfig.selectedShortcutLabel,
 		agentAutonomousModeEnabled: runtimeConfig.agentAutonomousModeEnabled,
+		debugModeEnabled: isRuntimeDebugModeEnabled(),
 		effectiveCommand,
 		globalConfigPath: runtimeConfig.globalConfigPath,
 		projectConfigPath: runtimeConfig.projectConfigPath,

@@ -1,9 +1,7 @@
 // Translates raw SDK session events into Kanban summary and message mutations.
 // Keep protocol-specific parsing here so the runtime and repository can stay
 // focused on lifecycle, storage, and task-facing orchestration.
-import type { RuntimeTaskSessionSummary } from "../core/api-contract.js";
-import { formatClineToolCallLabel, getClineToolCallDisplay } from "./cline-tool-call-display.js";
-import type { ClineSdkAgentEvent, ClineSdkSessionEvent } from "./sdk-runtime-boundary.js";
+import type { RuntimeTaskSessionSummary } from "../core/api-contract";
 import {
 	appendAssistantChunk,
 	appendReasoningChunk,
@@ -22,13 +20,20 @@ import {
 	setOrCreateReasoningMessage,
 	startToolCallMessage,
 	updateSummary,
-} from "./cline-session-state.js";
+} from "./cline-session-state";
+import { formatClineToolCallLabel, getClineToolCallDisplay } from "./cline-tool-call-display";
+import type { ClineSdkAgentEvent, ClineSdkSessionEvent } from "./sdk-runtime-boundary";
 
-function toPreviewText(value: string | null | undefined, maxLength = 160): string | null {
+function normalizePreviewText(value: string | null | undefined): string | null {
 	if (typeof value !== "string") {
 		return null;
 	}
 	const normalized = value.replace(/\s+/g, " ").trim();
+	return normalized || null;
+}
+
+function toPreviewText(value: string | null | undefined, maxLength = 160): string | null {
+	const normalized = normalizePreviewText(value);
 	if (!normalized) {
 		return null;
 	}
@@ -154,6 +159,18 @@ function extractAgentErrorMessage(error: unknown): string | null {
 	return null;
 }
 
+export function isClineInsufficientBalanceError(errorMessage: string | null): boolean {
+	if (!errorMessage) {
+		return false;
+	}
+	const normalized = errorMessage.toLowerCase();
+	return (
+		normalized.includes("insufficient balance") ||
+		normalized.includes("insufficient_credits") ||
+		(normalized.includes("402") && normalized.includes("balance"))
+	);
+}
+
 export function extractClineSessionId(event: unknown): string | null {
 	const record = asRecord(event);
 	if (!record) {
@@ -173,9 +190,11 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 	const statusEvent = readStatusEvent(event);
 
 	if (agentEvent?.type === "error") {
-		const errorMessage =
-			"error" in agentEvent ? extractAgentErrorMessage(agentEvent.error) : null;
-		const recoverable = typeof agentEvent.recoverable === "boolean" ? agentEvent.recoverable : false;
+		const errorMessage = "error" in agentEvent ? extractAgentErrorMessage(agentEvent.error) : null;
+		const isInsufficientBalanceError = isClineInsufficientBalanceError(errorMessage);
+		const sdkRecoverable = typeof agentEvent.recoverable === "boolean" ? agentEvent.recoverable : false;
+		const recoverable = sdkRecoverable && !isInsufficientBalanceError;
+		const shouldShowWarningMessage = !isInsufficientBalanceError;
 		const retainedToolActivity = getRetainedClineToolActivity(entry);
 		if (!recoverable) {
 			clearActiveTurnState(entry);
@@ -189,8 +208,9 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 			...(recoverable
 				? {}
 				: {
-						state: "failed",
+						state: "awaiting_review",
 						reviewReason: "error",
+						warningMessage: shouldShowWarningMessage ? (errorMessage ?? "Unknown agent error") : null,
 					}),
 			lastOutputAt: now(),
 			lastHookAt: now(),
@@ -202,7 +222,7 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 				toolInputSummary: retainedToolActivity.toolInputSummary,
 				finalMessage: recoverable ? null : (errorMessage ?? "Unknown agent error"),
 				hookEventName: "agent_error",
-				notificationType: null,
+				notificationType: isInsufficientBalanceError ? "credit_limit" : null,
 				source: "cline-sdk",
 			},
 		});
@@ -220,7 +240,8 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 		} else if (typeof text === "string" && text.length > 0) {
 			input.emitMessage(taskId, appendAssistantChunk(entry, taskId, text));
 		}
-		const previewText = toPreviewText(accumulated ?? text);
+		const fullPreviewText = normalizePreviewText(accumulated ?? text);
+		const previewText = toPreviewText(fullPreviewText);
 		const retainedToolActivity = getRetainedClineToolActivity(entry);
 		emitSummary(input, {
 			state: "running",
@@ -230,7 +251,7 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 				activityText: previewText ?? "Agent active",
 				toolName: retainedToolActivity.toolName,
 				toolInputSummary: retainedToolActivity.toolInputSummary,
-				finalMessage: previewText,
+				finalMessage: fullPreviewText,
 				hookEventName: "assistant_delta",
 				notificationType: null,
 				source: "cline-sdk",
@@ -241,6 +262,9 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 
 	if (agentEvent?.type === "notice") {
 		const message = typeof agentEvent.message === "string" ? agentEvent.message.trim() : "";
+		if (isClineInsufficientBalanceError(message)) {
+			return;
+		}
 		if (message) {
 			const displayRole = typeof agentEvent.displayRole === "string" ? agentEvent.displayRole : "system";
 			const reason = typeof agentEvent.reason === "string" ? agentEvent.reason : null;
@@ -278,16 +302,17 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 			return;
 		}
 
+		const previousHookActivity = entry.summary.latestHookActivity;
 		const summaryPatch: Partial<RuntimeTaskSessionSummary> = {
 			lastOutputAt: now(),
 			lastHookAt: now(),
 			latestHookActivity: {
-				activityText: finalText ? `Final: ${finalText}` : "Waiting for review",
-				toolName: null,
-				toolInputSummary: null,
-				finalMessage: finalText || null,
+				activityText: finalText ? `Final: ${finalText}` : (previousHookActivity?.activityText ?? null),
+				toolName: previousHookActivity?.toolName ?? null,
+				toolInputSummary: previousHookActivity?.toolInputSummary ?? null,
+				finalMessage: finalText || (previousHookActivity?.finalMessage ?? null),
 				hookEventName: "agent_end",
-				notificationType: null,
+				notificationType: previousHookActivity?.notificationType ?? null,
 				source: "cline-sdk",
 			},
 		};
@@ -431,7 +456,8 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 			return;
 		}
 		input.emitMessage(taskId, appendAssistantChunk(entry, taskId, chunk));
-		const previewText = toPreviewText(chunk);
+		const fullPreviewText = normalizePreviewText(chunk);
+		const previewText = toPreviewText(fullPreviewText);
 		const retainedToolActivity = getRetainedClineToolActivity(entry);
 		emitSummary(input, {
 			state: "running",
@@ -441,7 +467,7 @@ export function applyClineSessionEvent(input: ApplyClineSessionEventInput): void
 				activityText: previewText ?? "Agent active",
 				toolName: retainedToolActivity.toolName,
 				toolInputSummary: retainedToolActivity.toolInputSummary,
-				finalMessage: previewText,
+				finalMessage: fullPreviewText,
 				hookEventName: "assistant_delta",
 				notificationType: null,
 				source: "cline-sdk",

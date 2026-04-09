@@ -1,14 +1,20 @@
-import { forwardRef, useImperativeHandle, type ReactNode } from "react";
-import { act } from "react";
+import { act, forwardRef, type ReactNode, useImperativeHandle } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CardDetailView } from "@/components/card-detail-view";
+import { LocalStorageKey } from "@/storage/local-storage-store";
 import { TERMINAL_THEME_COLORS } from "@/terminal/theme-colors";
 import type { BoardCard, BoardColumn, CardSelection } from "@/types";
 
 const mockUseRuntimeWorkspaceChanges = vi.fn();
-const { mockAgentTerminalPanel, mockClineAgentChatPanel, mockDiffViewerPanel, mockClineAppendToDraft, mockClineSendText } = vi.hoisted(() => ({
+const {
+	mockAgentTerminalPanel,
+	mockClineAgentChatPanel,
+	mockDiffViewerPanel,
+	mockClineAppendToDraft,
+	mockClineSendText,
+} = vi.hoisted(() => ({
 	mockAgentTerminalPanel: vi.fn((_props: { panelBackgroundColor?: string; terminalBackgroundColor?: string }) => null),
 	mockClineAgentChatPanel: vi.fn((..._args: unknown[]) => null),
 	mockDiffViewerPanel: vi.fn((..._args: unknown[]) => null),
@@ -18,6 +24,10 @@ const { mockAgentTerminalPanel, mockClineAgentChatPanel, mockDiffViewerPanel, mo
 
 vi.mock("react-hotkeys-hook", () => ({
 	useHotkeys: () => {},
+}));
+
+vi.mock("@/hooks/use-is-mobile", () => ({
+	useIsMobile: () => false,
 }));
 
 vi.mock("@/components/detail-panels/agent-terminal-panel", () => ({
@@ -50,7 +60,7 @@ vi.mock("@/components/detail-panels/file-tree-panel", () => ({
 	FileTreePanel: () => <div data-testid="file-tree-panel" />,
 }));
 
-vi.mock("@/components/resizable-bottom-pane", () => ({
+vi.mock("@/resize/resizable-bottom-pane", () => ({
 	ResizableBottomPane: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -60,6 +70,10 @@ vi.mock("@/runtime/use-runtime-workspace-changes", () => ({
 
 vi.mock("@/stores/workspace-metadata-store", () => ({
 	useTaskWorkspaceStateVersionValue: () => 0,
+}));
+
+vi.mock("@/resize/layout-customizations", () => ({
+	useLayoutResetEffect: () => {},
 }));
 
 function createCard(id: string): BoardCard {
@@ -117,12 +131,47 @@ function getLastMockFirstArg<T>(mockFn: { mock: { calls: unknown[][] } }): T {
 	return lastCall?.[0] as T;
 }
 
+function requireResizeSeparator(container: HTMLElement): HTMLElement {
+	const separator = container.querySelector('[aria-label="Resize agent and diff panels"]');
+	if (!(separator instanceof HTMLElement)) {
+		throw new Error("Expected a resize separator.");
+	}
+	return separator;
+}
+
+function requireAgentPanel(container: HTMLElement): HTMLElement {
+	const separator = requireResizeSeparator(container);
+	const panel = separator.previousElementSibling;
+	if (!(panel instanceof HTMLElement)) {
+		throw new Error("Expected an agent panel element.");
+	}
+	return panel;
+}
+
+function requireDetailDiffSeparator(container: HTMLElement): HTMLElement {
+	const separator = container.querySelector('[aria-label="Resize detail diff panels"]');
+	if (!(separator instanceof HTMLElement)) {
+		throw new Error("Expected a detail diff resize separator.");
+	}
+	return separator;
+}
+
+function requireDetailDiffFileTreePanel(container: HTMLElement): HTMLElement {
+	const separator = requireDetailDiffSeparator(container);
+	const panel = separator.nextElementSibling;
+	if (!(panel instanceof HTMLElement)) {
+		throw new Error("Expected a detail diff file tree panel element.");
+	}
+	return panel;
+}
+
 describe("CardDetailView", () => {
 	let container: HTMLDivElement;
 	let root: Root;
 	let previousActEnvironment: boolean | undefined;
 
 	beforeEach(() => {
+		window.localStorage.clear();
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
 			.IS_REACT_ACT_ENVIRONMENT;
 		(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -314,6 +363,83 @@ describe("CardDetailView", () => {
 		expect(container.querySelector('[data-testid="agent-terminal-panel"]')).toBeNull();
 	});
 
+	it("shows cline chat panel when task session agentId is cline even if global agent is claude", async () => {
+		await act(async () => {
+			root.render(
+				<CardDetailView
+					selection={createSelection()}
+					currentProjectId="workspace-1"
+					selectedAgentId="claude"
+					sessionSummary={{
+						taskId: "task-1",
+						state: "running",
+						agentId: "cline",
+						workspacePath: null,
+						pid: null,
+						startedAt: null,
+						updatedAt: Date.now(),
+						lastOutputAt: null,
+						reviewReason: null,
+						exitCode: null,
+						lastHookAt: null,
+						latestHookActivity: null,
+						warningMessage: null,
+					}}
+					taskSessions={{}}
+					onSessionSummary={() => {}}
+					onCardSelect={() => {}}
+					onTaskDragEnd={() => {}}
+					onMoveToTrash={() => {}}
+					bottomTerminalOpen={false}
+					bottomTerminalTaskId={null}
+					bottomTerminalSummary={null}
+					onBottomTerminalClose={() => {}}
+				/>,
+			);
+		});
+
+		expect(container.querySelector('[data-testid="cline-agent-chat-panel"]')).toBeInstanceOf(HTMLDivElement);
+	});
+
+	it("shows terminal panel when task session agentId is claude even if global agent is cline", async () => {
+		await act(async () => {
+			root.render(
+				<CardDetailView
+					selection={createSelection()}
+					currentProjectId="workspace-1"
+					selectedAgentId="cline"
+					sessionSummary={{
+						taskId: "task-1",
+						state: "running",
+						agentId: "claude",
+						workspacePath: null,
+						pid: null,
+						startedAt: null,
+						updatedAt: Date.now(),
+						lastOutputAt: null,
+						reviewReason: null,
+						exitCode: null,
+						lastHookAt: null,
+						latestHookActivity: null,
+						warningMessage: null,
+					}}
+					taskSessions={{}}
+					onSessionSummary={() => {}}
+					onCardSelect={() => {}}
+					onTaskDragEnd={() => {}}
+					onMoveToTrash={() => {}}
+					bottomTerminalOpen={false}
+					bottomTerminalTaskId={null}
+					bottomTerminalSummary={null}
+					onBottomTerminalClose={() => {}}
+				/>,
+			);
+		});
+
+		expect(container.querySelector('[data-testid="cline-agent-chat-panel"]')).toBeNull();
+		expect(mockAgentTerminalPanel).toHaveBeenCalled();
+	});
+
 	it("uses surface-primary colors for the detail terminal panel", async () => {
 		await act(async () => {
 			root.render(
@@ -411,5 +537,162 @@ describe("CardDetailView", () => {
 
 		expect(onSendReviewComments).not.toHaveBeenCalled();
 		expect(mockClineSendText).toHaveBeenCalledWith("src/example.ts:8 | done\n> Ship this");
+	});
+
+	it("loads the saved agent-to-diff panel ratio from local storage", async () => {
+		window.localStorage.setItem(LocalStorageKey.DetailAgentPanelRatio, "0.62");
+
+		await act(async () => {
+			root.render(
+				<CardDetailView
+					selection={createSelection()}
+					currentProjectId="workspace-1"
+					sessionSummary={null}
+					taskSessions={{}}
+					onSessionSummary={() => {}}
+					onCardSelect={() => {}}
+					onTaskDragEnd={() => {}}
+					onMoveToTrash={() => {}}
+					bottomTerminalOpen={false}
+					bottomTerminalTaskId={null}
+					bottomTerminalSummary={null}
+					onBottomTerminalClose={() => {}}
+				/>,
+			);
+		});
+
+		expect(requireAgentPanel(container).style.width).toBe("62%");
+	});
+
+	it("persists the resized agent-to-diff panel ratio globally", async () => {
+		await act(async () => {
+			root.render(
+				<CardDetailView
+					selection={createSelection()}
+					currentProjectId="workspace-1"
+					sessionSummary={null}
+					taskSessions={{}}
+					onSessionSummary={() => {}}
+					onCardSelect={() => {}}
+					onTaskDragEnd={() => {}}
+					onMoveToTrash={() => {}}
+					bottomTerminalOpen={false}
+					bottomTerminalTaskId={null}
+					bottomTerminalSummary={null}
+					onBottomTerminalClose={() => {}}
+				/>,
+			);
+		});
+
+		const separator = requireResizeSeparator(container);
+		const dragHandle = separator.firstElementChild;
+		expect(dragHandle).toBeInstanceOf(HTMLDivElement);
+		if (!(dragHandle instanceof HTMLDivElement)) {
+			throw new Error("Expected a draggable resize handle.");
+		}
+
+		await act(async () => {
+			dragHandle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 160 }));
+		});
+		await act(async () => {
+			window.dispatchEvent(new MouseEvent("mousemove", { clientX: 320 }));
+			window.dispatchEvent(new MouseEvent("mouseup", { clientX: 320 }));
+		});
+
+		const savedRatioRaw = window.localStorage.getItem(LocalStorageKey.DetailAgentPanelRatio);
+		expect(savedRatioRaw).not.toBeNull();
+		const savedRatio = Number(savedRatioRaw);
+		expect(savedRatio).toBeGreaterThan(0.4);
+		expect(savedRatio).toBeLessThanOrEqual(0.75);
+		expect(requireAgentPanel(container).style.width).not.toBe("40%");
+	});
+
+	it("keeps the saved divider position after leaving and reopening task detail", async () => {
+		const renderDetail = async (): Promise<void> => {
+			await act(async () => {
+				root.render(
+					<CardDetailView
+						selection={createSelection()}
+						currentProjectId="workspace-1"
+						sessionSummary={null}
+						taskSessions={{}}
+						onSessionSummary={() => {}}
+						onCardSelect={() => {}}
+						onTaskDragEnd={() => {}}
+						onMoveToTrash={() => {}}
+						bottomTerminalOpen={false}
+						bottomTerminalTaskId={null}
+						bottomTerminalSummary={null}
+						onBottomTerminalClose={() => {}}
+					/>,
+				);
+			});
+		};
+
+		await renderDetail();
+
+		const separator = requireResizeSeparator(container);
+		const dragHandle = separator.firstElementChild;
+		expect(dragHandle).toBeInstanceOf(HTMLDivElement);
+		if (!(dragHandle instanceof HTMLDivElement)) {
+			throw new Error("Expected a draggable resize handle.");
+		}
+
+		await act(async () => {
+			dragHandle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 200 }));
+			window.dispatchEvent(new MouseEvent("mouseup", { clientX: 420 }));
+		});
+
+		const expectedRatio = window.localStorage.getItem(LocalStorageKey.DetailAgentPanelRatio);
+		expect(expectedRatio).not.toBeNull();
+
+		await act(async () => {
+			root.unmount();
+			root = createRoot(container);
+		});
+
+		await renderDetail();
+
+		const restoredWidth = requireAgentPanel(container).style.width;
+		const restoredRatio = Number.parseFloat(restoredWidth) / 100;
+		expect(restoredRatio).toBeCloseTo(Number(expectedRatio), 2);
+	});
+
+	it("uses separate file-tree ratios for collapsed and expanded diff layouts", async () => {
+		window.localStorage.setItem(LocalStorageKey.DetailDiffFileTreePanelRatio, "0.42");
+		window.localStorage.setItem(LocalStorageKey.DetailExpandedDiffFileTreePanelRatio, "0.18");
+
+		await act(async () => {
+			root.render(
+				<CardDetailView
+					selection={createSelection()}
+					currentProjectId="workspace-1"
+					sessionSummary={null}
+					taskSessions={{}}
+					onSessionSummary={() => {}}
+					onCardSelect={() => {}}
+					onTaskDragEnd={() => {}}
+					onMoveToTrash={() => {}}
+					bottomTerminalOpen={false}
+					bottomTerminalTaskId={null}
+					bottomTerminalSummary={null}
+					onBottomTerminalClose={() => {}}
+				/>,
+			);
+		});
+
+		expect(requireDetailDiffFileTreePanel(container).style.flex).toBe("0 0 42%");
+
+		const expandButton = container.querySelector('button[aria-label="Expand split diff view"]');
+		expect(expandButton).toBeInstanceOf(HTMLButtonElement);
+		if (!(expandButton instanceof HTMLButtonElement)) {
+			throw new Error("Expected an expand diff button.");
+		}
+
+		await act(async () => {
+			expandButton.click();
+		});
+
+		expect(requireDetailDiffFileTreePanel(container).style.flex).toBe("0 0 18%");
 	});
 });

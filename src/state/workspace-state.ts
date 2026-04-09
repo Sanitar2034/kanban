@@ -15,10 +15,10 @@ import {
 	runtimeBoardDataSchema,
 	runtimeTaskSessionSummarySchema,
 	runtimeWorkspaceStateSaveRequestSchema,
-} from "../core/api-contract.js";
-import { createGitProcessEnv } from "../core/git-process-env.js";
-import { updateTaskDependencies } from "../core/task-board-mutations.js";
-import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system.js";
+} from "../core/api-contract";
+import { createGitProcessEnv } from "../core/git-process-env";
+import { updateTaskDependencies } from "../core/task-board-mutations";
+import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 
 const RUNTIME_HOME_PARENT_DIR = ".cline";
 const RUNTIME_HOME_DIR = "kanban";
@@ -298,6 +298,10 @@ async function readWorkspaceBoard(workspaceId: string): Promise<RuntimeBoardData
 	return updateTaskDependencies(
 		parsePersistedStateFile(boardPath, BOARD_FILENAME, rawBoard, runtimeBoardDataSchema, createEmptyBoard()),
 	);
+}
+
+export async function loadWorkspaceBoardById(workspaceId: string): Promise<RuntimeBoardData> {
+	return await readWorkspaceBoard(workspaceId);
 }
 
 async function readWorkspaceSessions(workspaceId: string): Promise<Record<string, RuntimeTaskSessionSummary>> {

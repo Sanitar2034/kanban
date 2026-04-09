@@ -244,10 +244,7 @@ function parseGitDiffHunks(diffOutput: string): GitLineChange[] {
 	return changes;
 }
 
-export async function getFileGitLineStatus(
-	cwd: string,
-	filePath: string,
-): Promise<RuntimeFileGitLineStatusResponse> {
+export async function getFileGitLineStatus(cwd: string, filePath: string): Promise<RuntimeFileGitLineStatusResponse> {
 	try {
 		const diffOutput = await runGitDiff(cwd, filePath);
 		const changes = parseGitDiffHunks(diffOutput);

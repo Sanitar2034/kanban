@@ -11,7 +11,12 @@ export interface FileSearchDialogProps {
 	onSelectFile: (path: string) => void;
 }
 
-export function FileSearchDialog({ isOpen, onClose, workspaceId, onSelectFile }: FileSearchDialogProps): React.ReactElement | null {
+export function FileSearchDialog({
+	isOpen,
+	onClose,
+	workspaceId,
+	onSelectFile,
+}: FileSearchDialogProps): React.ReactElement | null {
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<{ path: string; name: string }[]>([]);
 	const [selectedIndex, setSelectedIndex] = useState(0);
@@ -105,31 +110,29 @@ export function FileSearchDialog({ isOpen, onClose, workspaceId, onSelectFile }:
 					/>
 				</div>
 				<div className="max-h-[360px] overflow-y-auto">
-					{results.length > 0
-						? results.map((result, index) => (
-								<button
-									key={result.path}
-									type="button"
-									className={`flex flex-col w-full text-left px-3 py-1.5 text-sm cursor-pointer border-0 ${index === selectedIndex ? "bg-accent/15" : "hover:bg-surface-3"}`}
-									onClick={() => {
-										onSelectFile(result.path);
-										onClose();
-									}}
-								>
-									<span className="flex items-center gap-1.5 text-text-primary">
-										<FileTypeIcon name={result.name} size={14} />
-										{result.name}
-									</span>
-									<span className="text-[11px] text-text-tertiary font-mono ml-5 truncate">
-										{result.path}
-									</span>
-								</button>
-							))
-						: query && !isSearching
-							? <div className="p-4 text-center text-text-tertiary text-sm">No files found</div>
-							: !query
-								? <div className="p-4 text-center text-text-tertiary text-sm">Type to search…</div>
-								: null}
+					{results.length > 0 ? (
+						results.map((result, index) => (
+							<button
+								key={result.path}
+								type="button"
+								className={`flex flex-col w-full text-left px-3 py-1.5 text-sm cursor-pointer border-0 ${index === selectedIndex ? "bg-accent/15" : "hover:bg-surface-3"}`}
+								onClick={() => {
+									onSelectFile(result.path);
+									onClose();
+								}}
+							>
+								<span className="flex items-center gap-1.5 text-text-primary">
+									<FileTypeIcon name={result.name} size={14} />
+									{result.name}
+								</span>
+								<span className="text-[11px] text-text-tertiary font-mono ml-5 truncate">{result.path}</span>
+							</button>
+						))
+					) : query && !isSearching ? (
+						<div className="p-4 text-center text-text-tertiary text-sm">No files found</div>
+					) : !query ? (
+						<div className="p-4 text-center text-text-tertiary text-sm">Type to search…</div>
+					) : null}
 				</div>
 			</div>
 		</div>

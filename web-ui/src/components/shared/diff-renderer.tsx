@@ -1,5 +1,5 @@
 import { diffLines, diffWordsWithSpace } from "diff";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronsUpDown, ChevronUp } from "lucide-react";
 import Prism from "prismjs";
 import "prismjs/components/prism-bash";
 import "prismjs/components/prism-c";
@@ -28,8 +28,10 @@ import { useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-const CONTEXT_RADIUS = 3;
-const MIN_COLLAPSE_LINES = 8;
+export const CONTEXT_RADIUS = 3;
+export const MIN_COLLAPSE_LINES = 8;
+export const INCREMENTAL_EXPAND_STEP = 20;
+export const INCREMENTAL_EXPAND_THRESHOLD = 40;
 
 export interface InlineDiffSegment {
 	key: string;
@@ -51,6 +53,8 @@ export interface CollapsedContextBlock {
 	rows: UnifiedDiffRow[];
 	expanded: boolean;
 }
+
+export type ExpandedBlockState = Record<string, boolean | { top: number; bottom: number }>;
 
 export type DiffDisplayItem =
 	| { type: "row"; row: UnifiedDiffRow }
@@ -191,7 +195,11 @@ export function buildUnifiedDiffRows(oldText: string | null | undefined, newText
 	const rows: UnifiedDiffRow[] = [];
 	let oldLine = 1;
 	let newLine = 1;
-	const changes = diffLines(oldText ?? "", newText, { ignoreWhitespace: false });
+	const changes = diffLines(oldText ?? "", newText, {
+		ignoreWhitespace: false,
+		stripTrailingCr: true,
+		ignoreNewlineAtEof: true,
+	});
 
 	for (let index = 0; index < changes.length; index += 1) {
 		const change = changes[index];
@@ -205,40 +213,55 @@ export function buildUnifiedDiffRows(oldText: string | null | undefined, newText
 			const addedLines = toLines(nextChange.value);
 			const pairCount = Math.max(removedLines.length, addedLines.length);
 
+			const removedRows: UnifiedDiffRow[] = [];
+			const addedRows: UnifiedDiffRow[] = [];
+			let localOldLine = oldLine;
+			let localNewLine = newLine;
+
 			for (let pairIndex = 0; pairIndex < pairCount; pairIndex += 1) {
 				const removedLine = removedLines[pairIndex];
 				const addedLine = addedLines[pairIndex];
 
 				if (removedLine != null && addedLine != null) {
 					const { oldSegments, newSegments } = buildModifiedSegments(removedLine, addedLine);
-					rows.push({
-						key: `m-old-${oldLine}-${newLine}`,
-						lineNumber: oldLine,
+					removedRows.push({
+						key: `m-old-${localOldLine}-${localNewLine}`,
+						lineNumber: localOldLine,
 						variant: "removed",
 						text: removedLine,
 						segments: oldSegments,
 					});
-					rows.push({
-						key: `m-new-${oldLine}-${newLine}`,
-						lineNumber: newLine,
+					addedRows.push({
+						key: `m-new-${localOldLine}-${localNewLine}`,
+						lineNumber: localNewLine,
 						variant: "added",
 						text: addedLine,
 						segments: newSegments,
 					});
-					oldLine += 1;
-					newLine += 1;
-					continue;
-				}
-				if (removedLine != null) {
-					rows.push({ key: `o-${oldLine}`, lineNumber: oldLine, variant: "removed", text: removedLine });
-					oldLine += 1;
-					continue;
-				}
-				if (addedLine != null) {
-					rows.push({ key: `n-${newLine}`, lineNumber: newLine, variant: "added", text: addedLine });
-					newLine += 1;
+					localOldLine += 1;
+					localNewLine += 1;
+				} else if (removedLine != null) {
+					removedRows.push({
+						key: `o-${localOldLine}`,
+						lineNumber: localOldLine,
+						variant: "removed",
+						text: removedLine,
+					});
+					localOldLine += 1;
+				} else if (addedLine != null) {
+					addedRows.push({
+						key: `n-${localNewLine}`,
+						lineNumber: localNewLine,
+						variant: "added",
+						text: addedLine,
+					});
+					localNewLine += 1;
 				}
 			}
+
+			rows.push(...removedRows, ...addedRows);
+			oldLine = localOldLine;
+			newLine = localNewLine;
 			index += 1;
 			continue;
 		}
@@ -301,10 +324,64 @@ export function parsePatchToRows(patch: string): UnifiedDiffRow[] {
 			newLine++;
 		}
 	}
-	return rows;
+	return enrichRowsWithInlineSegments(rows);
 }
 
-export function buildDisplayItems(rows: UnifiedDiffRow[], expandedBlocks: Record<string, boolean>): DiffDisplayItem[] {
+/**
+ * Post-process rows to add word-level inline diff segments for adjacent
+ * removed/added blocks (e.g. rows parsed from a git patch which lack them).
+ */
+function enrichRowsWithInlineSegments(rows: UnifiedDiffRow[]): UnifiedDiffRow[] {
+	const result: UnifiedDiffRow[] = [];
+	let index = 0;
+
+	while (index < rows.length) {
+		const row = rows[index]!;
+		if (row.variant !== "removed") {
+			result.push(row);
+			index += 1;
+			continue;
+		}
+
+		// Collect contiguous removed rows
+		const removedStart = index;
+		while (index < rows.length && rows[index]!.variant === "removed") {
+			index += 1;
+		}
+		const removedBlock = rows.slice(removedStart, index);
+
+		// Collect contiguous added rows immediately following
+		const addedStart = index;
+		while (index < rows.length && rows[index]!.variant === "added") {
+			index += 1;
+		}
+		const addedBlock = rows.slice(addedStart, index);
+
+		if (addedBlock.length === 0) {
+			// Pure deletion — no pairing possible
+			result.push(...removedBlock);
+			continue;
+		}
+
+		// Pair positionally and compute inline segments
+		const pairCount = Math.min(removedBlock.length, addedBlock.length);
+		for (let pi = 0; pi < pairCount; pi += 1) {
+			const removedRow = removedBlock[pi]!;
+			const addedRow = addedBlock[pi]!;
+			if (!removedRow.segments && !addedRow.segments) {
+				const { oldSegments, newSegments } = buildModifiedSegments(removedRow.text, addedRow.text);
+				removedBlock[pi] = { ...removedRow, segments: oldSegments };
+				addedBlock[pi] = { ...addedRow, segments: newSegments };
+			}
+		}
+
+		result.push(...removedBlock, ...addedBlock);
+	}
+
+	return result;
+}
+
+export function buildDisplayItems(rows: UnifiedDiffRow[], expandedBlocks: ExpandedBlockState): DiffDisplayItem[] {
 	const changedIndices: number[] = [];
 	for (let index = 0; index < rows.length; index += 1) {
 		if (rows[index]?.variant !== "context") {
@@ -357,35 +434,57 @@ export function buildDisplayItems(rows: UnifiedDiffRow[], expandedBlocks: Record
 		}
 
 		const blockId = `ctx-${start}-${index - 1}`;
+		const blockState = expandedBlocks[blockId];
+
+		if (blockState === true) {
+			// Fully expanded (legacy boolean toggle)
+			items.push({
+				type: "collapsed",
+				block: { id: blockId, count: blockRows.length, rows: blockRows, expanded: true },
+			});
+			continue;
+		}
+
+		if (typeof blockState === "object" && blockState !== null) {
+			const topReveal = Math.min(blockState.top, blockRows.length);
+			const bottomReveal = Math.min(blockState.bottom, blockRows.length - topReveal);
+
+			// Rows revealed from the top
+			for (let ri = 0; ri < topReveal; ri += 1) {
+				const row = blockRows[ri];
+				if (row) {
+					items.push({ type: "row", row });
+				}
+			}
+
+			// Remaining collapsed middle
+			const remainingStart = topReveal;
+			const remainingEnd = blockRows.length - bottomReveal;
+			if (remainingEnd > remainingStart) {
+				const remainingRows = blockRows.slice(remainingStart, remainingEnd);
+				items.push({
+					type: "collapsed",
+					block: { id: blockId, count: remainingRows.length, rows: remainingRows, expanded: false },
+				});
+			}
+
+			// Rows revealed from the bottom
+			for (let ri = blockRows.length - bottomReveal; ri < blockRows.length; ri += 1) {
+				const row = blockRows[ri];
+				if (row) {
+					items.push({ type: "row", row });
+				}
+			}
+			continue;
+		}
+
+		// Not expanded at all
 		items.push({
 			type: "collapsed",
-			block: { id: blockId, count: blockRows.length, rows: blockRows, expanded: expandedBlocks[blockId] === true },
+			block: { id: blockId, count: blockRows.length, rows: blockRows, expanded: false },
 		});
 	}
 	return items;
-}
-
-export function countAddedRemoved(
-	oldText: string | null | undefined,
-	newText: string,
-): { added: number; removed: number } {
-	let added = 0;
-	let removed = 0;
-	const changes = diffLines(oldText ?? "", newText, { ignoreWhitespace: false });
-	for (const change of changes) {
-		if (!change) {
-			continue;
-		}
-		const lineCount = toLines(change.value).length;
-		if (change.added) {
-			added += lineCount;
-			continue;
-		}
-		if (change.removed) {
-			removed += lineCount;
-		}
-	}
-	return { added, removed };
 }
 
 export function truncatePathMiddle(path: string, maxLength = 64): string {
@@ -412,12 +511,7 @@ export function DiffRowText({
 }): React.ReactElement {
 	if (!row.segments) {
 		if (highlightedLineHtml) {
-			return (
-				<span
-					className="font-mono kb-diff-text"
-					dangerouslySetInnerHTML={{ __html: highlightedLineHtml }}
-				/>
-			);
+			return <span className="font-mono kb-diff-text" dangerouslySetInnerHTML={{ __html: highlightedLineHtml }} />;
 		}
 		return <span className="font-mono kb-diff-text">{row.text || " "}</span>;
 	}
@@ -451,15 +545,133 @@ export function DiffRowText({
 	);
 }
 
+export function CollapsedBlockControls({
+	block,
+	onExpandTop,
+	onExpandBottom,
+	onExpandAll,
+}: {
+	block: CollapsedContextBlock;
+	onExpandTop: (id: string, count: number) => void;
+	onExpandBottom: (id: string, count: number) => void;
+	onExpandAll: (id: string) => void;
+}): React.ReactElement {
+	const count = block.count;
+
+	if (block.expanded) {
+		return (
+			<Button
+				variant="ghost"
+				size="sm"
+				fill
+				icon={<ChevronDown size={12} />}
+				className="justify-start text-xs rounded-none my-0.5 !bg-surface-0"
+				onClick={() => onExpandAll(block.id)}
+			>
+				{`Hide ${count} unmodified lines`}
+			</Button>
+		);
+	}
+
+	if (count < INCREMENTAL_EXPAND_THRESHOLD) {
+		return (
+			<Button
+				variant="ghost"
+				size="sm"
+				fill
+				icon={<ChevronsUpDown size={12} />}
+				className="justify-start text-xs rounded-none my-0.5 !bg-surface-0"
+				onClick={() => onExpandAll(block.id)}
+			>
+				{`Show ${count} unmodified lines`}
+			</Button>
+		);
+	}
+
+	const step = INCREMENTAL_EXPAND_STEP;
+
+	return (
+		<div className="flex items-center gap-0.5 my-0.5">
+			<Button
+				variant="ghost"
+				size="sm"
+				icon={<ChevronDown size={12} />}
+				className="justify-start text-xs rounded-none !bg-surface-0"
+				onClick={() => onExpandTop(block.id, step)}
+			>
+				{`↓ ${step} lines`}
+			</Button>
+			<Button
+				variant="ghost"
+				size="sm"
+				icon={<ChevronsUpDown size={12} />}
+				className="justify-start text-xs rounded-none !bg-surface-0 flex-1"
+				onClick={() => onExpandAll(block.id)}
+			>
+				{`Show all ${count} lines`}
+			</Button>
+			<Button
+				variant="ghost"
+				size="sm"
+				icon={<ChevronUp size={12} />}
+				className="justify-start text-xs rounded-none !bg-surface-0"
+				onClick={() => onExpandBottom(block.id, step)}
+			>
+				{`↑ ${step} lines`}
+			</Button>
+		</div>
+	);
+}
+
+export function useIncrementalExpand(): {
+	expandedBlocks: ExpandedBlockState;
+	expandTop: (id: string, count: number) => void;
+	expandBottom: (id: string, count: number) => void;
+	expandAll: (id: string) => void;
+} {
+	const [expandedBlocks, setExpandedBlocks] = useState<ExpandedBlockState>({});
+
+	const expandTop = useCallback((id: string, count: number) => {
+		setExpandedBlocks((prev) => {
+			const current = prev[id];
+			if (typeof current === "object" && current !== null) {
+				return { ...prev, [id]: { top: current.top + count, bottom: current.bottom } };
+			}
+			return { ...prev, [id]: { top: count, bottom: 0 } };
+		});
+	}, []);
+
+	const expandBottom = useCallback((id: string, count: number) => {
+		setExpandedBlocks((prev) => {
+			const current = prev[id];
+			if (typeof current === "object" && current !== null) {
+				return { ...prev, [id]: { top: current.top, bottom: current.bottom + count } };
+			}
+			return { ...prev, [id]: { top: 0, bottom: count } };
+		});
+	}, []);
+
+	const expandAll = useCallback((id: string) => {
+		setExpandedBlocks((prev) => {
+			const current = prev[id];
+			// If it's already fully expanded (true), toggle it off
+			if (current === true) {
+				const next = { ...prev };
+				delete next[id];
+				return next;
+			}
+			return { ...prev, [id]: true };
+		});
+	}, []);
+
+	return { expandedBlocks, expandTop, expandBottom, expandAll };
+}
+
 export function ReadOnlyUnifiedDiff({ rows, path }: { rows: UnifiedDiffRow[]; path: string }): React.ReactElement {
-	const [expandedBlocks, setExpandedBlocks] = useState<Record<string, boolean>>({});
+	const { expandedBlocks, expandTop, expandBottom, expandAll } = useIncrementalExpand();
 	const prismLanguage = useMemo(() => resolvePrismLanguage(path), [path]);
 	const prismGrammar = useMemo(() => resolvePrismGrammar(prismLanguage), [prismLanguage]);
 	const displayItems = useMemo(() => buildDisplayItems(rows, expandedBlocks), [expandedBlocks, rows]);
-
-	const toggleBlock = useCallback((id: string) => {
-		setExpandedBlocks((prev) => ({ ...prev, [id]: !prev[id] }));
-	}, []);
 
 	const renderRow = (row: UnifiedDiffRow): React.ReactElement => {
 		const baseClass =
@@ -493,16 +705,12 @@ export function ReadOnlyUnifiedDiff({ rows, path }: { rows: UnifiedDiffRow[]; pa
 				}
 				return (
 					<div key={item.block.id}>
-						<Button
-							variant="ghost"
-							size="sm"
-							fill
-							icon={item.block.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-							className="justify-start text-xs rounded-none mt-0.5 mb-0.5"
-							onClick={() => toggleBlock(item.block.id)}
-						>
-							{`${item.block.expanded ? "Hide" : "Show"} ${item.block.count} unmodified lines`}
-						</Button>
+						<CollapsedBlockControls
+							block={item.block}
+							onExpandTop={expandTop}
+							onExpandBottom={expandBottom}
+							onExpandAll={expandAll}
+						/>
 						{item.block.expanded ? item.block.rows.map((row) => renderRow(row)) : null}
 					</div>
 				);

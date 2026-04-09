@@ -4,29 +4,11 @@
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
 import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixSwitch from "@radix-ui/react-switch";
-import {
-	Check,
-	ChevronDown,
-	Circle,
-	CircleDot,
-	ExternalLink,
-	Plus,
-	Settings,
-	X,
-} from "lucide-react";
-import {
-	getRuntimeAgentCatalogEntry,
-	getRuntimeLaunchSupportedAgentCatalog,
-} from "@runtime-agent-catalog";
+import { getRuntimeAgentCatalogEntry, getRuntimeLaunchSupportedAgentCatalog } from "@runtime-agent-catalog";
 import { areRuntimeProjectShortcutsEqual } from "@runtime-shortcuts";
+import { Check, ChevronDown, Circle, CircleDot, ExternalLink, Plus, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
-import { useRuntimeSettingsClineMcpController } from "@/hooks/use-runtime-settings-cline-mcp-controller";
 import { ClineSetupSection } from "@/components/shared/cline-setup-section";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/components/ui/cn";
-import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import {
 	getRuntimeShortcutIconComponent,
 	getRuntimeShortcutPickerOption,
@@ -34,9 +16,18 @@ import {
 	type RuntimeShortcutIconOption,
 	type RuntimeShortcutPickerIconId,
 } from "@/components/shared/runtime-shortcut-icons";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/components/ui/cn";
+import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
+import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
+import { useRuntimeSettingsClineMcpController } from "@/hooks/use-runtime-settings-cline-mcp-controller";
+import { previewThemeId, readStoredThemeId, saveThemeId, THEMES, type ThemeId } from "@/hooks/use-theme";
+import { useLayoutCustomizations } from "@/resize/layout-customizations";
+import { openFileOnHost } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
+	RuntimeClineMcpServerAuthStatus,
 	RuntimeConfigResponse,
 	RuntimeProjectShortcut,
 } from "@/runtime/types";
@@ -46,7 +37,7 @@ import {
 	getBrowserNotificationPermission,
 	requestBrowserNotificationPermission,
 } from "@/utils/notification-permission";
-import { toFileUrl } from "@/utils/file-url";
+import { formatPathForDisplay } from "@/utils/path-display";
 import { useUnmount, useWindowEvent } from "@/utils/react-use";
 
 interface RuntimeSettingsAgentRowModel {
@@ -83,7 +74,7 @@ const GIT_PROMPT_VARIANT_OPTIONS: Array<{ value: TaskGitAction; label: string }>
 
 export type RuntimeSettingsSection = "shortcuts";
 
-const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["cline", "claude", "codex"];
+const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["cline", "claude", "codex", "droid"];
 
 function getShortcutIconOption(icon: string | undefined): RuntimeShortcutIconOption {
 	return getRuntimeShortcutPickerOption(icon);
@@ -154,7 +145,10 @@ function AgentRow({
 				{isSelected ? (
 					<CircleDot size={16} className="text-accent mt-0.5 shrink-0" />
 				) : (
-					<Circle size={16} className={cn("mt-0.5 shrink-0", !isInstalled ? "text-text-tertiary" : "text-text-secondary")} />
+					<Circle
+						size={16}
+						className={cn("mt-0.5 shrink-0", !isInstalled ? "text-text-tertiary" : "text-text-secondary")}
+					/>
 				)}
 				<div className="min-w-0">
 					<div className="flex items-center gap-2">
@@ -170,9 +164,7 @@ function AgentRow({
 						) : null}
 					</div>
 					{agent.command ? (
-						<p className="text-text-secondary font-mono text-xs mt-0.5 m-0">
-							{agent.command}
-						</p>
+						<p className="text-text-secondary font-mono text-xs mt-0.5 m-0">{agent.command}</p>
 					) : null}
 				</div>
 			</div>
@@ -187,7 +179,9 @@ function AgentRow({
 					Install
 				</a>
 			) : !isNativeCline && agent.installed === false ? (
-				<Button size="sm" disabled>Install</Button>
+				<Button size="sm" disabled>
+					Install
+				</Button>
 			) : null}
 		</div>
 	);
@@ -290,6 +284,7 @@ export function RuntimeSettingsDialog({
 	open,
 	workspaceId,
 	initialConfig = null,
+	liveMcpAuthStatuses = null,
 	onOpenChange,
 	onSaved,
 	initialSection,
@@ -297,14 +292,18 @@ export function RuntimeSettingsDialog({
 	open: boolean;
 	workspaceId: string | null;
 	initialConfig?: RuntimeConfigResponse | null;
+	liveMcpAuthStatuses?: RuntimeClineMcpServerAuthStatus[] | null;
 	onOpenChange: (open: boolean) => void;
 	onSaved?: () => void;
 	initialSection?: RuntimeSettingsSection | null;
 }): React.ReactElement {
 	const { config, isLoading, isSaving, save } = useRuntimeConfig(open, workspaceId, initialConfig);
+	const { resetLayoutCustomizations } = useLayoutCustomizations();
 	const [selectedAgentId, setSelectedAgentId] = useState<RuntimeAgentId>("claude");
 	const [agentAutonomousModeEnabled, setAgentAutonomousModeEnabled] = useState(true);
 	const [readyForReviewNotificationsEnabled, setReadyForReviewNotificationsEnabled] = useState(true);
+	const [initialThemeId, setInitialThemeId] = useState<ThemeId>(readStoredThemeId);
+	const [draftThemeId, setDraftThemeId] = useState<ThemeId>(readStoredThemeId);
 	const [notificationPermission, setNotificationPermission] = useState<BrowserNotificationPermission>("unsupported");
 	const [shortcuts, setShortcuts] = useState<RuntimeProjectShortcut[]>([]);
 	const [commitPromptTemplate, setCommitPromptTemplate] = useState("");
@@ -351,9 +350,7 @@ export function RuntimeSettingsDialog({
 				binary: agent.binary,
 				installed: agent.id === "cline" ? true : null,
 			}));
-		const orderIndexByAgentId = new Map(
-			SETTINGS_AGENT_ORDER.map((agentId, index) => [agentId, index] as const),
-		);
+		const orderIndexByAgentId = new Map(SETTINGS_AGENT_ORDER.map((agentId, index) => [agentId, index] as const));
 		const orderedAgents = [...agents].sort((left, right) => {
 			const leftOrderIndex = orderIndexByAgentId.get(left.id) ?? Number.MAX_SAFE_INTEGER;
 			const rightOrderIndex = orderIndexByAgentId.get(right.id) ?? Number.MAX_SAFE_INTEGER;
@@ -384,6 +381,7 @@ export function RuntimeSettingsDialog({
 		open,
 		workspaceId,
 		selectedAgentId,
+		liveAuthStatuses: liveMcpAuthStatuses,
 	});
 	const hasUnsavedChanges = useMemo(() => {
 		if (!config) {
@@ -402,6 +400,9 @@ export function RuntimeSettingsDialog({
 			return true;
 		}
 		if (clineMcpSettings.hasUnsavedChanges) {
+			return true;
+		}
+		if (draftThemeId !== initialThemeId) {
 			return true;
 		}
 		if (!areRuntimeProjectShortcutsEqual(shortcuts, initialShortcuts)) {
@@ -423,12 +424,14 @@ export function RuntimeSettingsDialog({
 		clineSettings.hasUnsavedChanges,
 		commitPromptTemplate,
 		config,
+		draftThemeId,
 		initialAgentAutonomousModeEnabled,
 		initialCommitPromptTemplate,
 		initialOpenPrPromptTemplate,
 		initialReadyForReviewNotificationsEnabled,
 		initialSelectedAgentId,
 		initialShortcuts,
+		initialThemeId,
 		openPrPromptTemplate,
 		readyForReviewNotificationsEnabled,
 		selectedAgentId,
@@ -456,6 +459,15 @@ export function RuntimeSettingsDialog({
 		fallbackAgentId,
 		open,
 	]);
+
+	useEffect(() => {
+		if (!open) {
+			return;
+		}
+		const persistedThemeId = readStoredThemeId();
+		setInitialThemeId(persistedThemeId);
+		setDraftThemeId(persistedThemeId);
+	}, [open]);
 
 	useEffect(() => {
 		if (!open) {
@@ -579,8 +591,12 @@ export function RuntimeSettingsDialog({
 			setSaveError("Could not save runtime settings. Check runtime logs and try again.");
 			return;
 		}
+		if (draftThemeId !== initialThemeId) {
+			saveThemeId(draftThemeId);
+			setInitialThemeId(draftThemeId);
+		}
 		onSaved?.();
-		onOpenChange(false);
+		handleDialogOpenChange(false);
 	};
 
 	const handleRequestPermission = () => {
@@ -590,8 +606,34 @@ export function RuntimeSettingsDialog({
 		})();
 	};
 
+	const handleOpenFilePath = useCallback(
+		(filePath: string) => {
+			setSaveError(null);
+			void openFileOnHost(workspaceId, filePath).catch((error) => {
+				const message = error instanceof Error ? error.message : String(error);
+				setSaveError(`Could not open file on host: ${message}`);
+			});
+		},
+		[workspaceId],
+	);
+
+	const handleDialogOpenChange = useCallback(
+		(nextOpen: boolean) => {
+			if (!nextOpen) {
+				const persistedThemeId = readStoredThemeId();
+				if (draftThemeId !== persistedThemeId) {
+					previewThemeId(persistedThemeId);
+				}
+				setDraftThemeId(persistedThemeId);
+				setInitialThemeId(persistedThemeId);
+			}
+			onOpenChange(nextOpen);
+		},
+		[draftThemeId, onOpenChange],
+	);
+
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog open={open} onOpenChange={handleDialogOpenChange}>
 			<DialogHeader title="Settings" icon={<Settings size={16} />} />
 			<DialogBody>
 				<h5 className="font-semibold text-text-primary m-0">Global</h5>
@@ -600,17 +642,17 @@ export function RuntimeSettingsDialog({
 					style={{ cursor: config?.globalConfigPath ? "pointer" : undefined }}
 					onClick={() => {
 						if (config?.globalConfigPath) {
-							window.open(toFileUrl(config.globalConfigPath));
+							handleOpenFilePath(config.globalConfigPath);
 						}
 					}}
 				>
-					{config?.globalConfigPath ?? "~/.cline/kanban/config.json"}
-					{config?.globalConfigPath ? (
-						<ExternalLink size={12} className="inline ml-1.5 align-middle" />
-					) : null}
+					{config?.globalConfigPath
+						? formatPathForDisplay(config.globalConfigPath)
+						: "~/.cline/kanban/config.json"}
+					{config?.globalConfigPath ? <ExternalLink size={12} className="inline ml-1.5 align-middle" /> : null}
 				</p>
 
-				<h6 className="font-semibold text-text-primary mt-3 mb-0">Agent runtime</h6>
+				<h6 className="font-semibold text-text-primary mt-3 mb-0">Agent</h6>
 				{displayedAgents.map((agent) => (
 					<AgentRow
 						key={agent.id}
@@ -621,11 +663,12 @@ export function RuntimeSettingsDialog({
 					/>
 				))}
 				{config === null ? (
-					<p className="text-text-secondary py-2">
-						Checking which CLIs are installed for this project...
-					</p>
+					<p className="text-text-secondary py-2">Checking which CLIs are installed for this project...</p>
 				) : null}
-				<label htmlFor={bypassPermissionsCheckboxId} className="flex items-center gap-2 text-[13px] text-text-primary mt-2 cursor-pointer">
+				<label
+					htmlFor={bypassPermissionsCheckboxId}
+					className="flex items-center gap-2 text-[13px] text-text-primary mt-2 cursor-pointer"
+				>
 					<RadixCheckbox.Root
 						id={bypassPermissionsCheckboxId}
 						aria-label="Enable bypass permissions flag"
@@ -649,6 +692,7 @@ export function RuntimeSettingsDialog({
 						controller={clineSettings}
 						mcpController={clineMcpSettings}
 						controlsDisabled={controlsDisabled}
+						workspaceId={workspaceId}
 						onError={setSaveError}
 					/>
 				) : null}
@@ -668,7 +712,9 @@ export function RuntimeSettingsDialog({
 						style={{ minWidth: 220 }}
 					>
 						{GIT_PROMPT_VARIANT_OPTIONS.map((option) => (
-							<option key={option.value} value={option.value}>{option.label}</option>
+							<option key={option.value} value={option.value}>
+								{option.label}
+							</option>
 						))}
 					</select>
 					<Button
@@ -730,20 +776,56 @@ export function RuntimeSettingsDialog({
 					) : null}
 				</div>
 
+				<h6 className="font-semibold text-text-primary mt-4 mb-2">Theme</h6>
+				<div className="flex flex-wrap gap-2">
+					{THEMES.map((theme) => (
+						<button
+							key={theme.id}
+							type="button"
+							aria-label={theme.label}
+							title={theme.label}
+							onClick={() => {
+								setDraftThemeId(theme.id);
+								previewThemeId(theme.id);
+							}}
+							className={cn(
+								"w-7 h-7 rounded-full cursor-pointer hover:opacity-80",
+								draftThemeId === theme.id ? "border-2 border-white" : "border-2",
+							)}
+							style={{
+								backgroundColor: theme.accent,
+								borderColor:
+									draftThemeId === theme.id ? "white" : `color-mix(in srgb, ${theme.accent} 50%, black)`,
+							}}
+						/>
+					))}
+				</div>
+				<p className="text-text-secondary text-[13px] mt-1.5 mb-0">
+					{THEMES.find((t) => t.id === draftThemeId)?.label ?? "Default"} theme
+				</p>
+
+				<h6 className="font-semibold text-text-primary mt-4 mb-2">Layout</h6>
+				<Button size="sm" onClick={resetLayoutCustomizations}>
+					Reset layout
+				</Button>
+				<p className="text-text-secondary text-[13px] mt-2 mb-0">
+					Reset sidebar, split pane, and terminal resize customizations back to their defaults.
+				</p>
+
 				<h5 className="font-semibold text-text-primary mt-4 mb-0">Project</h5>
 				<p
 					className="text-text-secondary font-mono text-xs m-0 break-all"
 					style={{ cursor: config?.projectConfigPath ? "pointer" : undefined }}
 					onClick={() => {
 						if (config?.projectConfigPath) {
-							window.open(toFileUrl(config.projectConfigPath));
+							handleOpenFilePath(config.projectConfigPath);
 						}
 					}}
 				>
-					{config?.projectConfigPath ?? "<project>/.cline/kanban/config.json"}
-					{config?.projectConfigPath ? (
-						<ExternalLink size={12} className="inline ml-1.5 align-middle" />
-					) : null}
+					{config?.projectConfigPath
+						? formatPathForDisplay(config.projectConfigPath)
+						: "<project>/.cline/kanban/config.json"}
+					{config?.projectConfigPath ? <ExternalLink size={12} className="inline ml-1.5 align-middle" /> : null}
 				</p>
 
 				<div className="flex items-center justify-between mt-3 mb-2">
@@ -787,9 +869,7 @@ export function RuntimeSettingsDialog({
 							value={shortcut.icon}
 							onSelect={(icon) =>
 								setShortcuts((current) =>
-									current.map((item, itemIndex) =>
-										itemIndex === shortcutIndex ? { ...item, icon } : item,
-									),
+									current.map((item, itemIndex) => (itemIndex === shortcutIndex ? { ...item, icon } : item)),
 								)
 							}
 						/>
@@ -828,7 +908,9 @@ export function RuntimeSettingsDialog({
 						/>
 					</div>
 				))}
-				{shortcuts.length === 0 ? <p className="text-text-secondary text-[13px]">No shortcuts configured.</p> : null}
+				{shortcuts.length === 0 ? (
+					<p className="text-text-secondary text-[13px]">No shortcuts configured.</p>
+				) : null}
 
 				{saveError ? (
 					<div className="flex gap-2 rounded-md border border-status-red/30 bg-status-red/5 p-3 text-[13px] mt-3">
@@ -838,9 +920,15 @@ export function RuntimeSettingsDialog({
 			</DialogBody>
 			<DialogFooter>
 				<Button
-					onClick={() => onOpenChange(false)}
-					disabled={controlsDisabled}
+					size="sm"
+					variant="ghost"
+					className="mr-auto mt-[3px]"
+					icon={<ExternalLink size={14} />}
+					onClick={() => window.open("https://docs.cline.bot/kanban/overview", "_blank")}
 				>
+					Read the docs
+				</Button>
+				<Button onClick={() => handleDialogOpenChange(false)} disabled={controlsDisabled}>
 					Cancel
 				</Button>
 				<Button

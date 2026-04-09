@@ -1,6 +1,7 @@
 import type { MutableRefObject } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { getTerminalThemeColors, useTheme } from "@/hooks/use-theme";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { disposePersistentTerminal, ensurePersistentTerminal } from "@/terminal/persistent-terminal-manager";
 import { registerTerminalController } from "@/terminal/terminal-controller-registry";
@@ -38,8 +39,17 @@ export function usePersistentTerminalSession({
 	terminalBackgroundColor,
 	cursorColor,
 }: UsePersistentTerminalSessionInput): UsePersistentTerminalSessionResult {
+	const { themeId } = useTheme();
+	const themeColors = useMemo(() => getTerminalThemeColors(themeId), [themeId]);
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const terminalRef = useRef<ReturnType<typeof ensurePersistentTerminal> | null>(null);
+	const callbackRef = useRef<{
+		onSummary?: (summary: RuntimeTaskSessionSummary) => void;
+		onConnectionReady?: (taskId: string) => void;
+	}>({
+		onSummary,
+		onConnectionReady,
+	});
 	const previousSessionRef = useRef<{
 		workspaceId: string;
 		taskId: string;
@@ -47,6 +57,10 @@ export function usePersistentTerminalSession({
 	} | null>(null);
 	const [lastError, setLastError] = useState<string | null>(null);
 	const [isStopping, setIsStopping] = useState(false);
+	callbackRef.current = {
+		onSummary,
+		onConnectionReady,
+	};
 
 	useEffect(() => {
 		if (!enabled) {
@@ -78,20 +92,22 @@ export function usePersistentTerminalSession({
 			return;
 		}
 		const previousSession = previousSessionRef.current;
-		if (
-			previousSession &&
+		const didSessionRestart =
+			previousSession !== null &&
 			previousSession.workspaceId === workspaceId &&
 			previousSession.taskId === taskId &&
-			previousSession.sessionStartedAt !== sessionStartedAt
-		) {
-			disposePersistentTerminal(workspaceId, taskId);
-		}
+			previousSession.sessionStartedAt !== sessionStartedAt;
+
 		const terminal = ensurePersistentTerminal({
 			taskId,
 			workspaceId,
 			cursorColor,
 			terminalBackgroundColor,
+			themeColors,
 		});
+		if (didSessionRestart) {
+			terminal.reset();
+		}
 		previousSessionRef.current = {
 			workspaceId,
 			taskId,
@@ -99,15 +115,20 @@ export function usePersistentTerminalSession({
 		};
 		terminalRef.current = terminal;
 		const unsubscribe = terminal.subscribe({
-			onConnectionReady,
+			onConnectionReady: (connectedTaskId) => {
+				callbackRef.current.onConnectionReady?.(connectedTaskId);
+			},
 			onLastError: setLastError,
-			onSummary,
+			onSummary: (summary) => {
+				callbackRef.current.onSummary?.(summary);
+			},
 		});
 		terminal.mount(
 			container,
 			{
 				cursorColor,
 				terminalBackgroundColor,
+				themeColors,
 			},
 			{
 				autoFocus,
@@ -128,11 +149,10 @@ export function usePersistentTerminalSession({
 		cursorColor,
 		enabled,
 		isVisible,
-		onConnectionReady,
-		onSummary,
 		sessionStartedAt,
 		taskId,
 		terminalBackgroundColor,
+		themeColors,
 		workspaceId,
 	]);
 

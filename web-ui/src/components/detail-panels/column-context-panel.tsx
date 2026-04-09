@@ -194,7 +194,7 @@ function ColumnSection({
 												isCommitLoading={commitTaskLoadingById?.[card.id] ?? false}
 												isOpenPrLoading={openPrTaskLoadingById?.[card.id] ?? false}
 												isMoveToTrashLoading={moveToTrashLoadingById?.[card.id] ?? false}
-											workspacePath={workspacePath}
+												workspacePath={workspacePath}
 												onClick={() => {
 													if (column.id === "backlog") {
 														onEditTask?.(card);
@@ -210,9 +210,7 @@ function ColumnSection({
 								})()}
 								{provided.placeholder}
 								{column.cards.length === 0 ? (
-									<div className="flex items-center justify-center py-4 text-text-tertiary text-xs">
-										Empty
-									</div>
+									<div className="flex items-center justify-center py-4 text-text-tertiary text-xs">Empty</div>
 								) : null}
 							</div>
 						);
@@ -243,6 +241,7 @@ export function ColumnContextPanel({
 	commitTaskLoadingById,
 	openPrTaskLoadingById,
 	moveToTrashLoadingById,
+	panelWidth,
 }: {
 	selection: CardSelection;
 	workspacePath?: string | null;
@@ -263,6 +262,7 @@ export function ColumnContextPanel({
 	commitTaskLoadingById?: Record<string, boolean>;
 	openPrTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
+	panelWidth?: string;
 }): React.ReactElement {
 	const [activeDragSourceColumnId, setActiveDragSourceColumnId] = useState<BoardColumnId | null>(null);
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -309,11 +309,10 @@ export function ColumnContextPanel({
 			style={{
 				display: "flex",
 				flexDirection: "column",
-				width: "20%",
+				width: panelWidth ?? "20%",
 				minHeight: 0,
 				overflow: "hidden",
 				background: "var(--color-surface-0)",
-				borderRight: "1px solid var(--color-divider)",
 			}}
 		>
 			<DragDropContext onBeforeCapture={handleBeforeCapture} onDragEnd={handleDragEnd}>

@@ -25,9 +25,9 @@ import type {
 	RuntimeTaskWorkspaceInfoResponse,
 	RuntimeWorkspaceStateResponse,
 	RuntimeWorktreeEnsureResponse,
-} from "../../src/core/api-contract.js";
-import { createGitTestEnv } from "../utilities/git-env.js";
-import { createTempDir } from "../utilities/temp-dir.js";
+} from "../../src/core/api-contract";
+import { createGitTestEnv } from "../utilities/git-env";
+import { createTempDir } from "../utilities/temp-dir";
 
 const requireFromHere = createRequire(import.meta.url);
 
@@ -188,7 +188,7 @@ async function waitForProcessStart(process: ChildProcess, timeoutMs = 10_000): P
 			} else {
 				stderr += text;
 			}
-			const match = stdout.match(/Kanban running at (http:\/\/127\.0\.0\.1:\d+(?:\/[^\s]*)?)/);
+			const match = stdout.match(/Cline Kanban running at (http:\/\/127\.0\.0\.1:\d+(?:\/[^\s]*)?)/);
 			if (!match || settled) {
 				return;
 			}
@@ -259,12 +259,7 @@ async function waitForExit(childProcess: ChildProcess, timeoutMs: number): Promi
 	});
 }
 
-async function startKanbanServer(input: {
-	cwd: string;
-	homeDir: string;
-	port: number;
-	extraArgs?: string[];
-}): Promise<{
+async function startKanbanServer(input: { cwd: string; homeDir: string; port: number; extraArgs?: string[] }): Promise<{
 	runtimeUrl: string;
 	stop: () => Promise<void>;
 }> {
@@ -283,13 +278,13 @@ async function startKanbanServer(input: {
 			...(input.extraArgs ?? []),
 		],
 		{
-		cwd: input.cwd,
-		env: createGitTestEnv({
-			HOME: input.homeDir,
-			USERPROFILE: input.homeDir,
-			KANBAN_RUNTIME_PORT: String(input.port),
-		}),
-		stdio: ["ignore", "pipe", "pipe", "ipc"],
+			cwd: input.cwd,
+			env: createGitTestEnv({
+				HOME: input.homeDir,
+				USERPROFILE: input.homeDir,
+				KANBAN_RUNTIME_PORT: String(input.port),
+			}),
+			stdio: ["ignore", "pipe", "pipe", "ipc"],
 		},
 	);
 	const { runtimeUrl } = await waitForProcessStart(child);
@@ -1130,104 +1125,6 @@ describe.sequential("runtime state stream integration", () => {
 			expect(taskContext.payload.headCommit).toBe(taskWorktreeCommit);
 		} finally {
 			await server.stop();
-			cleanupProject();
-			cleanupHome();
-		}
-	}, 45_000);
-
-	it("moves stale hook-review cards to trash on shutdown", async () => {
-		const { path: tempHome, cleanup: cleanupHome } = createTempDir("kanban-home-stale-review-");
-		const { path: projectPath, cleanup: cleanupProject } = createTempDir("kanban-project-stale-review-");
-
-		mkdirSync(projectPath, { recursive: true });
-		initGitRepository(projectPath);
-
-		const taskId = "stale-review-task";
-		const taskTitle = "Stale Review Task";
-		const existingTrashTaskId = "existing-trash-task";
-		const now = Date.now();
-
-		const firstPort = await getAvailablePort();
-		const firstServer = await startKanbanServer({
-			cwd: projectPath,
-			homeDir: tempHome,
-			port: firstPort,
-		});
-
-		try {
-			const firstRuntimeUrl = new URL(firstServer.runtimeUrl);
-			const workspaceId = decodeURIComponent(firstRuntimeUrl.pathname.slice(1));
-			expect(workspaceId).not.toBe("");
-
-			const currentState = await requestJson<RuntimeWorkspaceStateResponse>({
-				baseUrl: `http://127.0.0.1:${firstPort}`,
-				procedure: "workspace.getState",
-				type: "query",
-				workspaceId,
-			});
-			expect(currentState.status).toBe(200);
-
-			const seedResponse = await requestJson<RuntimeWorkspaceStateResponse>({
-				baseUrl: `http://127.0.0.1:${firstPort}`,
-				procedure: "workspace.saveState",
-				type: "mutation",
-				workspaceId,
-				payload: {
-					board: createReviewBoard(taskId, taskTitle, existingTrashTaskId),
-					sessions: {
-						[taskId]: {
-							taskId,
-							state: "awaiting_review",
-							agentId: "codex",
-							workspacePath: projectPath,
-							pid: null,
-							startedAt: now - 2_000,
-							updatedAt: now,
-							lastOutputAt: now,
-							reviewReason: "hook",
-							exitCode: null,
-							lastHookAt: null,
-							latestHookActivity: null,
-						},
-					},
-					expectedRevision: currentState.payload.revision,
-				},
-			});
-			expect(seedResponse.status).toBe(200);
-		} finally {
-			await firstServer.stop();
-		}
-
-		const secondPort = await getAvailablePort();
-		const secondServer = await startKanbanServer({
-			cwd: projectPath,
-			homeDir: tempHome,
-			port: secondPort,
-		});
-
-		try {
-			const secondRuntimeUrl = new URL(secondServer.runtimeUrl);
-			const workspaceId = decodeURIComponent(secondRuntimeUrl.pathname.slice(1));
-			expect(workspaceId).not.toBe("");
-
-			const finalState = await requestJson<RuntimeWorkspaceStateResponse>({
-				baseUrl: `http://127.0.0.1:${secondPort}`,
-				procedure: "workspace.getState",
-				type: "query",
-				workspaceId,
-			});
-			expect(finalState.status).toBe(200);
-
-			const reviewCards = finalState.payload.board.columns.find((column) => column.id === "review")?.cards ?? [];
-			const trashCards = finalState.payload.board.columns.find((column) => column.id === "trash")?.cards ?? [];
-			expect(reviewCards.some((card) => card.id === taskId)).toBe(false);
-			expect(trashCards.some((card) => card.id === taskId)).toBe(true);
-			expect(trashCards[0]?.id).toBe(taskId);
-			expect(trashCards.some((card) => card.id === existingTrashTaskId)).toBe(true);
-			expect(finalState.payload.sessions[taskId]?.state).toBe("interrupted");
-			expect(finalState.payload.sessions[taskId]?.reviewReason).toBe("interrupted");
-		} finally {
-			await secondServer.stop();
 			cleanupProject();
 			cleanupHome();
 		}

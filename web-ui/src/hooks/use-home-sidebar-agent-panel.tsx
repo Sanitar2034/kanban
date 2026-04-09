@@ -7,10 +7,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { ClineAgentChatPanel } from "@/components/detail-panels/cline-agent-chat-panel";
 import { Spinner } from "@/components/ui/spinner";
-import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { createIdleTaskSession } from "@/hooks/app-utils";
+import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { useClineChatRuntimeActions } from "@/hooks/use-cline-chat-runtime-actions";
 import { useHomeAgentSession } from "@/hooks/use-home-agent-session";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { selectLatestTaskChatMessageForTask } from "@/runtime/native-agent";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
@@ -20,12 +21,13 @@ import type {
 	RuntimeTaskChatMessage,
 	RuntimeTaskSessionSummary,
 } from "@/runtime/types";
-import { TERMINAL_THEME_COLORS } from "@/terminal/theme-colors";
+import { useTerminalThemeColors } from "@/terminal/theme-colors";
 
 interface UseHomeSidebarAgentPanelInput {
 	currentProjectId: string | null;
 	hasNoProjects: boolean;
 	runtimeProjectConfig: RuntimeConfigResponse | null;
+	clineSessionContextVersion: number;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
 	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
@@ -46,17 +48,27 @@ export function useHomeSidebarAgentPanel({
 	currentProjectId,
 	hasNoProjects,
 	runtimeProjectConfig,
+	clineSessionContextVersion,
 	taskSessions,
 	workspaceGit,
 	latestTaskChatMessage,
 	taskChatMessagesByTaskId,
 }: UseHomeSidebarAgentPanelInput): ReactElement | null {
+	const isMobile = useIsMobile();
+	const terminalThemeColors = useTerminalThemeColors();
 	const [sessionSummaries, setSessionSummaries] = useState<Record<string, RuntimeTaskSessionSummary>>({});
 	const upsertSessionSummary = useCallback((summary: RuntimeTaskSessionSummary) => {
-		setSessionSummaries((currentSessions) => ({
-			...currentSessions,
-			[summary.taskId]: summary,
-		}));
+		setSessionSummaries((currentSessions) => {
+			const previousSummary = currentSessions[summary.taskId] ?? null;
+			const newestSummary = selectNewestTaskSessionSummary(previousSummary, summary);
+			if (newestSummary !== summary) {
+				return currentSessions;
+			}
+			return {
+				...currentSessions,
+				[summary.taskId]: newestSummary,
+			};
+		});
 	}, []);
 	const effectiveSessionSummaries = useMemo(() => {
 		const mergedSessionSummaries = { ...taskSessions };
@@ -72,6 +84,7 @@ export function useHomeSidebarAgentPanel({
 		currentProjectId,
 		runtimeProjectConfig,
 		workspaceGit,
+		clineSessionContextVersion,
 		sessionSummaries: effectiveSessionSummaries,
 		setSessionSummaries,
 		upsertSessionSummary,
@@ -81,11 +94,7 @@ export function useHomeSidebarAgentPanel({
 	useEffect(() => {
 		currentTaskIdRef.current = taskId;
 	}, [taskId]);
-	const {
-		sendTaskChatMessage,
-		loadTaskChatMessages,
-		cancelTaskChatTurn,
-	} = useClineChatRuntimeActions({
+	const { sendTaskChatMessage, loadTaskChatMessages, cancelTaskChatTurn } = useClineChatRuntimeActions({
 		currentProjectId,
 		onSessionSummary: upsertSessionSummary,
 	});
@@ -101,7 +110,7 @@ export function useHomeSidebarAgentPanel({
 	}, [runtimeProjectConfig]);
 
 	const homeAgentPanelSummary = taskId ? (effectiveSessionSummaries[taskId] ?? null) : null;
-	const homeTaskChatMessages = taskId ? (taskChatMessagesByTaskId[taskId] ?? []) : [];
+	const homeTaskChatMessages = taskId ? (taskChatMessagesByTaskId[taskId] ?? null) : null;
 	const latestHomeTaskChatMessage = selectLatestTaskChatMessageForTask(taskId, latestTaskChatMessage);
 
 	const handleSendHomeClineChatMessage = useCallback(
@@ -157,7 +166,6 @@ export function useHomeSidebarAgentPanel({
 				onLoadMessages={handleLoadHomeClineChatMessages}
 				incomingMessage={latestHomeTaskChatMessage}
 				incomingMessages={homeTaskChatMessages}
-				showRightBorder={false}
 				composerPlaceholder="Ask Cline to add, edit, start, or link tasks"
 			/>
 		);
@@ -172,11 +180,10 @@ export function useHomeSidebarAgentPanel({
 				summary={homeAgentPanelSummary}
 				onSummary={upsertSessionSummary}
 				showSessionToolbar={false}
-				autoFocus
-				panelBackgroundColor={TERMINAL_THEME_COLORS.surfaceRaised}
-				terminalBackgroundColor={TERMINAL_THEME_COLORS.surfaceRaised}
-				cursorColor={TERMINAL_THEME_COLORS.textPrimary}
-				showRightBorder={false}
+				autoFocus={!isMobile}
+				panelBackgroundColor={terminalThemeColors.surfaceRaised}
+				terminalBackgroundColor={terminalThemeColors.surfaceRaised}
+				cursorColor={terminalThemeColors.textPrimary}
 			/>
 		);
 	}

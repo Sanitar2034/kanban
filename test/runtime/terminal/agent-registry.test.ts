@@ -8,12 +8,12 @@ vi.mock("../../../src/terminal/command-discovery.js", () => ({
 	isBinaryAvailableOnPath: commandDiscoveryMocks.isBinaryAvailableOnPath,
 }));
 
-import type { RuntimeConfigState } from "../../../src/config/runtime-config.js";
+import type { RuntimeConfigState } from "../../../src/config/runtime-config";
 import {
 	buildRuntimeConfigResponse,
 	detectInstalledCommands,
 	resolveAgentCommand,
-} from "../../../src/terminal/agent-registry.js";
+} from "../../../src/terminal/agent-registry";
 
 function createRuntimeConfigState(overrides: Partial<RuntimeConfigState> = {}): RuntimeConfigState {
 	return {
@@ -35,6 +35,9 @@ function createRuntimeConfigState(overrides: Partial<RuntimeConfigState> = {}): 
 beforeEach(() => {
 	commandDiscoveryMocks.isBinaryAvailableOnPath.mockReset();
 	commandDiscoveryMocks.isBinaryAvailableOnPath.mockReturnValue(false);
+	delete process.env.KANBAN_DEBUG_MODE;
+	delete process.env.DEBUG_MODE;
+	delete process.env.debug_mode;
 });
 
 describe("agent-registry", () => {
@@ -75,10 +78,11 @@ describe("buildRuntimeConfigResponse", () => {
 		});
 
 		expect(response.agentAutonomousModeEnabled).toBe(true);
-		expect(response.agents.map((agent) => agent.id)).toEqual(["claude", "codex", "cline"]);
+		expect(response.agents.map((agent) => agent.id)).toEqual(["claude", "codex", "cline", "droid"]);
 		expect(response.agents.find((agent) => agent.id === "claude")?.defaultArgs).toEqual([]);
 		expect(response.agents.find((agent) => agent.id === "codex")?.defaultArgs).toEqual([]);
 		expect(response.agents.find((agent) => agent.id === "cline")?.defaultArgs).toEqual([]);
+		expect(response.agents.find((agent) => agent.id === "droid")?.defaultArgs).toEqual([]);
 		expect(response.agents.find((agent) => agent.id === "cline")?.installed).toBe(true);
 	});
 
@@ -101,12 +105,46 @@ describe("buildRuntimeConfigResponse", () => {
 		});
 
 		expect(response.agentAutonomousModeEnabled).toBe(false);
-		expect(response.agents.map((agent) => agent.id)).toEqual(["claude", "codex", "cline"]);
+		expect(response.agents.map((agent) => agent.id)).toEqual(["claude", "codex", "cline", "droid"]);
 		expect(response.agents.find((agent) => agent.id === "claude")?.defaultArgs).toEqual([]);
 		expect(response.agents.find((agent) => agent.id === "codex")?.defaultArgs).toEqual([]);
 		expect(response.agents.find((agent) => agent.id === "cline")?.defaultArgs).toEqual([]);
+		expect(response.agents.find((agent) => agent.id === "droid")?.defaultArgs).toEqual([]);
 		expect(response.agents.find((agent) => agent.id === "cline")?.installed).toBe(true);
 		expect(response.agents.find((agent) => agent.id === "claude")?.command).toBe("claude");
 		expect(response.agents.find((agent) => agent.id === "codex")?.command).toBe("codex");
+		expect(response.agents.find((agent) => agent.id === "droid")?.command).toBe("droid");
+	});
+
+	it("sets debug mode from runtime environment variables", () => {
+		process.env.KANBAN_DEBUG_MODE = "true";
+		const response = buildRuntimeConfigResponse(createRuntimeConfigState(), {
+			providerId: null,
+			modelId: null,
+			baseUrl: null,
+			apiKeyConfigured: false,
+			oauthProvider: null,
+			oauthAccessTokenConfigured: false,
+			oauthRefreshTokenConfigured: false,
+			oauthAccountId: null,
+			oauthExpiresAt: null,
+		});
+		expect(response.debugModeEnabled).toBe(true);
+	});
+
+	it("supports debug_mode fallback env name", () => {
+		process.env.debug_mode = "1";
+		const response = buildRuntimeConfigResponse(createRuntimeConfigState(), {
+			providerId: null,
+			modelId: null,
+			baseUrl: null,
+			apiKeyConfigured: false,
+			oauthProvider: null,
+			oauthAccessTokenConfigured: false,
+			oauthRefreshTokenConfigured: false,
+			oauthAccountId: null,
+			oauthExpiresAt: null,
+		});
+		expect(response.debugModeEnabled).toBe(true);
 	});
 });

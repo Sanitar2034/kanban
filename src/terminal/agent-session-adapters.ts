@@ -2,20 +2,26 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { RuntimeAgentId, RuntimeHookEvent, RuntimeTaskSessionSummary } from "../core/api-contract.js";
-import { buildKanbanCommandParts } from "../core/kanban-command.js";
-import { quoteShellArg } from "../core/shell.js";
-import { lockedFileSystem } from "../fs/locked-file-system.js";
-import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt.js";
-import { getRuntimeHomePath } from "../state/workspace-state.js";
-import { createHookRuntimeEnv } from "./hook-runtime-context.js";
+import type {
+	RuntimeAgentId,
+	RuntimeHookEvent,
+	RuntimeTaskImage,
+	RuntimeTaskSessionSummary,
+} from "../core/api-contract";
+import { buildKanbanCommandParts } from "../core/kanban-command";
+import { quoteShellArg } from "../core/shell";
+import { lockedFileSystem } from "../fs/locked-file-system";
+import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
+import { getRuntimeHomePath } from "../state/workspace-state";
+import { createHookRuntimeEnv } from "./hook-runtime-context";
 import {
 	getOpenCodeAuthPathCandidates,
 	getOpenCodeConfigPathCandidates,
 	getOpenCodeModelStatePathCandidates,
-} from "./opencode-paths.js";
-import { stripAnsi } from "./output-utils.js";
-import type { SessionTransitionEvent } from "./session-state-machine.js";
+} from "./opencode-paths";
+import { stripAnsi } from "./output-utils";
+import type { SessionTransitionEvent } from "./session-state-machine";
+import { prepareTaskPromptWithImages } from "./task-image-prompt";
 
 export interface AgentAdapterLaunchInput {
 	taskId: string;
@@ -25,6 +31,7 @@ export interface AgentAdapterLaunchInput {
 	autonomousModeEnabled?: boolean;
 	cwd: string;
 	prompt: string;
+	images?: RuntimeTaskImage[];
 	startInPlanMode?: boolean;
 	resumeFromTrash?: boolean;
 	env?: Record<string, string | undefined>;
@@ -43,6 +50,7 @@ export interface PreparedAgentLaunch {
 	args: string[];
 	env: Record<string, string | undefined>;
 	cleanup?: () => Promise<void>;
+	deferredStartupInput?: string;
 	detectOutputTransition?: AgentOutputTransitionDetector;
 	shouldInspectOutputForTransition?: AgentOutputTransitionInspectionPredicate;
 }
@@ -601,10 +609,16 @@ function withPrompt(args: string[], prompt: string, mode: "append" | "flag", fla
 	};
 }
 
+function toBracketedPasteSubmission(command: string): string {
+	return `\u001b[200~${command}\u001b[201~\r`;
+}
+
 const claudeAdapter: AgentSessionAdapter = {
 	async prepare(input) {
 		const args = [...input.args];
-		const env: Record<string, string | undefined> = {};
+		const env: Record<string, string | undefined> = {
+			FORCE_HYPERLINK: "1",
+		};
 		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
 		if (
 			input.autonomousModeEnabled &&
@@ -723,9 +737,7 @@ function codexPromptDetector(data: string, summary: RuntimeTaskSessionSummary): 
 function shouldInspectCodexOutputForTransition(summary: RuntimeTaskSessionSummary): boolean {
 	return (
 		summary.state === "awaiting_review" &&
-		(summary.reviewReason === "attention" ||
-			summary.reviewReason === "hook" ||
-			summary.reviewReason === "error")
+		(summary.reviewReason === "attention" || summary.reviewReason === "hook" || summary.reviewReason === "error")
 	);
 }
 
@@ -734,6 +746,7 @@ const codexAdapter: AgentSessionAdapter = {
 		const codexArgs = [...input.args];
 		const env: Record<string, string | undefined> = {};
 		let binary = input.binary;
+		let deferredStartupInput: string | undefined;
 		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
 
 		if (input.autonomousModeEnabled && !hasCliOption(codexArgs, "--dangerously-bypass-approvals-and-sandbox")) {
@@ -765,9 +778,11 @@ const codexAdapter: AgentSessionAdapter = {
 		}
 
 		const trimmed = input.prompt.trim();
-		if (trimmed) {
-			const initialPrompt = input.startInPlanMode ? `/plan\n${trimmed}` : trimmed;
-			codexArgs.push(initialPrompt);
+		if (input.startInPlanMode) {
+			const planCommand = trimmed ? `/plan ${trimmed}` : "/plan";
+			deferredStartupInput = toBracketedPasteSubmission(planCommand);
+		} else if (trimmed) {
+			codexArgs.push(trimmed);
 		}
 
 		if (hooks) {
@@ -784,6 +799,7 @@ const codexAdapter: AgentSessionAdapter = {
 				binary,
 				args,
 				env,
+				deferredStartupInput,
 				detectOutputTransition: codexPromptDetector,
 				shouldInspectOutputForTransition: shouldInspectCodexOutputForTransition,
 			};
@@ -793,6 +809,7 @@ const codexAdapter: AgentSessionAdapter = {
 			binary,
 			args: codexArgs,
 			env,
+			deferredStartupInput,
 			detectOutputTransition: codexPromptDetector,
 			shouldInspectOutputForTransition: shouldInspectCodexOutputForTransition,
 		};
@@ -1233,6 +1250,15 @@ const droidAdapter: AgentSessionAdapter = {
 			}
 		}
 
+		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
+		if (
+			appendedSystemPrompt &&
+			!hasCliOption(args, "--append-system-prompt") &&
+			!hasCliOption(args, "--system-prompt")
+		) {
+			args.push("--append-system-prompt", appendedSystemPrompt);
+		}
+
 		const withPromptLaunch = withPrompt(args, input.prompt, "append");
 		return {
 			...withPromptLaunch,
@@ -1311,5 +1337,12 @@ const ADAPTERS: Record<RuntimeAgentId, AgentSessionAdapter> = {
 };
 
 export async function prepareAgentLaunch(input: AgentAdapterLaunchInput): Promise<PreparedAgentLaunch> {
-	return ADAPTERS[input.agentId].prepare(input);
+	const preparedPrompt = await prepareTaskPromptWithImages({
+		prompt: input.prompt,
+		images: input.images,
+	});
+	return await ADAPTERS[input.agentId].prepare({
+		...input,
+		prompt: preparedPrompt,
+	});
 }

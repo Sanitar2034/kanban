@@ -11,6 +11,7 @@ import { resetWorkspaceMetadataStore, setTaskWorkspaceSnapshot } from "@/stores/
 function createSummary(
 	state: RuntimeTaskSessionSummary["state"],
 	latestHookActivity: RuntimeTaskHookActivity | null = null,
+	overrides: Partial<RuntimeTaskSessionSummary> = {},
 ): RuntimeTaskSessionSummary {
 	return {
 		taskId: "task-1",
@@ -27,6 +28,7 @@ function createSummary(
 		latestHookActivity,
 		latestTurnCheckpoint: null,
 		previousTurnCheckpoint: null,
+		...overrides,
 	};
 }
 
@@ -98,6 +100,7 @@ describe("ClineAgentChatPanel", () => {
 	});
 
 	afterEach(() => {
+		vi.restoreAllMocks();
 		act(() => {
 			root.unmount();
 		});
@@ -142,11 +145,7 @@ describe("ClineAgentChatPanel", () => {
 		await act(async () => {
 			renderPanel(
 				root,
-				<ClineAgentChatPanel
-					taskId="task-1"
-					summary={null}
-					onLoadMessages={async () => messages}
-				/>,
+				<ClineAgentChatPanel taskId="task-1" summary={null} onLoadMessages={async () => messages} />,
 			);
 			await Promise.resolve();
 		});
@@ -179,11 +178,7 @@ describe("ClineAgentChatPanel", () => {
 		await act(async () => {
 			renderPanel(
 				root,
-				<ClineAgentChatPanel
-					taskId="task-1"
-					summary={createSummary("running")}
-					onLoadMessages={async () => []}
-				/>,
+				<ClineAgentChatPanel taskId="task-1" summary={createSummary("running")} onLoadMessages={async () => []} />,
 			);
 			await Promise.resolve();
 		});
@@ -210,6 +205,69 @@ describe("ClineAgentChatPanel", () => {
 		});
 
 		expect(container.textContent).toContain('Failed to load MCP server "linear"');
+	});
+
+	it("renders a chat-level out-of-credits notice when credit-limit metadata is present", async () => {
+		await act(async () => {
+			renderPanel(
+				root,
+				<ClineAgentChatPanel
+					taskId="task-1"
+					summary={createSummary(
+						"awaiting_review",
+						{
+							activityText: "Agent error: 402 Insufficient balance",
+							toolName: null,
+							toolInputSummary: null,
+							finalMessage: "402 Insufficient balance. Your Cline Credits balance is $0.00",
+							hookEventName: "agent_error",
+							notificationType: "credit_limit",
+							source: "cline-sdk",
+						},
+						{ reviewReason: "error" },
+					)}
+					onLoadMessages={async () => []}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		await vi.waitFor(() => {
+			const buyCreditsLink = container.querySelector('a[href="https://app.cline.bot/"]');
+			expect(buyCreditsLink).toBeInstanceOf(HTMLAnchorElement);
+		});
+		expect(container.textContent).toContain("Out of Cline credits.");
+	});
+
+	it("shows out-of-credits notice after interrupted state when credit-limit metadata persists", async () => {
+		await act(async () => {
+			renderPanel(
+				root,
+				<ClineAgentChatPanel
+					taskId="task-1"
+					summary={createSummary(
+						"interrupted",
+						{
+							activityText: "Agent error: 402 Insufficient balance",
+							toolName: null,
+							toolInputSummary: null,
+							finalMessage: "402 Insufficient balance. Your Cline Credits balance is $0.00",
+							hookEventName: "agent_end",
+							notificationType: "credit_limit",
+							source: "cline-sdk",
+						},
+						{ reviewReason: "interrupted" },
+					)}
+					onLoadMessages={async () => []}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		await vi.waitFor(() => {
+			const buyCreditsLink = container.querySelector('a[href="https://app.cline.bot/"]');
+			expect(buyCreditsLink).toBeInstanceOf(HTMLAnchorElement);
+		});
 	});
 
 	it("renders user message images inline without a task header", async () => {
@@ -266,11 +324,7 @@ describe("ClineAgentChatPanel", () => {
 		await act(async () => {
 			renderPanel(
 				root,
-				<ClineAgentChatPanel
-					taskId="task-1"
-					summary={null}
-					onLoadMessages={async () => initialMessages}
-				/>,
+				<ClineAgentChatPanel taskId="task-1" summary={null} onLoadMessages={async () => initialMessages} />,
 			);
 			await Promise.resolve();
 		});
@@ -324,11 +378,7 @@ describe("ClineAgentChatPanel", () => {
 		await act(async () => {
 			renderPanel(
 				root,
-				<ClineAgentChatPanel
-					taskId="task-1"
-					summary={null}
-					onLoadMessages={async () => initialMessages}
-				/>,
+				<ClineAgentChatPanel taskId="task-1" summary={null} onLoadMessages={async () => initialMessages} />,
 			);
 			await Promise.resolve();
 		});
@@ -471,11 +521,7 @@ describe("ClineAgentChatPanel", () => {
 		await act(async () => {
 			renderPanel(
 				root,
-				<ClineAgentChatPanel
-					taskId="task-1"
-					summary={null}
-					onLoadMessages={async () => messages}
-				/>,
+				<ClineAgentChatPanel taskId="task-1" summary={null} onLoadMessages={async () => messages} />,
 			);
 			await Promise.resolve();
 		});
@@ -498,11 +544,7 @@ describe("ClineAgentChatPanel", () => {
 		await act(async () => {
 			renderPanel(
 				root,
-				<ClineAgentChatPanel
-					taskId="task-1"
-					summary={null}
-					onLoadMessages={async () => messages}
-				/>,
+				<ClineAgentChatPanel taskId="task-1" summary={null} onLoadMessages={async () => messages} />,
 			);
 			await Promise.resolve();
 		});
@@ -658,6 +700,66 @@ describe("ClineAgentChatPanel", () => {
 		});
 
 		expect(onSendMessage).toHaveBeenCalledWith("task-1", "Investigate", { mode: "plan" });
+	});
+
+	it("restores the previously selected mode when switching back to a task", async () => {
+		await act(async () => {
+			renderPanel(
+				root,
+				<ClineAgentChatPanel
+					taskId="task-1"
+					summary={createSummary("idle")}
+					defaultMode="act"
+					onLoadMessages={async () => []}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		const planButton = Array.from(container.querySelectorAll('button[role="tab"]')).find((button) =>
+			button.textContent?.includes("Plan"),
+		);
+		expect(planButton).toBeInstanceOf(HTMLButtonElement);
+		if (!(planButton instanceof HTMLButtonElement)) {
+			throw new Error("Expected plan mode toggle");
+		}
+
+		await act(async () => {
+			planButton.click();
+			await Promise.resolve();
+		});
+		expect(planButton.getAttribute("aria-selected")).toBe("true");
+
+		await act(async () => {
+			renderPanel(
+				root,
+				<ClineAgentChatPanel
+					taskId="task-2"
+					summary={createSummary("idle", null, { taskId: "task-2" })}
+					defaultMode="act"
+					onLoadMessages={async () => []}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		await act(async () => {
+			renderPanel(
+				root,
+				<ClineAgentChatPanel
+					taskId="task-1"
+					summary={createSummary("idle")}
+					defaultMode="act"
+					onLoadMessages={async () => []}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		const restoredPlanButton = Array.from(container.querySelectorAll('button[role="tab"]')).find((button) =>
+			button.textContent?.includes("Plan"),
+		);
+		expect(restoredPlanButton?.getAttribute("aria-selected")).toBe("true");
 	});
 
 	it("appends review comments into the composer draft through the panel handle", async () => {

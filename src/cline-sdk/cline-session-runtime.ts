@@ -1,23 +1,39 @@
 // Owns the live SDK session host plus taskId to sessionId bindings.
 // This is the runtime-facing layer for starting, looking up, resuming, and
 // stopping native Cline sessions without exposing SDK details upstream.
-import type { RuntimeTaskImage, RuntimeTaskSessionMode } from "../core/api-contract.js";
+import type { RuntimeClineReasoningEffort, RuntimeTaskImage, RuntimeTaskSessionMode } from "../core/api-contract";
+import { extractClineSessionId } from "./cline-event-adapter";
 import {
-	createClineMcpRuntimeService,
 	type ClineMcpRuntimeService,
 	type ClineMcpToolBundle,
-} from "./cline-mcp-runtime-service.js";
-import { extractClineSessionId } from "./cline-event-adapter.js";
-import { createSessionId } from "./cline-session-state.js";
+	createClineMcpRuntimeService,
+} from "./cline-mcp-runtime-service";
+import { createKanbanClineLogger } from "./cline-runtime-logger";
+import { buildSessionIdPrefix, createSessionId } from "./cline-session-state";
 import {
 	type ClineSdkPersistedMessage,
 	type ClineSdkSessionHost,
 	type ClineSdkSessionRecord,
+	type ClineSdkStartSessionInput,
+	type ClineSdkToolApprovalRequest,
+	type ClineSdkToolApprovalResult,
 	type ClineSdkUserInstructionWatcher,
 	createClineSdkSessionHost,
-} from "./sdk-runtime-boundary.js";
+} from "./sdk-runtime-boundary";
 
-const DEFAULT_CLINE_MAX_CONSECUTIVE_MISTAKES = 3;
+const DEFAULT_CLINE_MAX_CONSECUTIVE_MISTAKES = 6;
+interface ClineSessionHostBoundary {
+	start(input: ClineSdkStartSessionInput): Promise<{ sessionId: string; result?: unknown }>;
+	send(input: Parameters<ClineSdkSessionHost["send"]>[0]): Promise<unknown>;
+	stop(sessionId: string): Promise<void>;
+	abort(sessionId: string): Promise<void>;
+	delete(sessionId: string): Promise<boolean>;
+	dispose(reason?: string): Promise<void>;
+	get(sessionId: string): Promise<ClineSdkSessionRecord | undefined>;
+	list(limit?: number): Promise<ClineSdkSessionRecord[]>;
+	readMessages(sessionId: string): Promise<ClineSdkPersistedMessage[]>;
+	subscribe(listener: (event: unknown) => void): () => void;
+}
 
 function toSdkUserImages(images?: RuntimeTaskImage[]): string[] | undefined {
 	if (!images || images.length === 0) {
@@ -40,15 +56,17 @@ export interface StartClineSessionRuntimeRequest {
 	taskId: string;
 	cwd: string;
 	prompt: string;
+	initialMessages?: ClineSdkPersistedMessage[];
 	images?: RuntimeTaskImage[];
 	providerId: string;
 	modelId: string;
 	mode?: RuntimeTaskSessionMode;
 	apiKey?: string | null;
 	baseUrl?: string | null;
+	reasoningEffort?: RuntimeClineReasoningEffort | null;
 	systemPrompt: string;
 	userInstructionWatcher?: ClineSdkUserInstructionWatcher;
-	requestToolApproval?: (request: unknown) => Promise<unknown>;
+	requestToolApproval?: (request: ClineSdkToolApprovalRequest) => Promise<ClineSdkToolApprovalResult>;
 }
 
 export interface StartClineSessionRuntimeResult {
@@ -64,10 +82,24 @@ export interface ClinePersistedTaskSessionSnapshot {
 
 export interface ClineSessionRuntime {
 	startTaskSession(request: StartClineSessionRuntimeRequest): Promise<StartClineSessionRuntimeResult>;
-	sendTaskSessionInput(taskId: string, prompt: string, mode?: RuntimeTaskSessionMode, images?: RuntimeTaskImage[]): Promise<unknown>;
+	restartTaskSession(input: {
+		taskId: string;
+		prompt: string;
+		initialMessages?: ClineSdkPersistedMessage[];
+		images?: RuntimeTaskImage[];
+		mode?: RuntimeTaskSessionMode;
+	}): Promise<StartClineSessionRuntimeResult>;
+	sendTaskSessionInput(
+		taskId: string,
+		prompt: string,
+		mode?: RuntimeTaskSessionMode,
+		images?: RuntimeTaskImage[],
+		delivery?: "queue" | "steer",
+	): Promise<unknown>;
 	resumeTaskSession(taskId: string): Promise<ClinePersistedTaskSessionSnapshot | null>;
 	stopTaskSession(taskId: string): Promise<void>;
 	abortTaskSession(taskId: string): Promise<void>;
+	clearTaskSessions(taskId: string): Promise<void>;
 	getTaskSessionId(taskId: string): string | null;
 	readPersistedTaskSession(taskId: string): Promise<ClinePersistedTaskSessionSnapshot | null>;
 	dispose(): Promise<void>;
@@ -75,19 +107,23 @@ export interface ClineSessionRuntime {
 
 export interface CreateInMemoryClineSessionRuntimeOptions {
 	onTaskEvent?: (taskId: string, event: unknown) => void;
-	createSessionHost?: () => Promise<ClineSdkSessionHost>;
+	createSessionHost?: () => Promise<ClineSessionHostBoundary>;
 	createMcpRuntimeService?: () => ClineMcpRuntimeService;
 }
 
 // Own the SDK session host plus the taskId <-> sessionId bindings so higher layers can stay task-oriented.
 export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 	private readonly onTaskEvent: ((taskId: string, event: unknown) => void) | null;
-	private readonly createSessionHost: () => Promise<ClineSdkSessionHost>;
+	private readonly createSessionHost: () => Promise<ClineSessionHostBoundary>;
 	private readonly clineMcpRuntimeService: ClineMcpRuntimeService;
 	private readonly sessionIdByTaskId = new Map<string, string>();
 	private readonly taskIdBySessionId = new Map<string, string>();
+	private readonly lastStartRequestByTaskId = new Map<
+		string,
+		Omit<StartClineSessionRuntimeRequest, "prompt" | "images" | "initialMessages">
+	>();
 	private readonly mcpToolBundleByTaskId = new Map<string, ClineMcpToolBundle>();
-	private sessionHostPromise: Promise<ClineSdkSessionHost> | null = null;
+	private sessionHostPromise: Promise<ClineSessionHostBoundary> | null = null;
 
 	constructor(options: CreateInMemoryClineSessionRuntimeOptions = {}) {
 		this.onTaskEvent = options.onTaskEvent ?? null;
@@ -98,6 +134,20 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 
 	async startTaskSession(request: StartClineSessionRuntimeRequest): Promise<StartClineSessionRuntimeResult> {
 		const requestedSessionId = createSessionId(request.taskId);
+		const resolvedMode: RuntimeTaskSessionMode = request.mode ?? "act";
+		this.lastStartRequestByTaskId.set(request.taskId, {
+			taskId: request.taskId,
+			cwd: request.cwd,
+			providerId: request.providerId,
+			modelId: request.modelId,
+			mode: resolvedMode,
+			apiKey: request.apiKey,
+			baseUrl: request.baseUrl,
+			reasoningEffort: request.reasoningEffort,
+			systemPrompt: request.systemPrompt,
+			userInstructionWatcher: request.userInstructionWatcher,
+			requestToolApproval: request.requestToolApproval,
+		});
 		this.bindTaskSession(request.taskId, requestedSessionId);
 
 		let mcpToolBundle: ClineMcpToolBundle | null = null;
@@ -115,7 +165,7 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		this.replaceTaskMcpToolBundle(request.taskId, mcpToolBundle);
 
 		const sessionHost = await this.ensureSessionHost();
-		let startResult: StartClineSessionRuntimeResult;
+		let startResult: Awaited<ReturnType<ClineSessionHostBoundary["start"]>>;
 		try {
 			startResult = await sessionHost.start({
 				config: {
@@ -124,22 +174,34 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 					modelId: request.modelId,
 					apiKey: request.apiKey?.trim() || undefined,
 					baseUrl: request.baseUrl?.trim() || undefined,
+					reasoningEffort: request.reasoningEffort ?? undefined,
 					cwd: request.cwd,
-					mode: request.mode ?? "act",
+					mode: resolvedMode,
 					enableTools: true,
 					enableSpawnAgent: false,
 					enableAgentTeams: false,
-					maxConsecutiveMistakes: DEFAULT_CLINE_MAX_CONSECUTIVE_MISTAKES,
+					execution: {
+						maxConsecutiveMistakes: DEFAULT_CLINE_MAX_CONSECUTIVE_MISTAKES,
+					},
 					systemPrompt: request.systemPrompt,
+					logger: createKanbanClineLogger({
+						runtime: "kanban",
+						taskId: request.taskId,
+						requestedSessionId,
+						providerId: request.providerId,
+						modelId: request.modelId,
+					}),
 					...(mcpToolBundle && mcpToolBundle.tools.length > 0 ? { extraTools: mcpToolBundle.tools } : {}),
 				},
 				prompt: request.prompt,
+				initialMessages: request.initialMessages,
 				interactive: true,
 				userImages: toSdkUserImages(request.images),
 				userInstructionWatcher: request.userInstructionWatcher,
 				requestToolApproval: request.requestToolApproval,
 			});
 		} catch (error) {
+			this.clearTaskSessionBinding(request.taskId, requestedSessionId);
 			await this.releaseTaskMcpToolBundle(request.taskId);
 			throw error;
 		}
@@ -150,9 +212,31 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		}
 
 		return {
-			...startResult,
+			sessionId: startResult.sessionId,
+			result: startResult.result ?? null,
 			...(startWarnings.length > 0 ? { warnings: startWarnings } : {}),
 		};
+	}
+
+	async restartTaskSession(input: {
+		taskId: string;
+		prompt: string;
+		initialMessages?: ClineSdkPersistedMessage[];
+		images?: RuntimeTaskImage[];
+		mode?: RuntimeTaskSessionMode;
+	}): Promise<StartClineSessionRuntimeResult> {
+		const lastStartRequest = this.lastStartRequestByTaskId.get(input.taskId);
+		if (!lastStartRequest) {
+			throw new Error(`No previous Cline session config is available for task ${input.taskId}.`);
+		}
+
+		return await this.startTaskSession({
+			...lastStartRequest,
+			prompt: input.prompt,
+			initialMessages: input.initialMessages,
+			images: input.images,
+			mode: input.mode ?? lastStartRequest.mode,
+		});
 	}
 
 	async sendTaskSessionInput(
@@ -160,6 +244,7 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		prompt: string,
 		mode?: RuntimeTaskSessionMode,
 		images?: RuntimeTaskImage[],
+		delivery?: "queue" | "steer",
 	): Promise<unknown> {
 		const sessionId = this.sessionIdByTaskId.get(taskId);
 		if (!sessionId) {
@@ -168,11 +253,13 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		const sessionHost = await this.ensureSessionHost();
 		if (mode) {
 			this.updateActiveSessionMode(sessionHost, sessionId, mode);
+			this.updateLastStartRequestMode(taskId, mode);
 		}
 		return await sessionHost.send({
 			sessionId,
 			prompt,
 			userImages: toSdkUserImages(images),
+			...(delivery ? { delivery } : {}),
 		});
 	}
 
@@ -212,6 +299,27 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		await this.releaseTaskMcpToolBundle(taskId);
 	}
 
+	async clearTaskSessions(taskId: string): Promise<void> {
+		const sessionHost = await this.ensureSessionHost();
+		const sessionIdPrefix = buildSessionIdPrefix(taskId);
+		const records = await sessionHost.list();
+		const matchingSessionIds = new Set(
+			records.filter((record) => record.sessionId.startsWith(sessionIdPrefix)).map((record) => record.sessionId),
+		);
+		const activeSessionId = this.sessionIdByTaskId.get(taskId);
+		if (activeSessionId) {
+			matchingSessionIds.add(activeSessionId);
+			await sessionHost.abort(activeSessionId).catch(() => undefined);
+		}
+
+		for (const sessionId of matchingSessionIds) {
+			await sessionHost.delete(sessionId).catch(() => false);
+			this.taskIdBySessionId.delete(sessionId);
+		}
+		this.clearTaskSessionBinding(taskId);
+		await this.releaseTaskMcpToolBundle(taskId);
+	}
+
 	getTaskSessionId(taskId: string): string | null {
 		return this.sessionIdByTaskId.get(taskId) ?? null;
 	}
@@ -242,6 +350,7 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		}
 		this.sessionIdByTaskId.clear();
 		this.taskIdBySessionId.clear();
+		this.lastStartRequestByTaskId.clear();
 
 		const mcpBundles = [...this.mcpToolBundleByTaskId.values()];
 		this.mcpToolBundleByTaskId.clear();
@@ -281,9 +390,21 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		this.taskIdBySessionId.set(sessionId, taskId);
 	}
 
+	private clearTaskSessionBinding(taskId: string, sessionId?: string): void {
+		const activeSessionId = this.sessionIdByTaskId.get(taskId);
+		if (!activeSessionId) {
+			return;
+		}
+		if (sessionId && activeSessionId !== sessionId) {
+			return;
+		}
+		this.sessionIdByTaskId.delete(taskId);
+		this.taskIdBySessionId.delete(activeSessionId);
+	}
+
 	private async findPersistedTaskSessionRecord(
 		taskId: string,
-		sessionHost: ClineSdkSessionHost,
+		sessionHost: ClineSessionHostBoundary,
 	): Promise<ClineSdkSessionRecord | null> {
 		const activeSessionId = this.sessionIdByTaskId.get(taskId);
 		if (activeSessionId) {
@@ -293,7 +414,7 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 			}
 		}
 
-		const sessionIdPrefix = `${taskId}-`;
+		const sessionIdPrefix = buildSessionIdPrefix(taskId);
 		const records: ClineSdkSessionRecord[] = await sessionHost.list();
 		const matchingRecord = records
 			.filter((record: ClineSdkSessionRecord) => record.sessionId.startsWith(sessionIdPrefix))
@@ -305,9 +426,9 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		return matchingRecord ?? null;
 	}
 
-	private async ensureSessionHost(): Promise<ClineSdkSessionHost> {
+	private async ensureSessionHost(): Promise<ClineSessionHostBoundary> {
 		if (!this.sessionHostPromise) {
-			this.sessionHostPromise = this.createSessionHost().then((sessionHost: ClineSdkSessionHost) => {
+			this.sessionHostPromise = this.createSessionHost().then((sessionHost: ClineSessionHostBoundary) => {
 				sessionHost.subscribe((event: unknown) => {
 					this.handleSessionEvent(event);
 				});
@@ -318,7 +439,7 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 	}
 
 	private updateActiveSessionMode(
-		sessionHost: ClineSdkSessionHost,
+		sessionHost: ClineSessionHostBoundary,
 		sessionId: string,
 		mode: RuntimeTaskSessionMode,
 	): void {
@@ -331,10 +452,18 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		}
 	}
 
-	private handleSessionEvent(event: unknown): void {
-		if (!this.onTaskEvent) {
+	private updateLastStartRequestMode(taskId: string, mode: RuntimeTaskSessionMode): void {
+		const lastStartRequest = this.lastStartRequestByTaskId.get(taskId);
+		if (!lastStartRequest) {
 			return;
 		}
+		this.lastStartRequestByTaskId.set(taskId, {
+			...lastStartRequest,
+			mode,
+		});
+	}
+
+	private handleSessionEvent(event: unknown): void {
 		const sessionId = extractClineSessionId(event);
 		if (!sessionId) {
 			return;
@@ -343,7 +472,15 @@ export class InMemoryClineSessionRuntime implements ClineSessionRuntime {
 		if (!taskId) {
 			return;
 		}
-		this.onTaskEvent(taskId, event);
+		const eventRecord = event && typeof event === "object" ? (event as { type?: unknown }) : null;
+		const ended = eventRecord?.type === "ended";
+		if (this.onTaskEvent) {
+			this.onTaskEvent(taskId, event);
+		}
+		if (ended) {
+			this.clearTaskSessionBinding(taskId, sessionId);
+			void this.releaseTaskMcpToolBundle(taskId);
+		}
 	}
 }
 

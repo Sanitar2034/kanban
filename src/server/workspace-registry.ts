@@ -1,20 +1,21 @@
-import { toGlobalRuntimeConfigState, type RuntimeConfigState } from "../config/runtime-config.js";
+import { type RuntimeConfigState, toGlobalRuntimeConfigState } from "../config/runtime-config";
 import type {
 	RuntimeBoardColumnId,
 	RuntimeBoardData,
 	RuntimeProjectSummary,
 	RuntimeProjectTaskCounts,
 	RuntimeWorkspaceStateResponse,
-} from "../core/api-contract.js";
+} from "../core/api-contract";
 import {
 	listWorkspaceIndexEntries,
+	loadWorkspaceBoardById,
 	loadWorkspaceContext,
 	loadWorkspaceState,
 	type RuntimeWorkspaceIndexEntry,
 	removeWorkspaceIndexEntry,
 	removeWorkspaceStateFiles,
-} from "../state/workspace-state.js";
-import { TerminalSessionManager } from "../terminal/session-manager.js";
+} from "../state/workspace-state";
+import { TerminalSessionManager } from "../terminal/session-manager";
 
 export interface WorkspaceRegistryScope {
 	workspaceId: string;
@@ -194,7 +195,9 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 	let activeWorkspaceId: string | null = initialWorkspace?.workspaceId ?? indexedWorkspace?.workspaceId ?? null;
 	let activeWorkspacePath: string | null = initialWorkspace?.repoPath ?? indexedWorkspace?.repoPath ?? null;
 	let globalRuntimeConfig = await deps.loadGlobalRuntimeConfig();
-	let activeRuntimeConfig = activeWorkspacePath ? await deps.loadRuntimeConfig(activeWorkspacePath) : globalRuntimeConfig;
+	let activeRuntimeConfig = activeWorkspacePath
+		? await deps.loadRuntimeConfig(activeWorkspacePath)
+		: globalRuntimeConfig;
 	const workspacePathsById = new Map<string, string>(
 		activeWorkspaceId && activeWorkspacePath ? [[activeWorkspaceId, activeWorkspacePath]] : [],
 	);
@@ -287,11 +290,11 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 
 	const summarizeProjectTaskCounts = async (
 		workspaceId: string,
-		repoPath: string,
+		_repoPath: string,
 	): Promise<RuntimeProjectTaskCounts> => {
 		try {
-			const workspaceState = await loadWorkspaceState(repoPath);
-			const persistedCounts = countTasksByColumn(workspaceState.board);
+			const board = await loadWorkspaceBoardById(workspaceId);
+			const persistedCounts = countTasksByColumn(board);
 			const terminalManager = getTerminalManagerForWorkspace(workspaceId);
 			if (!terminalManager) {
 				projectTaskCountsByWorkspaceId.set(workspaceId, persistedCounts);
@@ -301,11 +304,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 			for (const summary of terminalManager.listSummaries()) {
 				liveSessionsByTaskId[summary.taskId] = summary;
 			}
-			const nextCounts = applyLiveSessionStateToProjectTaskCounts(
-				persistedCounts,
-				workspaceState.board,
-				liveSessionsByTaskId,
-			);
+			const nextCounts = applyLiveSessionStateToProjectTaskCounts(persistedCounts, board, liveSessionsByTaskId);
 			projectTaskCountsByWorkspaceId.set(workspaceId, nextCounts);
 			return nextCounts;
 		} catch {

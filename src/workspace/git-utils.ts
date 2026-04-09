@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createGitProcessEnv } from "../core/git-process-env.js";
+import { createGitProcessEnv } from "../core/git-process-env";
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
@@ -11,7 +11,7 @@ interface GitCommandResult {
 	stderr: string;
 	output: string;
 	error: string | null;
-	exitCode: number
+	exitCode: number;
 }
 
 export interface RunGitOptions {
@@ -19,9 +19,23 @@ export interface RunGitOptions {
 	env?: NodeJS.ProcessEnv;
 }
 
+function normalizeProcessExitCode(code: unknown): number {
+	if (typeof code === "number" && Number.isFinite(code)) {
+		return code;
+	}
+	if (typeof code === "string") {
+		const parsed = Number(code);
+		if (Number.isInteger(parsed)) {
+			return parsed;
+		}
+	}
+	return -1;
+}
+
 export async function runGit(cwd: string, args: string[], options: RunGitOptions = {}): Promise<GitCommandResult> {
 	try {
-		const { stdout, stderr } = await execFileAsync("git", args, {
+		const fullArgs = ["-c", "core.quotepath=false", ...args];
+		const { stdout, stderr } = await execFileAsync("git", fullArgs, {
 			cwd,
 			encoding: "utf8",
 			maxBuffer: GIT_MAX_BUFFER_BYTES,
@@ -38,13 +52,19 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 			exitCode: 0,
 		};
 	} catch (error) {
-		const candidate = error as { code?: string | number | null; stdout?: unknown; stderr?: unknown; message?: unknown };
-		const stdout = String(candidate.stdout ?? "").trim();
+		const candidate = error as {
+			code?: string | number | null;
+			stdout?: unknown;
+			stderr?: unknown;
+			message?: unknown;
+		};
+		const rawStdout = String(candidate.stdout ?? "");
+		const stdout = options.trimStdout === false ? rawStdout : rawStdout.trim();
 		const stderr = String(candidate.stderr ?? "").trim();
 		const message = String(candidate.message ?? "").trim();
-		const command = `git ${args.join(" ")} failed`
-		const errorMessage = `Failed to run Git Command: \n Command: \n ${command} \n ${stderr || message}`
-		const exitCode = typeof candidate.code === "number" ? candidate.code : 1;
+		const command = `git ${args.join(" ")} failed`;
+		const errorMessage = `Failed to run Git Command: \n Command: \n ${command} \n ${stderr || message}`;
+		const exitCode = normalizeProcessExitCode(candidate.code);
 
 		return {
 			ok: false,
@@ -58,12 +78,12 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 }
 
 export async function getGitStdout(args: string[], cwd: string, options: RunGitOptions = {}): Promise<string> {
-	const result = await runGit(cwd, args, options)
-	if(!result.ok) {
-		throw new Error(result.error || result.stdout)
+	const result = await runGit(cwd, args, options);
+	if (!result.ok) {
+		throw new Error(result.error || result.stdout);
 	}
 
-	return result.stdout
+	return result.stdout;
 }
 
 export interface GitHeadInfo {

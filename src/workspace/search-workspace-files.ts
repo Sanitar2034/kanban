@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import type { RuntimeWorkspaceFileSearchMatch } from "../core/api-contract.js";
-import { createGitProcessEnv } from "../core/git-process-env.js";
+import type { RuntimeWorkspaceFileSearchMatch } from "../core/api-contract";
+import { createGitProcessEnv } from "../core/git-process-env";
 
 const execFileAsync = promisify(execFile);
 const CACHE_TTL_MS = 10_000;
@@ -88,12 +88,16 @@ async function loadFileIndex(cwd: string): Promise<{ files: string[]; changedPat
 
 	try {
 		const [filesResult, statusResult] = await Promise.all([
-			execFileAsync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
-				cwd,
-				maxBuffer: 8 * 1024 * 1024,
-				env: createGitProcessEnv(),
-			}),
-			execFileAsync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+			execFileAsync(
+				"git",
+				["-c", "core.quotepath=false", "ls-files", "--cached", "--others", "--exclude-standard"],
+				{
+					cwd,
+					maxBuffer: 8 * 1024 * 1024,
+					env: createGitProcessEnv(),
+				},
+			),
+			execFileAsync("git", ["-c", "core.quotepath=false", "status", "--porcelain=v1", "--untracked-files=all"], {
 				cwd,
 				maxBuffer: 8 * 1024 * 1024,
 				env: createGitProcessEnv(),

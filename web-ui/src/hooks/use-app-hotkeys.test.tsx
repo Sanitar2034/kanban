@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHotkeys } from "react-hotkeys-hook";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
 
@@ -55,6 +55,7 @@ describe("useAppHotkeys", () => {
 					isDetailTerminalOpen={false}
 					isHomeTerminalOpen={false}
 					isHomeGitHistoryOpen={false}
+					canUseCreateTaskShortcut
 					handleToggleDetailTerminal={() => {}}
 					handleToggleHomeTerminal={() => {}}
 					handleToggleExpandDetailTerminal={() => {}}
@@ -98,6 +99,7 @@ describe("useAppHotkeys", () => {
 					isDetailTerminalOpen={false}
 					isHomeTerminalOpen={false}
 					isHomeGitHistoryOpen
+					canUseCreateTaskShortcut
 					handleToggleDetailTerminal={() => {}}
 					handleToggleHomeTerminal={() => {}}
 					handleToggleExpandDetailTerminal={() => {}}
@@ -134,6 +136,7 @@ describe("useAppHotkeys", () => {
 					isDetailTerminalOpen={false}
 					isHomeTerminalOpen={false}
 					isHomeGitHistoryOpen={false}
+					canUseCreateTaskShortcut
 					handleToggleDetailTerminal={() => {}}
 					handleToggleHomeTerminal={() => {}}
 					handleToggleExpandDetailTerminal={() => {}}
@@ -158,5 +161,42 @@ describe("useAppHotkeys", () => {
 		});
 
 		expect(onStartAllTasks).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not open create task on C when create-task shortcut is disabled", async () => {
+		const handleOpenCreateTask = vi.fn();
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					selectedCard={null}
+					isDetailTerminalOpen={false}
+					isHomeTerminalOpen={false}
+					isHomeGitHistoryOpen={false}
+					canUseCreateTaskShortcut={false}
+					handleToggleDetailTerminal={() => {}}
+					handleToggleHomeTerminal={() => {}}
+					handleToggleExpandDetailTerminal={() => {}}
+					handleToggleExpandHomeTerminal={() => {}}
+					handleOpenCreateTask={handleOpenCreateTask}
+					handleOpenSettings={() => {}}
+					handleToggleGitHistory={() => {}}
+					handleCloseGitHistory={() => {}}
+					onStartAllTasks={() => {}}
+				/>,
+			);
+		});
+
+		const createTaskCall = mockUseHotkeys.mock.calls.find(([shortcut]) => shortcut === "c");
+		if (!createTaskCall || typeof createTaskCall[1] !== "function") {
+			throw new Error("Expected create task shortcut to be registered.");
+		}
+
+		act(() => {
+			const createTaskHandler = createTaskCall[1] as () => void;
+			createTaskHandler();
+		});
+
+		expect(handleOpenCreateTask).not.toHaveBeenCalled();
 	});
 });

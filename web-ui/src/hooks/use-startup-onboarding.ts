@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-	isOnboardingForceShowEnabled,
-	isSelectedAgentAuthenticated,
-	shouldShowStartupOnboardingDialog,
-} from "@/runtime/onboarding";
+import { isSelectedAgentAuthenticated, shouldShowStartupOnboardingDialog } from "@/runtime/onboarding";
 import { saveRuntimeConfig as saveRuntimeConfigQuery } from "@/runtime/runtime-config-query";
 import type { RuntimeAgentId, RuntimeConfigResponse } from "@/runtime/types";
 import { LocalStorageKey } from "@/storage/local-storage-store";
@@ -25,6 +21,7 @@ interface AgentSelectionResult {
 
 export interface UseStartupOnboardingResult {
 	isStartupOnboardingDialogOpen: boolean;
+	handleOpenStartupOnboardingDialog: () => void;
 	handleCloseStartupOnboardingDialog: () => void;
 	handleSelectOnboardingAgent: (agentId: RuntimeAgentId) => Promise<AgentSelectionResult>;
 	handleOnboardingClineSetupSaved: () => void;
@@ -40,12 +37,12 @@ export function useStartupOnboarding(options: UseStartupOnboardingOptions): UseS
 		refreshSettingsRuntimeProjectConfig,
 	} = options;
 	const [isStartupOnboardingDialogOpen, setIsStartupOnboardingDialogOpen] = useState(false);
+	const [isStartupOnboardingDialogForcedOpen, setIsStartupOnboardingDialogForcedOpen] = useState(false);
 	const [didDismissStartupOnboardingForSession, setDidDismissStartupOnboardingForSession] = useState(false);
 	const [hasShownOnboardingDialog, setHasShownOnboardingDialog] = useBooleanLocalStorageValue(
 		LocalStorageKey.OnboardingDialogShown,
 		false,
 	);
-	const forceShowOnboardingDialog = isOnboardingForceShowEnabled(import.meta.env.VITE_FORCE_SHOW_ONBOARDING_DIALOG);
 	const selectedAgentAuthenticated = isSelectedAgentAuthenticated(
 		runtimeProjectConfig?.selectedAgentId,
 		runtimeProjectConfig?.clineProviderSettings,
@@ -53,11 +50,16 @@ export function useStartupOnboarding(options: UseStartupOnboardingOptions): UseS
 
 	useEffect(() => {
 		setDidDismissStartupOnboardingForSession(false);
+		setIsStartupOnboardingDialogForcedOpen(false);
 	}, [currentProjectId]);
 
 	useEffect(() => {
 		if (isRuntimeProjectConfigLoading && runtimeProjectConfig === null) {
 			setIsStartupOnboardingDialogOpen(false);
+			return;
+		}
+		if (isStartupOnboardingDialogForcedOpen) {
+			setIsStartupOnboardingDialogOpen(true);
 			return;
 		}
 		if (didDismissStartupOnboardingForSession) {
@@ -69,20 +71,26 @@ export function useStartupOnboarding(options: UseStartupOnboardingOptions): UseS
 				hasShownOnboardingDialog,
 				isTaskAgentReady,
 				isSelectedAgentAuthenticated: selectedAgentAuthenticated,
-				forceShowOnboardingDialog,
 			}),
 		);
 	}, [
 		didDismissStartupOnboardingForSession,
-		forceShowOnboardingDialog,
 		hasShownOnboardingDialog,
+		isStartupOnboardingDialogForcedOpen,
 		isRuntimeProjectConfigLoading,
 		isTaskAgentReady,
 		runtimeProjectConfig,
 		selectedAgentAuthenticated,
 	]);
 
+	const handleOpenStartupOnboardingDialog = useCallback(() => {
+		setDidDismissStartupOnboardingForSession(false);
+		setIsStartupOnboardingDialogForcedOpen(true);
+		setIsStartupOnboardingDialogOpen(true);
+	}, []);
+
 	const handleCloseStartupOnboardingDialog = useCallback(() => {
+		setIsStartupOnboardingDialogForcedOpen(false);
 		setHasShownOnboardingDialog(true);
 		setDidDismissStartupOnboardingForSession(true);
 		setIsStartupOnboardingDialogOpen(false);
@@ -112,6 +120,7 @@ export function useStartupOnboarding(options: UseStartupOnboardingOptions): UseS
 
 	return {
 		isStartupOnboardingDialogOpen,
+		handleOpenStartupOnboardingDialog,
 		handleCloseStartupOnboardingDialog,
 		handleSelectOnboardingAgent,
 		handleOnboardingClineSetupSaved,

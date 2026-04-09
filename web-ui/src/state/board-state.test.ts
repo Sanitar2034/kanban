@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createInitialBoardData } from "@/data/board-data";
 import {
@@ -43,7 +43,23 @@ function requireTaskId(taskId: string | undefined, taskPrompt: string): string {
 	return taskId;
 }
 
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
+
 describe("board dependency state", () => {
+	it("creates tasks when randomUUID is unavailable", () => {
+		vi.stubGlobal("crypto", { randomUUID: undefined });
+
+		const board = addTaskToColumn(createInitialBoardData(), "backlog", {
+			prompt: "Task A",
+			baseRef: "main",
+		});
+		const backlogCards = board.columns.find((column) => column.id === "backlog")?.cards ?? [];
+
+		expect(backlogCards).toHaveLength(1);
+		expect(backlogCards[0]?.id).toHaveLength(5);
+	});
 	it("prevents duplicate links in either direction", () => {
 		const fixture = createBacklogBoard(["Task A", "Task B", "Task C"]);
 		const taskA = requireTaskId(fixture.taskIdByPrompt["Task A"], "Task A");

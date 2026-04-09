@@ -1,5 +1,209 @@
 # Changelog
 
+## [0.1.59]
+
+- Added a beta hint card to the project sidebar with quick access to send feedback or report issues
+- Added "Read the docs" button in the settings dialog linking to documentation
+- Adjusted prompting for the commit button to better handle stale git lock files and multiple stashes at once
+
+## [0.1.58]
+
+- More panels are now resizable (agent chat, git history, and more) and your layout preferences persist across sessions
+- Adds full Factory Droid CLI agent support
+- Add, edit, and delete custom OpenAI Compatible providers from the settings dialog
+- Fixed trashed task cards being openable from the board
+- Fixed git history cache not clearing when closing the view
+- Terminal cursor defaults now match VS Code behavior
+- Feedback widget no longer triggers authentication until you actually click it
+- Updated Cline SDK from 0.0.24 to 0.0.28, which includes: OpenAI-compatible provider support via AI SDK, custom provider CRUD in core, better handling of overloaded and insufficient-credits errors, fixed tool schema format for OpenAI-compatible providers, accurate input token reporting
+
+## [0.1.57]
+
+- Added `kanban --update` command so you can check for and install updates manually
+- Fixed Windows agents (like Codex) being incorrectly launched through cmd.exe when they're native executables
+- Reduced latency when switching between projects
+- Restored the feedback widget with proper JWT authentication
+- Fixed telemetry service configuration for Cline agents
+- Updated Cline SDK from 0.0.23 to 0.0.24, which includes reasoning details support and improved JSON Schema handling for tool definitions
+
+## [0.1.56]
+
+- Automatic context overflow recovery: when the conversation history exceeds the model's context window, Kanban now compacts old messages and retries instead of failing
+- Credit limit errors (insufficient balance / 402) are now surfaced immediately without unnecessary retries or confusing system messages
+- Added report issue and feature request links to the settings dialog
+- Added Cline icon to browser notifications
+- Updated Cline SDK from 0.0.22 to 0.0.23, which includes: LiteLLM private model support, provider-specific setting configs, loop detection as a built-in agent policy, provider ID normalization for model resolution, OAuth token refresh fix for spawned agents
+
+## [0.1.55]
+
+- Fixed non-ASCII file paths (e.g. Japanese, Chinese, Korean characters) rendering as garbled octal escape sequences in the diff view
+
+## [0.1.54]
+
+- Task agent chat panel resizing now persists when navigating between tasks
+
+## [0.1.53]
+
+- Added `/clear` slash command to reset the Cline agent chat session
+- Added hints for environment variables in Cline provider setup
+- Aligned Cline provider and model fallbacks with SDK defaults for more reliable configuration
+- Fixed Codex plan mode not working
+- Fixed slash command file watchers to reuse a single watcher per workspace instead of creating duplicates
+- Show loading skeleton in onboarding carousel while videos load
+- Added VS Code Insiders as a file open target
+
+## [0.1.52]
+
+- Added support for custom OpenAI-compatible providers, so you can connect any OpenAI-compatible API as a Cline model provider
+- Added PWA support -- the web UI can now be installed as a standalone desktop app from Chrome, with window controls overlay and an offline fallback page that auto-reconnects when the server comes back
+- Sticky file headers in the diff viewer now pin under the toolbar while scrolling through large diffs
+- Show a cleanup spinner during Ctrl+C shutdown instead of silently hanging
+- Fixed Codex status monitoring to reliably track the latest tool call
+- Fixed terminal color detection for TUI apps like Codex CLI that query both foreground and background colors at startup
+- Fixed activity preview text getting truncated in hooks
+- Fixed project column sizing not persisting across sessions
+- Fixed home sidebar session IDs not matching the current format
+
+## [0.1.51]
+
+- Task terminals now support multiple simultaneous viewers, so opening the same task in several browser tabs no longer causes disconnections
+- Terminal TUI state is now preserved across reconnects, so you no longer lose your terminal view when the connection drops and re-establishes
+- Fixed Codex CLI content disappearing or rendering incorrectly -- PTY sessions are now fully server-side, so you can refresh the page, switch between tasks, and unmount terminals without losing any output
+- Fixed home sidebar terminal sessions not reconnecting after navigation
+- Switched to esbuild for faster builds
+- Claude agent hyperlinks now render correctly in Kanban terminals
+- Fixed screen flickering and unnecessary polling when viewing trashed tasks
+- Fixed restoring tasks from trash using the wrong agent
+- Fixed stale git worktree registrations that could cause worktree operations to fail
+
+## [0.1.50]
+
+- Updated Cline SDK from 0.0.21 to 0.0.22, which includes: fixed hook worker process launching to use a more robust internal launch mechanism
+
+## [0.1.49]
+
+- Updated Cline SDK from 0.0.16 to 0.0.21, which includes: organization fetching support, SDK declaration maps for better type resolution, OpenAI Compatible provider migration and cleanup of the legacy provider, agent telemetry events with agent ID and metadata, bash tool and home directory fixes on Windows, and exposed LoggerTelemetryAdapter in the node package
+
+## [0.1.48]
+
+- Fixed sidebar agent attempting to edit files and write code instead of staying focused on Kanban board management
+
+## [0.1.47]
+
+- Fixed browser open failing on Linux systems where `xdg-open` is not available
+
+## [0.1.46]
+
+- Added reasoning level dropdown to Cline provider settings and the model selector in the chat composer
+- Images can now be attached when creating tasks for Claude Code and Codec CLI agents -- images are saved as temporary files and their paths are passed into the prompt since TUIs don't support inline images
+- Added shortcuts for diff view actions and a "Start and Open" shortcut as an alternative to starting a task (shout out to Shey for the idea!)
+- Fixed issues with the sidebar Cline chat session not reloading after adding MCP servers
+- The project column can now be collapsed all the way to the edge for a minimal view (shout out to Shey for this idea!)
+- Fixed issues with some Next.js project configurations in worktrees
+- Fixed diff viewer showing false changes for end-of-file-only differences
+- Fixed a crash in older browsers when generating UUIDs for board state
+- Fixed a crash on Windows when resizing the terminal after the PTY process has exited
+
+## [0.1.45]
+
+- Fixed kanban access validation to only apply restrictions to enterprise customers, so non-enterprise users are no longer incorrectly blocked
+
+## [0.1.44]
+
+- Fixed remote configuration not being applied correctly
+
+## [0.1.43]
+
+- Kanban access can now be gated via Cline remote config
+- Fixed "C" (create task) keyboard shortcut crashing when no projects exist
+- Fixed macOS directory picker treating cancel as an error instead of a normal cancellation
+- Improved agent selection copy during onboarding
+- File paths in the settings dialog now display with `~` instead of the full home directory
+- Fixed incorrect "kanban" branding in the disconnected screen (now says "Cline")
+- Fixed cancel button showing wrong label in detail view panels
+- Temporarily disabled Featurebase feedback widget
+
+## [0.1.42]
+
+- Fixed auto-update failing on Windows by using the correct `.cmd` extensions for package manager commands (npm, pnpm, yarn)
+
+## [0.1.41]
+
+- Cline agent sessions now automatically recover after a runtime teardown, so work isn't lost if the runtime restarts
+- Per-task plan/act mode now persists when switching between tasks
+- Chat messages sent while the agent is actively working are now queued and delivered when the turn completes, instead of being dropped
+- Fixed repeated MCP OAuth callbacks causing errors when the browser fires the redirect more than once
+- Fixed corrupt patch captures when trashing tasks in worktrees
+- Session IDs are now sanitized for Windows-safe file paths
+- Agent mistake tolerance increased from 3 to 6 consecutive errors, giving the agent more room to recover from transient failures
+- Fixed the navbar agent setup hint showing incorrect state
+- Use the `open` package for cross-platform URL opening instead of custom logic
+- Updated Cline SDK to 0.0.15 with file-based store fallbacks, remote config support, improved chat failure handling with message state rollback, and a new `maxConsecutiveMistakes` option to prevent agents from getting stuck in failure loops
+
+## [0.1.40]
+
+- Sidebar agent now stays focused on board management and redirects coding requests to task creation, so dedicated agents handle implementation work in their own worktrees
+- Fixed feedback widget initialization for Cline-authenticated users
+
+## [0.1.39]
+
+- Fixed the feedback widget not opening reliably when clicking "Share Feedback"
+- Capitalized button labels for consistency ("Add Project", "Share Feedback")
+
+## [0.1.38]
+
+- First-run onboarding for script shortcuts -- new users are guided through creating their first shortcut directly from the top bar
+- Settings file URLs can now be opened
+- Fixed terminal bottom pane content clearing when running script shortcuts
+
+## [0.1.37]
+
+- Slash commands and file mentions in the client chat input field
+- Share Feedback button in the bottom left, powered by Featurebase and enriched with Cline account data like email so we can see who reports are coming from, with a Linear integration for automatic issue creation
+- MCP OAuth callbacks consolidated onto the main runtime server with real-time auth status updates
+- Linear MCP shortcut for one-click install setup
+- Updated startup onboarding carousel with a screen about using camera and the agent to add tasks
+- Conversation history always visible in detailed task view
+- Fixed an issue where adding MCPs wouldn't be available in existing Cline chats -- adding MCPs now resets Cline chats to use them
+- Fixed an issue where the client chat would get into a "task chat session is not running" error state. You can now send a message to continue the conversation when Cline fails a tool call
+- Fixed an issue where binary diffs would not show up in diff views
+- Diff renderer groups removals before additions for easier reading
+- Fixed default model selection when OAuth login leaves it blank
+- Updated Cline SDK with fixes for ask question tool being disabled in yolo mode, cost calculation, and tool description and truncation logic improvements
+
+## [0.1.36]
+
+- Added Sentry error reporting to help identify and fix crashes faster
+- Fixed terminal sessions sometimes failing to reconnect, which caused the terminal emulator to scroll to the top during card transitions before scrolling back down
+- Fixed onboarding to default to Cline as the AI provider and automatically set the provider's default model, preventing errors when switching providers without updating the model
+- Fixed Ctrl+C to wait for Cline to finish shutting down before fully exiting, preventing false double-interrupt exits
+- Upgraded Cline SDK from 0.0.7 to 0.0.11 with numerous fixes and improvements:
+  - Fixed prompt caching being broken for Anthropic models, meaning users were paying full price every turn. Cost calculation was also fixed (it was double-counting cache reads and ignoring cache writes)
+  - Fixed cancelling a request causing all subsequent requests in the session to immediately fail, due to a reused AbortController
+  - Fixed Gemini tool use failing for most non-trivial tool schemas. JSON Schema properties not in Gemini's allowed set (like `default`, `pattern`, `minLength`) caused Gemini to reject entire requests
+  - Fixed tools with no required parameters (like "list all") being silently dropped
+  - Fixed CLI hanging indefinitely in CI/Docker environments when stdin was detected as "not a TTY" but wasn't providing input
+  - Fixed Vercel AI Gateway being completely broken (base URL was `.app` instead of `.sh`, so all requests 404'd)
+  - Fixed internal metadata fields leaking into API requests sent to providers, wasting tokens
+  - Fixed multi-agent team tools failing when the orchestrator sent null for optional filter parameters. Also added concurrent run prevention and better error visibility for teammate failures
+  - Fixed MCP tool names with special characters or exceeding 128 chars causing provider schema validation errors (now sanitized with a hash suffix)
+  - Fixed OpenRouter and other gateway error messages showing opaque nested JSON blobs instead of the actual error
+  - Fixed `--json` mode output being impure (plain text warnings leaked into stdout, breaking JSONL parsing)
+  - Fixed SQLite crashing with a disk I/O error on first run instead of auto-creating the data directory
+  - Fixed "Sonic boom is not ready yet" error on CLI exit
+  - Removed hardcoded 8,192 max output tokens per turn cap, so models are no longer artificially limited
+  - Added OpenAI-compatible prompt caching support
+  - Added OpenAI-compatible providers now surface truncated responses (`finish_reason: "length"`) so callers can detect them
+  - Headless mode no longer requires a persisted API key -- env vars like `ANTHROPIC_API_KEY` now work
+  - Headless mode output cleaned up: model info, welcome line, and summary gated behind `--verbose`
+  - Config directory is now overridable via `--config` flag or `CLINE_DIR` env var for isolated config across multiple SDK instances
+  - `readFile` executor now supports optional `start_line`/`end_line` parameters, enabling models to read specific portions of large files
+
+## [0.1.35]
+
+- Added runtime debug tools accessible from the top bar for troubleshooting configuration and agent state
+- Settings now automatically retry loading when the initial attempt fails, improving reliability on slower connections
+
 ## [0.1.34]
 
 - Model pickers now show recommended Cline models for quick selection

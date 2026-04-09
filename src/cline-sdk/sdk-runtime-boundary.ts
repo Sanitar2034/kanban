@@ -3,20 +3,31 @@
 // flow through this boundary so the rest of Kanban stays decoupled from the
 // SDK package layout.
 
-import type { ToolApprovalRequest, ToolApprovalResult } from "@clinebot/agents";
-import { getClineDefaultSystemPrompt } from "@clinebot/agents";
 import {
 	buildWorkspaceMetadata,
+	type LlmsProviders as ClineSdkProviders,
 	createSessionHost,
 	createUserInstructionConfigWatcher,
+	getClineDefaultSystemPrompt,
+	listAvailableRuntimeCommandsFromWatcher,
 	loadRulesForSystemPromptFromWatcher,
-	resolveWorkflowSlashCommandFromWatcher,
+	resolveRuntimeSlashCommandFromWatcher,
 	type SessionHost,
+	type StartSessionInput,
+	type ToolApprovalRequest,
+	type ToolApprovalResult,
 	type UserInstructionConfigWatcher,
-} from "@clinebot/core/node";
-import type { providers as ClineSdkProviders } from "@clinebot/llms";
+} from "@clinebot/core";
+import type { BasicLogger } from "@clinebot/shared";
+import { resolveClineDataDir } from "@clinebot/shared/storage";
+import { CLINE_BUILTIN_SLASH_COMMANDS } from "./cline-slash-commands";
+import { getCliTelemetryService } from "./cline-telemetry-service";
+
+export { LoggerTelemetryAdapter, TelemetryService } from "@clinebot/core";
 
 export type ClineSdkSessionHost = SessionHost;
+export type ClineSdkStartSessionInput = StartSessionInput;
+export type ClineSdkBasicLogger = BasicLogger;
 export interface ClineSdkContentStartTextEvent {
 	type: "content_start";
 	contentType: "text";
@@ -182,24 +193,29 @@ export type ClineSdkSessionEvent =
 			};
 	  };
 
-export type ClineSdkSessionRecord = Awaited<
-	ReturnType<ClineSdkSessionHost["list"]>
->[number];
-export type ClineSdkPersistedMessage = ClineSdkProviders.Message;
+export type ClineSdkSessionRecord = Awaited<ReturnType<ClineSdkSessionHost["list"]>>[number];
+export type ClineSdkPersistedMessage = ClineSdkProviders.MessageWithMetadata;
 export type ClineSdkUserInstructionWatcher = UserInstructionConfigWatcher;
+export interface ClineSdkSlashCommand {
+	name: string;
+	instructions: string;
+	description?: string;
+}
 export type ClineSdkToolApprovalRequest = ToolApprovalRequest;
 export type ClineSdkToolApprovalResult = ToolApprovalResult;
 
 export async function createClineSdkSessionHost(): Promise<ClineSdkSessionHost> {
 	return await createSessionHost({
 		backendMode: "auto",
-		autoStartRpcServer: true,
+		rpc: { autoStart: true },
+		telemetry: getCliTelemetryService(),
 	});
 }
 
-export async function buildClineSdkWorkspaceMetadata(
-	cwd: string,
-): Promise<string> {
+export function resolveClineSdkDataDir(): string {
+	return resolveClineDataDir();
+}
+export async function buildClineSdkWorkspaceMetadata(cwd: string): Promise<string> {
 	return await buildWorkspaceMetadata(cwd);
 }
 
@@ -211,8 +227,34 @@ export function createClineSdkUserInstructionWatcher(workspacePath: string): Cli
 	});
 }
 
+export function listClineSdkWorkflowSlashCommands(watcher?: ClineSdkUserInstructionWatcher): ClineSdkSlashCommand[] {
+	const builtIns: ClineSdkSlashCommand[] = CLINE_BUILTIN_SLASH_COMMANDS.map((command) => ({
+		name: command.name,
+		instructions: "",
+		description: command.description,
+	}));
+	if (!watcher) {
+		return builtIns;
+	}
+	const byName = new Map<string, ClineSdkSlashCommand>();
+	for (const command of builtIns) {
+		byName.set(command.name, command);
+	}
+	for (const command of listAvailableRuntimeCommandsFromWatcher(watcher)) {
+		if (byName.has(command.name)) {
+			continue;
+		}
+		byName.set(command.name, {
+			name: command.name,
+			instructions: command.instructions,
+			description: command.kind === "workflow" ? "Workflow command" : "Skill command",
+		});
+	}
+	return [...byName.values()];
+}
+
 export function resolveClineSdkWorkflowSlashCommand(prompt: string, watcher: ClineSdkUserInstructionWatcher): string {
-	return resolveWorkflowSlashCommandFromWatcher(prompt, watcher);
+	return resolveRuntimeSlashCommandFromWatcher(prompt, watcher);
 }
 
 export function loadClineSdkRulesForSystemPrompt(watcher: ClineSdkUserInstructionWatcher): string {
@@ -228,13 +270,6 @@ export async function resolveClineSdkSystemPrompt(input: {
 	// "cline" provider expects the extra workspace metadata block that powers
 	// its repo-aware behavior in the same way the official CLI does.
 	const shouldAppendWorkspaceMetadata = input.providerId === "cline";
-	const workspaceMetadata = shouldAppendWorkspaceMetadata
-		? await buildWorkspaceMetadata(input.cwd)
-		: "";
-	return getClineDefaultSystemPrompt(
-		"Kanban",
-		input.cwd,
-		workspaceMetadata,
-		input.rules ?? "",
-	);
+	const workspaceMetadata = shouldAppendWorkspaceMetadata ? await buildWorkspaceMetadata(input.cwd) : "";
+	return getClineDefaultSystemPrompt("Kanban", input.cwd, workspaceMetadata, input.rules ?? "");
 }

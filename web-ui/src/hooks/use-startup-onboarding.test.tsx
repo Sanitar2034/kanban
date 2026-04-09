@@ -2,9 +2,9 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useStartupOnboarding, type UseStartupOnboardingResult } from "@/hooks/use-startup-onboarding";
-import { LocalStorageKey } from "@/storage/local-storage-store";
+import { type UseStartupOnboardingResult, useStartupOnboarding } from "@/hooks/use-startup-onboarding";
 import type { RuntimeConfigResponse } from "@/runtime/types";
+import { LocalStorageKey } from "@/storage/local-storage-store";
 
 const saveRuntimeConfigMock = vi.hoisted(() => vi.fn());
 
@@ -218,6 +218,45 @@ describe("useStartupOnboarding", () => {
 		}
 
 		const snapshot = latestSnapshot as HookSnapshot;
+		expect(snapshot.isStartupOnboardingDialogOpen).toBe(true);
+	});
+
+	it("can be manually opened from debug tools even when normal criteria would keep it closed", async () => {
+		window.localStorage.setItem(LocalStorageKey.OnboardingDialogShown, "true");
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					currentProjectId={"project-1"}
+					runtimeProjectConfig={createRuntimeConfigResponse("codex")}
+					isRuntimeProjectConfigLoading={false}
+					isTaskAgentReady={true}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		if (latestSnapshot === null) {
+			throw new Error("Expected a startup onboarding snapshot.");
+		}
+
+		let snapshot = latestSnapshot as HookSnapshot;
+		expect(snapshot.isStartupOnboardingDialogOpen).toBe(false);
+
+		await act(async () => {
+			snapshot.handleOpenStartupOnboardingDialog();
+			await Promise.resolve();
+		});
+
+		if (latestSnapshot === null) {
+			throw new Error("Expected a startup onboarding snapshot.");
+		}
+
+		snapshot = latestSnapshot as HookSnapshot;
 		expect(snapshot.isStartupOnboardingDialogOpen).toBe(true);
 	});
 });

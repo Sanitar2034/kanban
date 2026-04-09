@@ -1,3 +1,4 @@
+import { isRuntimeAgentLaunchSupported } from "@runtime-agent-catalog";
 import type {
 	RuntimeAgentId,
 	RuntimeClineProviderSettings,
@@ -5,7 +6,6 @@ import type {
 	RuntimeStateStreamTaskChatMessage,
 	RuntimeTaskChatMessage,
 } from "@/runtime/types";
-import { isRuntimeAgentLaunchSupported } from "@runtime-agent-catalog";
 
 export function isNativeClineAgentSelected(agentId: RuntimeAgentId | null | undefined): boolean {
 	return agentId === "cline";
@@ -19,6 +19,7 @@ export function getRuntimeClineProviderSettings(
 			providerId: null,
 			modelId: null,
 			baseUrl: null,
+			reasoningEffort: null,
 			apiKeyConfigured: false,
 			oauthProvider: null,
 			oauthAccessTokenConfigured: false,
@@ -29,9 +30,7 @@ export function getRuntimeClineProviderSettings(
 	);
 }
 
-export function isClineProviderAuthenticated(
-	settings: RuntimeClineProviderSettings | null | undefined,
-): boolean {
+export function isClineProviderAuthenticated(settings: RuntimeClineProviderSettings | null | undefined): boolean {
 	if (!settings) {
 		return false;
 	}
@@ -41,6 +40,26 @@ export function isClineProviderAuthenticated(
 		return false;
 	}
 	return settings.apiKeyConfigured || settings.oauthAccessTokenConfigured;
+}
+
+/**
+ * Returns true only when the selected provider is the Cline managed OAuth
+ * provider **and** an access token is configured.  This is stricter than
+ * {@link isClineProviderAuthenticated} which accepts any configured provider
+ * (Claude API key, Codex, etc.).
+ *
+ * Use this for features that require a Cline-issued token (e.g. Featurebase
+ * JWT authentication).
+ */
+export function isClineOauthAuthenticated(settings: RuntimeClineProviderSettings | null | undefined): boolean {
+	if (!settings) {
+		return false;
+	}
+	return (
+		settings.oauthProvider === "cline" &&
+		settings.oauthAccessTokenConfigured === true &&
+		settings.oauthRefreshTokenConfigured === true
+	);
 }
 
 export function isTaskAgentSetupSatisfied(
@@ -60,6 +79,22 @@ export function isTaskAgentSetupSatisfied(
 	return config.agents.some((agent) => isRuntimeAgentLaunchSupported(agent.id) && agent.installed);
 }
 
+export function getTaskAgentNavbarHint(
+	config: Pick<RuntimeConfigResponse, "selectedAgentId" | "agents" | "clineProviderSettings"> | null | undefined,
+	options?: {
+		shouldUseNavigationPath?: boolean;
+	},
+): string | undefined {
+	if (options?.shouldUseNavigationPath) {
+		return undefined;
+	}
+	const isTaskAgentReady = isTaskAgentSetupSatisfied(config);
+	if (isTaskAgentReady === null || isTaskAgentReady) {
+		return undefined;
+	}
+	return "No agent configured";
+}
+
 export function selectLatestTaskChatMessageForTask(
 	taskId: string | null | undefined,
 	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null,
@@ -73,9 +108,9 @@ export function selectLatestTaskChatMessageForTask(
 export function selectTaskChatMessagesForTask(
 	taskId: string | null | undefined,
 	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>,
-): RuntimeTaskChatMessage[] {
+): RuntimeTaskChatMessage[] | null {
 	if (!taskId) {
-		return [];
+		return null;
 	}
-	return taskChatMessagesByTaskId[taskId] ?? [];
+	return taskChatMessagesByTaskId[taskId] ?? null;
 }

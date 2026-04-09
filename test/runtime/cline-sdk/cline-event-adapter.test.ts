@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { applyClineSessionEvent } from "../../../src/cline-sdk/cline-event-adapter.js";
+import { applyClineSessionEvent } from "../../../src/cline-sdk/cline-event-adapter";
 import {
 	type ClineTaskMessage,
 	type ClineTaskSessionEntry,
 	createDefaultSummary,
-} from "../../../src/cline-sdk/cline-session-state.js";
-import type { RuntimeTaskSessionSummary } from "../../../src/core/api-contract.js";
+} from "../../../src/cline-sdk/cline-session-state";
+import type { RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
 
 function createEntry(taskId: string): ClineTaskSessionEntry {
 	return {
@@ -90,6 +90,32 @@ describe("applyClineSessionEvent", () => {
 		expect(secondPass.summaries.at(-1)?.state).toBe("running");
 		expect(secondPass.summaries.at(-1)?.latestHookActivity?.hookEventName).toBe("assistant_delta");
 		expect(secondPass.summaries.at(-1)?.latestHookActivity?.finalMessage).toBe("world");
+	});
+
+	it("keeps the full streamed assistant message in summary metadata", () => {
+		const entry = createEntry("task-1");
+		const longText = `${"Detailed handoff sentence ".repeat(12)}tail`;
+
+		const result = applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "content_start",
+						contentType: "text",
+						text: longText,
+						accumulated: longText,
+					},
+				},
+			},
+		});
+
+		const latestHookActivity = result.summaries.at(-1)?.latestHookActivity;
+		expect(latestHookActivity?.finalMessage).toBe(longText.trim());
+		expect(latestHookActivity?.activityText?.length ?? 0).toBeLessThan(latestHookActivity?.finalMessage?.length ?? 0);
+		expect(latestHookActivity?.activityText).toContain("…");
 	});
 
 	it("transitions into and back out of awaiting review around user-attention tools", () => {
@@ -188,6 +214,35 @@ describe("applyClineSessionEvent", () => {
 		expect(result.summaries.at(-1)?.latestHookActivity?.toolInputSummary).toBe("src/index.ts");
 	});
 
+	it("summarizes read_files tool calls from the SDK files payload", () => {
+		const entry = createEntry("task-1");
+		entry.summary.state = "running";
+
+		const result = applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "content_start",
+						contentType: "tool",
+						toolCallId: "tool-1",
+						toolName: "read_files",
+						input: {
+							files: [{ path: "src/index.ts", start_line: 3, end_line: 8 }, { path: "src/app.ts" }],
+						},
+					},
+				},
+			},
+		});
+
+		expect(result.summaries.at(-1)?.latestHookActivity?.activityText).toBe(
+			"Using read_files(src/index.ts:3-8, src/app.ts)",
+		);
+		expect(result.summaries.at(-1)?.latestHookActivity?.toolInputSummary).toBe("src/index.ts:3-8, src/app.ts");
+	});
+
 	it("converts aborted done events with pending cancel state back to idle", () => {
 		const entry = createEntry("task-1");
 		entry.summary.state = "running";
@@ -240,6 +295,41 @@ describe("applyClineSessionEvent", () => {
 		expect(result.messages[0]?.content).toBe("Done. Added the comment.");
 	});
 
+	it("keeps the previous preview when done events have no final text", () => {
+		const entry = createEntry("task-1");
+		entry.summary.state = "running";
+		entry.summary.latestHookActivity = {
+			activityText: "Reviewing the final diff",
+			toolName: "Read",
+			toolInputSummary: "src/index.ts",
+			finalMessage: "Reviewing the final diff",
+			hookEventName: "assistant_delta",
+			notificationType: null,
+			source: "cline-sdk",
+		};
+
+		const result = applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "done",
+						reason: "completed",
+					},
+				},
+			},
+		});
+
+		expect(result.entry.summary.state).toBe("awaiting_review");
+		expect(result.entry.summary.reviewReason).toBe("hook");
+		expect(result.entry.summary.latestHookActivity?.activityText).toBe("Reviewing the final diff");
+		expect(result.entry.summary.latestHookActivity?.toolName).toBe("Read");
+		expect(result.entry.summary.latestHookActivity?.toolInputSummary).toBe("src/index.ts");
+		expect(result.entry.summary.latestHookActivity?.hookEventName).toBe("agent_end");
+	});
+
 	it("keeps awaiting-review sessions in review when a stale running status event arrives", () => {
 		const entry = createEntry("task-1");
 		entry.summary.state = "awaiting_review";
@@ -273,7 +363,7 @@ describe("applyClineSessionEvent", () => {
 					sessionId: "session-1",
 					event: {
 						type: "error",
-						error: new Error("Missing API key for provider \"cline\"."),
+						error: new Error('Missing API key for provider "cline".'),
 						recoverable: true,
 						iteration: 1,
 					},
@@ -291,7 +381,91 @@ describe("applyClineSessionEvent", () => {
 		expect(result.messages[0]?.content).toContain("Missing API key");
 	});
 
-	it("marks unrecoverable agent errors as failed", () => {
+	it("treats insufficient-balance errors as non-recoverable even when SDK marks them recoverable", () => {
+		const entry = createEntry("task-1");
+		entry.summary.state = "running";
+
+		const result = applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "error",
+						error: new Error("402 Insufficient balance. Your Cline Credits balance is $0.00"),
+						recoverable: true,
+						iteration: 1,
+					},
+				},
+			},
+		});
+
+		expect(result.entry.summary.state).toBe("awaiting_review");
+		expect(result.entry.summary.reviewReason).toBe("error");
+		expect(result.entry.summary.warningMessage).toBeNull();
+		expect(result.entry.summary.latestHookActivity?.notificationType).toBe("credit_limit");
+		expect(result.messages).toHaveLength(0);
+	});
+
+	it("preserves credit-limit metadata when a later done event closes the turn", () => {
+		const entry = createEntry("task-1");
+		entry.summary.state = "awaiting_review";
+		entry.summary.reviewReason = "error";
+		entry.summary.latestHookActivity = {
+			activityText: "Agent error: 402 Insufficient balance",
+			toolName: null,
+			toolInputSummary: null,
+			finalMessage: "402 Insufficient balance. Your Cline Credits balance is $0.00",
+			hookEventName: "agent_error",
+			notificationType: "credit_limit",
+			source: "cline-sdk",
+		};
+
+		const result = applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "done",
+						reason: "aborted",
+					},
+				},
+			},
+		});
+
+		expect(result.entry.summary.latestHookActivity?.hookEventName).toBe("agent_end");
+		expect(result.entry.summary.latestHookActivity?.notificationType).toBe("credit_limit");
+	});
+
+	it("suppresses SDK recovery notices for insufficient-balance errors", () => {
+		const entry = createEntry("task-1");
+		entry.summary.state = "awaiting_review";
+		entry.summary.reviewReason = "error";
+
+		const result = applyEvent({
+			entry,
+			event: {
+				type: "agent_event",
+				payload: {
+					sessionId: "session-1",
+					event: {
+						type: "notice",
+						message:
+							"The previous turn failed with an API/runtime error: 402 Insufficient balance. Your Cline Credits balance is $0.00. Retry and continue from the latest state.",
+						noticeType: "recovery",
+						displayRole: "system",
+					},
+				},
+			},
+		});
+
+		expect(result.messages).toHaveLength(0);
+	});
+
+	it("keeps unrecoverable agent errors resumable", () => {
 		const entry = createEntry("task-1");
 		entry.summary.state = "running";
 		entry.activeAssistantMessageId = "assistant-1";
@@ -312,8 +486,9 @@ describe("applyClineSessionEvent", () => {
 			},
 		});
 
-		expect(result.entry.summary.state).toBe("failed");
+		expect(result.entry.summary.state).toBe("awaiting_review");
 		expect(result.entry.summary.reviewReason).toBe("error");
+		expect(result.entry.summary.warningMessage).toBe("Unauthorized");
 		expect(result.entry.summary.latestHookActivity?.finalMessage).toBe("Unauthorized");
 		expect(result.entry.activeAssistantMessageId).toBeNull();
 	});

@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { listTurbopackNodeModulesSymlinkSkipPaths } from "../../src/workspace/task-worktree-turbopack.js";
-import { createTempDir } from "../utilities/temp-dir.js";
+import { listTurbopackNodeModulesSymlinkSkipPaths } from "../../src/workspace/task-worktree-turbopack";
+import { createTempDir } from "../utilities/temp-dir";
 
 describe("listTurbopackNodeModulesSymlinkSkipPaths", () => {
 	it("skips root node_modules for root Turbopack scripts", async () => {
@@ -19,6 +19,55 @@ describe("listTurbopackNodeModulesSymlinkSkipPaths", () => {
 			);
 
 			await expect(listTurbopackNodeModulesSymlinkSkipPaths(repoPath)).resolves.toEqual(["node_modules"]);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("skips root node_modules for root Next apps without explicit Turbopack hints", async () => {
+		const { path: sandboxRoot, cleanup } = createTempDir("kanban-turbopack-detect-root-next-");
+		try {
+			const repoPath = join(sandboxRoot, "repo");
+			mkdirSync(repoPath, { recursive: true });
+			writeFileSync(
+				join(repoPath, "package.json"),
+				'{\n  "dependencies": {\n    "next": "15.0.0"\n  },\n  "scripts": {\n    "dev": "next dev"\n  }\n}\n',
+				"utf8",
+			);
+
+			await expect(listTurbopackNodeModulesSymlinkSkipPaths(repoPath)).resolves.toEqual(["node_modules"]);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("skips nested app node_modules for nested Next apps without explicit Turbopack hints", async () => {
+		const { path: sandboxRoot, cleanup } = createTempDir("kanban-turbopack-detect-nested-next-");
+		try {
+			const repoPath = join(sandboxRoot, "repo");
+			const appPath = join(repoPath, "apps", "web");
+			mkdirSync(appPath, { recursive: true });
+			writeFileSync(join(repoPath, "package.json"), '{\n  "private": true\n}\n', "utf8");
+			writeFileSync(
+				join(appPath, "package.json"),
+				'{\n  "dependencies": {\n    "next": "15.0.0"\n  },\n  "scripts": {\n    "dev": "next dev"\n  }\n}\n',
+				"utf8",
+			);
+
+			await expect(listTurbopackNodeModulesSymlinkSkipPaths(repoPath)).resolves.toEqual(["apps/web/node_modules"]);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("does not treat a next script alone as a Next app", async () => {
+		const { path: sandboxRoot, cleanup } = createTempDir("kanban-turbopack-detect-next-script-only-");
+		try {
+			const repoPath = join(sandboxRoot, "repo");
+			mkdirSync(repoPath, { recursive: true });
+			writeFileSync(join(repoPath, "package.json"), '{\n  "scripts": {\n    "dev": "next dev"\n  }\n}\n', "utf8");
+
+			await expect(listTurbopackNodeModulesSymlinkSkipPaths(repoPath)).resolves.toEqual([]);
 		} finally {
 			cleanup();
 		}
@@ -101,7 +150,7 @@ describe("listTurbopackNodeModulesSymlinkSkipPaths", () => {
 		try {
 			const repoPath = join(sandboxRoot, "repo");
 			mkdirSync(repoPath, { recursive: true });
-			writeFileSync(join(repoPath, "package.json"), '{\n  "scripts": {\n    "dev": "next dev"\n  }\n}\n', "utf8");
+			writeFileSync(join(repoPath, "package.json"), '{\n  "scripts": {\n    "dev": "vite dev"\n  }\n}\n', "utf8");
 
 			await expect(listTurbopackNodeModulesSymlinkSkipPaths(repoPath)).resolves.toEqual([]);
 		} finally {

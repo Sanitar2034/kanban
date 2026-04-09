@@ -9,8 +9,8 @@ import {
 	pickBestInstalledAgentIdFromDetected,
 	saveRuntimeConfig,
 	updateRuntimeConfig,
-} from "../../../src/config/runtime-config.js";
-import { createTempDir } from "../../utilities/temp-dir.js";
+} from "../../../src/config/runtime-config";
+import { createTempDir } from "../../utilities/temp-dir";
 
 function withTemporaryEnv<T>(
 	input: {
@@ -68,10 +68,11 @@ function writeFakeCommand(binDir: string, command: string): void {
 describe.sequential("runtime-config auto agent selection", () => {
 	it("selects agents using the configured priority order", () => {
 		expect(pickBestInstalledAgentIdFromDetected(["codex", "opencode", "gemini"])).toBe("codex");
-		expect(pickBestInstalledAgentIdFromDetected(["opencode", "droid", "gemini"])).toBeNull();
-		expect(pickBestInstalledAgentIdFromDetected(["droid", "gemini", "cline"])).toBeNull();
+		expect(pickBestInstalledAgentIdFromDetected(["opencode", "droid", "gemini"])).toBe("droid");
+		expect(pickBestInstalledAgentIdFromDetected(["droid", "gemini", "cline"])).toBe("droid");
 		expect(pickBestInstalledAgentIdFromDetected(["gemini", "cline"])).toBeNull();
 		expect(pickBestInstalledAgentIdFromDetected(["claude", "codex", "cline"])).toBe("claude");
+		expect(pickBestInstalledAgentIdFromDetected(["claude", "droid"])).toBe("claude");
 		expect(pickBestInstalledAgentIdFromDetected(["cline"])).toBeNull();
 		expect(pickBestInstalledAgentIdFromDetected([])).toBeNull();
 	});
@@ -96,7 +97,9 @@ describe.sequential("runtime-config auto agent selection", () => {
 				await withTemporaryEnv({ home: tempHome, pathPrefix: isolatedPath, replacePath: true }, async () => {
 					const state = await loadRuntimeConfig(tempProject);
 					expect(state.selectedAgentId).toBe("codex");
-					const persisted = JSON.parse(readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8")) as {
+					const persisted = JSON.parse(
+						readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8"),
+					) as {
 						selectedAgentId?: string;
 						agentAutonomousModeEnabled?: boolean;
 						readyForReviewNotificationsEnabled?: boolean;
@@ -173,7 +176,9 @@ describe.sequential("runtime-config auto agent selection", () => {
 				expect(updated.selectedAgentId).toBe("codex");
 				expect(updated.projectConfigPath).toBeNull();
 
-				const globalPayload = JSON.parse(readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8")) as {
+				const globalPayload = JSON.parse(
+					readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8"),
+				) as {
 					selectedAgentId?: string;
 					shortcuts?: unknown;
 				};
@@ -290,7 +295,9 @@ describe.sequential("runtime-config auto agent selection", () => {
 					openPrPromptTemplate: current.openPrPromptTemplateDefault,
 				});
 
-				const globalPayload = JSON.parse(readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8")) as {
+				const globalPayload = JSON.parse(
+					readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8"),
+				) as {
 					selectedAgentId?: string;
 					agentAutonomousModeEnabled?: boolean;
 					readyForReviewNotificationsEnabled?: boolean;
@@ -386,7 +393,9 @@ describe.sequential("runtime-config auto agent selection", () => {
 				});
 				expect(updated.selectedAgentId).toBe("codex");
 
-				const globalPayload = JSON.parse(readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8")) as {
+				const globalPayload = JSON.parse(
+					readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8"),
+				) as {
 					selectedAgentId?: string;
 					selectedShortcutLabel?: string;
 					agentAutonomousModeEnabled?: boolean;
@@ -416,7 +425,9 @@ describe.sequential("runtime-config auto agent selection", () => {
 				});
 				expect(updated.agentAutonomousModeEnabled).toBe(false);
 
-				const globalPayload = JSON.parse(readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8")) as {
+				const globalPayload = JSON.parse(
+					readFileSync(join(tempHome, ".cline", "kanban", "config.json"), "utf8"),
+				) as {
 					agentAutonomousModeEnabled?: boolean;
 				};
 				expect(globalPayload.agentAutonomousModeEnabled).toBe(false);

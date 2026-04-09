@@ -12,7 +12,6 @@ import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store
 import { usePersistentTerminalSession } from "@/terminal/use-persistent-terminal-session";
 import { isMacPlatform } from "@/utils/platform";
 
-
 interface AgentTerminalSessionControls {
 	clearTerminal: () => void;
 	containerRef: MutableRefObject<HTMLDivElement | null>;
@@ -45,7 +44,6 @@ export interface AgentTerminalPanelProps {
 	panelBackgroundColor?: string;
 	terminalBackgroundColor?: string;
 	cursorColor?: string;
-	showRightBorder?: boolean;
 	isVisible?: boolean;
 	onConnectionReady?: (taskId: string) => void;
 	agentCommand?: string | null;
@@ -166,7 +164,6 @@ function AgentTerminalPanelLayout({
 	panelBackgroundColor = "var(--color-surface-1)",
 	terminalBackgroundColor = "var(--color-surface-1)",
 	cursorColor: _cursorColor = "var(--color-text-primary)",
-	showRightBorder = true,
 	isVisible: _isVisible = true,
 	onConnectionReady: _onConnectionReady,
 	agentCommand,
@@ -186,12 +183,6 @@ function AgentTerminalPanelLayout({
 		}
 		return normalizedCommand.split(/\s+/)[0] ?? null;
 	}, [agentCommand]);
-	const cancelAutomaticActionButtonLabel = useMemo(() => {
-		if (!cancelAutomaticActionLabel) {
-			return null;
-		}
-		return cancelAutomaticActionLabel.replace(/\b\w/g, (character) => character.toUpperCase());
-	}, [cancelAutomaticActionLabel]);
 
 	return (
 		<div
@@ -202,7 +193,6 @@ function AgentTerminalPanelLayout({
 				minWidth: 0,
 				minHeight: 0,
 				background: panelBackgroundColor,
-				borderRight: showRightBorder ? "1px solid var(--color-divider)" : undefined,
 			}}
 		>
 			{showSessionToolbar ? (
@@ -320,9 +310,7 @@ function AgentTerminalPanelLayout({
 				/>
 			</div>
 			{lastError ? (
-				<div
-					className="flex gap-2 rounded-none border-t border-status-red/30 bg-status-red/10 p-3 text-[13px] text-status-red"
-				>
+				<div className="flex gap-2 rounded-none border-t border-status-red/30 bg-status-red/10 p-3 text-[13px] text-status-red">
 					{lastError}
 				</div>
 			) : null}
@@ -337,20 +325,11 @@ function AgentTerminalPanelLayout({
 						isOpenPrLoading={isOpenPrLoading}
 					/>
 					{cancelAutomaticActionLabel && onCancelAutomaticAction ? (
-						<Button
-							variant="default"
-							fill
-							onClick={onCancelAutomaticAction}
-						>
-							{`Cancel Automatic ${cancelAutomaticActionButtonLabel}`}
+						<Button variant="default" fill onClick={onCancelAutomaticAction}>
+							{cancelAutomaticActionLabel}
 						</Button>
 					) : null}
-					<Button
-						variant="danger"
-						fill
-						disabled={isMoveToTrashLoading}
-						onClick={onMoveToTrash}
-					>
+					<Button variant="danger" fill disabled={isMoveToTrashLoading} onClick={onMoveToTrash}>
 						{isMoveToTrashLoading ? <Spinner size={14} /> : "Move Card To Trash"}
 					</Button>
 				</div>

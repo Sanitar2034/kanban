@@ -3,6 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitCommitDiffPanel, type GitCommitDiffSource } from "@/components/git-history/git-commit-diff-panel";
 
+vi.mock("@/resize/layout-customizations", () => ({
+	useLayoutResetEffect: () => {},
+}));
+
 function createRect(top: number): DOMRect {
 	return {
 		x: 0,
@@ -128,5 +132,37 @@ describe("GitCommitDiffPanel", () => {
 		});
 
 		expect(scrollContainer.scrollTop).toBe(547);
+	});
+
+	it("shows only the file header for binary paths", async () => {
+		const diffSource: GitCommitDiffSource = {
+			type: "commit",
+			files: [
+				{
+					path: "assets/logo.png",
+					status: "modified",
+					additions: 0,
+					deletions: 0,
+					patch: "Binary files a/assets/logo.png and b/assets/logo.png differ\n",
+				},
+			],
+		};
+
+		await act(async () => {
+			root.render(
+				<GitCommitDiffPanel
+					diffSource={diffSource}
+					isLoading={false}
+					errorMessage={null}
+					selectedPath={null}
+					onSelectPath={() => {}}
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("assets/logo.png");
+		expect(container.textContent).toContain("Binary");
+		expect(container.textContent).not.toContain("No textual diff available.");
+		expect(container.querySelector(".kb-diff-row")).toBeNull();
 	});
 });

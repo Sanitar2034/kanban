@@ -341,9 +341,7 @@ export function CodeViewer({
 
 	return (
 		<div className="flex flex-col flex-1 min-h-0 min-w-0 relative">
-			{isSaving && (
-				<div className="absolute top-1 right-3 z-10 text-[11px] text-text-tertiary">Saving…</div>
-			)}
+			{isSaving && <div className="absolute top-1 right-3 z-10 text-[11px] text-text-tertiary">Saving…</div>}
 			<div className="flex-1 min-h-0 min-w-0">
 				<Editor
 					key={filePath}

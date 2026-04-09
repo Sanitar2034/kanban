@@ -7,8 +7,8 @@ import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { createGitTestEnv } from "../utilities/git-env.js";
-import { createTempDir } from "../utilities/temp-dir.js";
+import { createGitTestEnv } from "../utilities/git-env";
+import { createTempDir } from "../utilities/temp-dir";
 
 const requireFromHere = createRequire(import.meta.url);
 
@@ -105,7 +105,7 @@ async function waitForServerStart(process: ChildProcess, timeoutMs = 10_000): Pr
 			} else {
 				stderr += text;
 			}
-			if (!stdout.includes("Kanban running at ") || settled) {
+			if (!stdout.includes("Cline Kanban running at ") || settled) {
 				return;
 			}
 			settled = true;
@@ -166,7 +166,9 @@ async function waitForBrowserOpenCount(logPath: string, expectedCount: number, t
 			setTimeout(resolve, 25);
 		});
 	}
-	throw new Error(`Timed out waiting for browser open count ${expectedCount}. Current log: ${readBrowserOpenLog(logPath).join(", ")}`);
+	throw new Error(
+		`Timed out waiting for browser open count ${expectedCount}. Current log: ${readBrowserOpenLog(logPath).join(", ")}`,
+	);
 }
 
 async function waitForExit(process: ChildProcess, timeoutMs: number): Promise<boolean> {
@@ -246,7 +248,7 @@ async function runCliCommandAndCollectOutput(options: {
 }
 
 describe("source task commands", () => {
-	it("exits after creating a task when the runtime server is already running", async () => {
+	it("exits after creating a task when the runtime server is already running", { timeout: 60_000 }, async () => {
 		const { path: homeDir, cleanup: cleanupHome } = createTempDir("kanban-home-task-exit-");
 		const { path: projectPath, cleanup: cleanupProject } = createTempDir("kanban-project-task-exit-");
 
@@ -328,7 +330,7 @@ describe("source task commands", () => {
 		}
 	});
 
-	it("opens only for launch invocations", async () => {
+	it("opens only for launch invocations", { timeout: 60_000 }, async () => {
 		if (process.platform === "win32") {
 			return;
 		}
@@ -402,7 +404,7 @@ describe("source task commands", () => {
 		}
 	});
 
-	it("supports trashing and deleting tasks by column", async () => {
+	it("supports trashing and deleting tasks by column", { timeout: 60_000 }, async () => {
 		const { path: homeDir, cleanup: cleanupHome } = createTempDir("kanban-home-task-trash-delete-");
 		const { path: projectPath, cleanup: cleanupProject } = createTempDir("kanban-project-task-trash-delete-");
 

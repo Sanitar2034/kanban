@@ -16,6 +16,7 @@ interface UseTaskStartActionsInput {
 export interface UseTaskStartActionsResult {
 	handleCreateAndStartTask: (options?: { keepDialogOpen?: boolean }) => string | null;
 	handleCreateAndStartTasks: (prompts: string[], options?: { keepDialogOpen?: boolean }) => string[];
+	handleCreateStartAndOpenTask: (options?: { keepDialogOpen?: boolean }) => string | null;
 	handleStartTaskFromBoard: (taskId: string) => void;
 	handleStartAllBacklogTasksFromBoard: () => void;
 }
@@ -103,17 +104,20 @@ export function useTaskStartActions({
 		startBacklogTasks(backlogTaskIds);
 	}, [board, startBacklogTasks]);
 
-	const handleCreateAndStartTask = useCallback((options?: { keepDialogOpen?: boolean }): string | null => {
-		const taskId = handleCreateTask(options);
-		if (!taskId) {
-			return null;
-		}
-		setPendingTaskStartAfterCreateIds([taskId]);
-		if (!options?.keepDialogOpen) {
-			setSelectedTaskId(taskId);
-		}
-		return taskId;
-	}, [handleCreateTask, setSelectedTaskId]);
+	const handleCreateAndStartTask = useCallback(
+		(options?: { keepDialogOpen?: boolean }): string | null => {
+			const taskId = handleCreateTask(options);
+			if (!taskId) {
+				return null;
+			}
+			setPendingTaskStartAfterCreateIds([taskId]);
+			if (!options?.keepDialogOpen) {
+				setSelectedTaskId(taskId);
+			}
+			return taskId;
+		},
+		[handleCreateTask, setSelectedTaskId],
+	);
 
 	const handleCreateAndStartTasks = useCallback(
 		(prompts: string[], options?: { keepDialogOpen?: boolean }): string[] => {
@@ -128,6 +132,21 @@ export function useTaskStartActions({
 			return taskIds;
 		},
 		[handleCreateTasks, setSelectedTaskId],
+	);
+
+	const handleCreateStartAndOpenTask = useCallback(
+		(options?: { keepDialogOpen?: boolean }): string | null => {
+			const taskId = handleCreateTask(options);
+			if (!taskId) {
+				return null;
+			}
+			setPendingTaskStartAfterCreateIds([taskId]);
+			if (!options?.keepDialogOpen) {
+				setSelectedTaskId(taskId);
+			}
+			return taskId;
+		},
+		[handleCreateTask, setSelectedTaskId],
 	);
 
 	useEffect(() => {
@@ -148,6 +167,7 @@ export function useTaskStartActions({
 	return {
 		handleCreateAndStartTask,
 		handleCreateAndStartTasks,
+		handleCreateStartAndOpenTask,
 		handleStartTaskFromBoard,
 		handleStartAllBacklogTasksFromBoard,
 	};

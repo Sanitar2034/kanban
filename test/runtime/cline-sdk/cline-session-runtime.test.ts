@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createInMemoryClineSessionRuntime } from "../../../src/cline-sdk/cline-session-runtime.js";
+import { createInMemoryClineSessionRuntime } from "../../../src/cline-sdk/cline-session-runtime";
+import type { ClineSdkSessionRecord } from "../../../src/cline-sdk/sdk-runtime-boundary";
 
 function createNoopMcpRuntimeService() {
 	return {
@@ -28,21 +29,48 @@ function createDeferred<T>() {
 	};
 }
 
+function createPersistedRecord(input: {
+	sessionId: string;
+	status: ClineSdkSessionRecord["status"];
+	startedAt: string;
+	updatedAt: string;
+}): ClineSdkSessionRecord {
+	return {
+		sessionId: input.sessionId,
+		source: "core" as ClineSdkSessionRecord["source"],
+		status: input.status,
+		startedAt: input.startedAt,
+		updatedAt: input.updatedAt,
+		interactive: true,
+		provider: "anthropic",
+		model: "claude-sonnet-4-6",
+		cwd: "/tmp/worktree",
+		workspaceRoot: "/tmp/workspace-root",
+		enableTools: true,
+		enableSpawn: false,
+		enableTeams: false,
+		isSubagent: false,
+	};
+}
+
 describe("InMemoryClineSessionRuntime", () => {
 	it("routes host events through the pending requested session id before start resolves", async () => {
 		const startDeferred = createDeferred<{ sessionId: string; result: unknown }>();
 		const onTaskEvent = vi.fn();
 		let subscribedListener: ((event: unknown) => void) | null = null;
 		let requestedSessionId: string | null = null;
+		let requestedSource: string | null = null;
 
 		const fakeHost = {
-			start: vi.fn(async (input: { config?: { sessionId?: string } }) => {
+			start: vi.fn(async (input: { source?: string; config?: { sessionId?: string } }) => {
 				requestedSessionId = input.config?.sessionId ?? null;
+				requestedSource = input.source ?? null;
 				return await startDeferred.promise;
 			}),
 			send: vi.fn(async () => ({})),
 			stop: vi.fn(async () => {}),
 			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
 			dispose: vi.fn(async () => {}),
 			get: vi.fn(async () => undefined),
 			list: vi.fn(async () => []),
@@ -71,6 +99,7 @@ describe("InMemoryClineSessionRuntime", () => {
 		await vi.waitFor(() => {
 			expect(fakeHost.start).toHaveBeenCalledTimes(1);
 			expect(requestedSessionId).toBeTruthy();
+			expect(requestedSource).toBe(null);
 			expect(subscribedListener).toBeTruthy();
 		});
 
@@ -121,6 +150,7 @@ describe("InMemoryClineSessionRuntime", () => {
 			send: vi.fn(async () => ({})),
 			stop: vi.fn(async () => {}),
 			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
 			dispose: vi.fn(async () => {}),
 			get: vi.fn(async () => undefined),
 			list: vi.fn(async () => []),
@@ -196,10 +226,290 @@ describe("InMemoryClineSessionRuntime", () => {
 			expect.objectContaining({
 				userImages: ["data:image/png;base64,abc123"],
 				config: expect.objectContaining({
-					maxConsecutiveMistakes: 3,
+					execution: expect.objectContaining({
+						maxConsecutiveMistakes: 6,
+					}),
+					logger: expect.objectContaining({
+						info: expect.any(Function),
+						warn: expect.any(Function),
+						error: expect.any(Function),
+					}),
 				}),
 			}),
 		);
+	});
+
+	it("forwards queued delivery when sending follow-up input", async () => {
+		const fakeHost = {
+			start: vi.fn(async (input: { config?: { sessionId?: string } }) => ({
+				sessionId: input.config?.sessionId ?? "session-1",
+				result: {},
+			})),
+			send: vi.fn(async () => undefined),
+			stop: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
+			dispose: vi.fn(async () => {}),
+			get: vi.fn(async () => undefined),
+			list: vi.fn(async () => []),
+			readMessages: vi.fn(async () => []),
+			subscribe: vi.fn(() => () => {}),
+		};
+
+		const runtime = createInMemoryClineSessionRuntime({
+			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
+		});
+
+		await runtime.startTaskSession({
+			taskId: "task-1",
+			cwd: "/tmp/worktree",
+			prompt: "Investigate startup",
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
+			systemPrompt: "You are a helpful coding assistant.",
+		});
+
+		await runtime.sendTaskSessionInput("task-1", "Queue this", undefined, undefined, "queue");
+
+		expect(fakeHost.send).toHaveBeenCalledWith({
+			sessionId: expect.stringMatching(/^task-1-/),
+			prompt: "Queue this",
+			userImages: undefined,
+			delivery: "queue",
+		});
+	});
+
+	it("restarts using the latest mode selected on follow-up input", async () => {
+		const fakeHost = {
+			start: vi.fn(async (input: { config?: { sessionId?: string } }) => ({
+				sessionId: input.config?.sessionId ?? "session-1",
+				result: {},
+			})),
+			send: vi.fn(async () => undefined),
+			stop: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
+			dispose: vi.fn(async () => {}),
+			get: vi.fn(async () => undefined),
+			list: vi.fn(async () => []),
+			readMessages: vi.fn(async () => []),
+			subscribe: vi.fn(() => () => {}),
+		};
+
+		const runtime = createInMemoryClineSessionRuntime({
+			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
+		});
+
+		await runtime.startTaskSession({
+			taskId: "task-1",
+			cwd: "/tmp/worktree",
+			prompt: "Investigate startup",
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
+			mode: "act",
+			systemPrompt: "You are a helpful coding assistant.",
+		});
+		await runtime.sendTaskSessionInput("task-1", "Switch to planning", "plan");
+		await runtime.restartTaskSession({
+			taskId: "task-1",
+			prompt: "Continue after restart",
+		});
+
+		expect(fakeHost.start).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				config: expect.objectContaining({
+					mode: "plan",
+				}),
+			}),
+		);
+	});
+
+	it("uses filesystem-safe session ids when task ids include windows-invalid characters", async () => {
+		let requestedSessionId: string | null = null;
+		const fakeHost = {
+			start: vi.fn(async (input: { config?: { sessionId?: string } }) => {
+				requestedSessionId = input.config?.sessionId ?? null;
+				return {
+					sessionId: input.config?.sessionId ?? "session-1",
+					result: {},
+				};
+			}),
+			send: vi.fn(async () => undefined),
+			stop: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
+			dispose: vi.fn(async () => {}),
+			get: vi.fn(async () => undefined),
+			list: vi.fn(async () => []),
+			readMessages: vi.fn(async () => []),
+			subscribe: vi.fn(() => () => {}),
+		};
+
+		const runtime = createInMemoryClineSessionRuntime({
+			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
+		});
+
+		await runtime.startTaskSession({
+			taskId: "__home_agent__:workspace-1:cline",
+			cwd: "/tmp/worktree",
+			prompt: "Investigate startup",
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
+			systemPrompt: "You are a helpful coding assistant.",
+		});
+
+		expect(requestedSessionId).toBeTruthy();
+		expect(requestedSessionId ?? "").not.toMatch(/[<>:"/\\|?*]/);
+		expect(requestedSessionId ?? "").toMatch(/^__home_agent___workspace-1_cline-/);
+	});
+
+	it("clears the pending task binding when start fails", async () => {
+		const fakeHost = {
+			start: vi.fn(async () => {
+				throw new Error("Maximum consecutive mistakes reached.");
+			}),
+			send: vi.fn(async () => ({})),
+			stop: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
+			dispose: vi.fn(async () => {}),
+			get: vi.fn(async () => undefined),
+			list: vi.fn(async () => []),
+			readMessages: vi.fn(async () => []),
+			subscribe: vi.fn(() => () => {}),
+		};
+
+		const runtime = createInMemoryClineSessionRuntime({
+			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
+		});
+
+		await expect(
+			runtime.startTaskSession({
+				taskId: "task-1",
+				cwd: "/tmp/worktree",
+				prompt: "Investigate startup",
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-6",
+				systemPrompt: "You are a helpful coding assistant.",
+			}),
+		).rejects.toThrow("Maximum consecutive mistakes reached.");
+
+		expect(runtime.getTaskSessionId("task-1")).toBeNull();
+	});
+
+	it("clears the live task binding after the SDK emits ended", async () => {
+		let subscribedListener: ((event: unknown) => void) | null = null;
+
+		const fakeHost = {
+			start: vi.fn(async (input: { config?: { sessionId?: string } }) => ({
+				sessionId: input.config?.sessionId ?? "session-1",
+				result: {},
+			})),
+			send: vi.fn(async () => ({})),
+			stop: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
+			dispose: vi.fn(async () => {}),
+			get: vi.fn(async () => undefined),
+			list: vi.fn(async () => []),
+			readMessages: vi.fn(async () => []),
+			subscribe: vi.fn((listener: (event: unknown) => void) => {
+				subscribedListener = listener;
+				return () => {};
+			}),
+		};
+
+		const runtime = createInMemoryClineSessionRuntime({
+			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
+		});
+
+		await runtime.startTaskSession({
+			taskId: "task-1",
+			cwd: "/tmp/worktree",
+			prompt: "Investigate startup",
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
+			systemPrompt: "You are a helpful coding assistant.",
+		});
+
+		expect(runtime.getTaskSessionId("task-1")).toBeTruthy();
+
+		if (!subscribedListener) {
+			throw new Error("Expected runtime to subscribe to host events.");
+		}
+
+		const liveSessionId = runtime.getTaskSessionId("task-1");
+		(subscribedListener as (event: unknown) => void)({
+			type: "ended",
+			payload: {
+				sessionId: liveSessionId,
+				reason: "error",
+				ts: Date.now(),
+			},
+		});
+
+		expect(runtime.getTaskSessionId("task-1")).toBeNull();
+	});
+
+	it("deletes persisted task sessions when clearing a task session", async () => {
+		const fakeHost = {
+			start: vi.fn(async (input: { config?: { sessionId?: string } }) => ({
+				sessionId: input.config?.sessionId ?? "session-1",
+				result: {},
+			})),
+			send: vi.fn(async () => ({})),
+			stop: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
+			dispose: vi.fn(async () => {}),
+			get: vi.fn(async () => undefined),
+			list: vi.fn(async () => [
+				createPersistedRecord({
+					sessionId: "task-1-old",
+					status: "completed",
+					startedAt: "2026-03-17T10:00:00.000Z",
+					updatedAt: "2026-03-17T10:05:00.000Z",
+				}),
+				createPersistedRecord({
+					sessionId: "task-2-old",
+					status: "completed",
+					startedAt: "2026-03-17T10:00:00.000Z",
+					updatedAt: "2026-03-17T10:05:00.000Z",
+				}),
+			]),
+			readMessages: vi.fn(async () => []),
+			subscribe: vi.fn(() => () => {}),
+		};
+
+		const runtime = createInMemoryClineSessionRuntime({
+			createSessionHost: async () => fakeHost,
+			createMcpRuntimeService: createNoopMcpRuntimeService,
+		});
+
+		await runtime.startTaskSession({
+			taskId: "task-1",
+			cwd: "/tmp/worktree",
+			prompt: "Investigate startup",
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
+			systemPrompt: "You are a helpful coding assistant.",
+		});
+		const liveSessionId = runtime.getTaskSessionId("task-1");
+		expect(liveSessionId).toBeTruthy();
+
+		await runtime.clearTaskSessions("task-1");
+
+		expect(fakeHost.abort).toHaveBeenCalledWith(liveSessionId);
+		expect(fakeHost.delete).toHaveBeenCalledWith("task-1-old");
+		expect(fakeHost.delete).toHaveBeenCalledWith(liveSessionId);
+		expect(fakeHost.delete).not.toHaveBeenCalledWith("task-2-old");
+		expect(runtime.getTaskSessionId("task-1")).toBeNull();
 	});
 
 	it("reads persisted task history by scanning task-prefixed SDK session ids", async () => {
@@ -211,27 +521,28 @@ describe("InMemoryClineSessionRuntime", () => {
 			send: vi.fn(async () => ({})),
 			stop: vi.fn(async () => {}),
 			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
 			dispose: vi.fn(async () => {}),
 			get: vi.fn(async () => undefined),
 			list: vi.fn(async () => [
-				{
+				createPersistedRecord({
 					sessionId: "task-1-older",
 					status: "completed",
 					startedAt: "2026-03-17T10:00:00.000Z",
 					updatedAt: "2026-03-17T10:05:00.000Z",
-				},
-				{
+				}),
+				createPersistedRecord({
 					sessionId: "task-1-newer",
 					status: "completed",
 					startedAt: "2026-03-17T10:10:00.000Z",
 					updatedAt: "2026-03-17T10:15:00.000Z",
-				},
-				{
+				}),
+				createPersistedRecord({
 					sessionId: "task-2-1",
 					status: "completed",
 					startedAt: "2026-03-17T09:00:00.000Z",
 					updatedAt: "2026-03-17T09:05:00.000Z",
-				},
+				}),
 			]),
 			readMessages: vi.fn(async () => [
 				{
@@ -268,15 +579,16 @@ describe("InMemoryClineSessionRuntime", () => {
 			send: vi.fn(async () => ({})),
 			stop: vi.fn(async () => {}),
 			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
 			dispose: vi.fn(async () => {}),
 			get: vi.fn(async () => undefined),
 			list: vi.fn(async () => [
-				{
+				createPersistedRecord({
 					sessionId: "task-1-newer",
 					status: "completed",
 					startedAt: "2026-03-17T10:10:00.000Z",
 					updatedAt: "2026-03-17T10:15:00.000Z",
-				},
+				}),
 			]),
 			readMessages: vi.fn(async () => [
 				{
@@ -312,6 +624,7 @@ describe("InMemoryClineSessionRuntime", () => {
 			send: vi.fn(async () => ({})),
 			stop: vi.fn(async () => {}),
 			abort: vi.fn(async () => {}),
+			delete: vi.fn(async () => true),
 			dispose: vi.fn(async () => {}),
 			get: vi.fn(async () => undefined),
 			list: vi.fn(async () => []),

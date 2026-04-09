@@ -340,7 +340,7 @@ export function useGitHistoryData({
 			return;
 		}
 		const preferredCommit = activeRef
-			? commits.find((commit) => commit.hash === activeRef.hash) ?? commits[0]
+			? (commits.find((commit) => commit.hash === activeRef.hash) ?? commits[0])
 			: commits[0];
 		setSelectedCommitHash(preferredCommit?.hash ?? null);
 		setSelectedDiffPath(null);
@@ -390,6 +390,22 @@ export function useGitHistoryData({
 		queryFn: workingCopyQueryFn,
 		retainDataOnError: true,
 	});
+
+	useEffect(() => {
+		if (enabled) {
+			return;
+		}
+		abortInFlightLogRequest();
+		setCommits([]);
+		setTotalCommitCount(0);
+		setIsLogLoading(false);
+		setIsLoadingMoreCommits(false);
+		setLogErrorMessage(null);
+		setResolvedLogKey(null);
+		refsQuery.setData(null);
+		diffQuery.setData(null);
+		workingCopyQuery.setData(null);
+	}, [abortInFlightLogRequest, diffQuery.setData, enabled, refsQuery.setData, workingCopyQuery.setData]);
 
 	useEffect(() => {
 		if (!isScopeTransitioning) {
