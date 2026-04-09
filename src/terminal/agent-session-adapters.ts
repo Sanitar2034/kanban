@@ -13,7 +13,6 @@ import { quoteShellArg } from "../core/shell";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { getRuntimeHomePath } from "../state/workspace-state";
-import { resolveBinaryOnPath } from "./command-discovery";
 import { createHookRuntimeEnv } from "./hook-runtime-context";
 import {
 	getOpenCodeAuthPathCandidates,
@@ -759,15 +758,6 @@ const codexAdapter: AgentSessionAdapter = {
 		let binary = input.binary;
 		let deferredStartupInput: string | undefined;
 		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
-		if ((input.binary ?? "").trim() === "codex") {
-			const preferredCodexBinary = resolveBinaryOnPath("codex", {
-				path: input.env?.PATH,
-				preferOutsideNodeModulesBin: true,
-			});
-			if (preferredCodexBinary) {
-				binary = preferredCodexBinary;
-			}
-		}
 
 		if (input.autonomousModeEnabled && !hasCliOption(codexArgs, "--dangerously-bypass-approvals-and-sandbox")) {
 			codexArgs.push("--dangerously-bypass-approvals-and-sandbox");
@@ -786,11 +776,6 @@ const codexAdapter: AgentSessionAdapter = {
 			} else if (!hasCliOption(codexArgs, "--last")) {
 				codexArgs.push("--last");
 			}
-		}
-
-		// Kanban-managed sessions should not block on the Codex startup update modal.
-		if (!hasCodexConfigOverride(codexArgs, "check_for_update_on_startup")) {
-			codexArgs.push("-c", "check_for_update_on_startup=false");
 		}
 
 		if (appendedSystemPrompt && !hasCodexConfigOverride(codexArgs, "developer_instructions")) {

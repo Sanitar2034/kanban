@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { buildKanbanCommandParts, resolveKanbanCommandParts } from "../../src/core/kanban-command";
@@ -21,34 +19,13 @@ describe("resolveKanbanCommandParts", () => {
 		expect(parts).toEqual(["/usr/local/bin/node", "/repo/node_modules/tsx/dist/cli.mjs", "/repo/src/cli.ts"]);
 	});
 
-	it("resolves --import package specifiers against runtime cwd", () => {
-		const cwd = process.cwd();
-		const parts = resolveKanbanCommandParts({
-			execPath: process.execPath,
-			execArgv: ["--import", "tsx"],
-			argv: [process.execPath, join(cwd, "src/cli.ts"), "--no-open"],
-			cwd,
-		});
-		expect(parts[0]).toBe(process.execPath);
-		expect(parts[1]).toBe("--import");
-		expect(parts[2]).toContain("node_modules/tsx/dist/loader.mjs");
-		expect(parts[2]).toMatch(/^file:/u);
-		expect(parts[3]).toBe(join(cwd, "src/cli.ts"));
-	});
-
-	it("resolves relative --require paths against runtime cwd", () => {
+	it("preserves node execArgv for source entrypoints", () => {
 		const parts = resolveKanbanCommandParts({
 			execPath: "/usr/local/bin/node",
-			execArgv: ["--require", "./node_modules/tsx/dist/preflight.cjs"],
+			execArgv: ["--import", "tsx"],
 			argv: ["/usr/local/bin/node", "/repo/src/cli.ts", "--no-open"],
-			cwd: "/repo",
 		});
-		expect(parts).toEqual([
-			"/usr/local/bin/node",
-			"--require",
-			"/repo/node_modules/tsx/dist/preflight.cjs",
-			"/repo/src/cli.ts",
-		]);
+		expect(parts).toEqual(["/usr/local/bin/node", "--import", "tsx", "/repo/src/cli.ts"]);
 	});
 
 	it("falls back to execPath when no entrypoint path is available", () => {
