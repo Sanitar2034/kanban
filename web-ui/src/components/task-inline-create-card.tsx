@@ -73,6 +73,9 @@ export function TaskInlineCreateCard({
 	onClineProviderIdChange,
 	clineModelId,
 	onClineModelIdChange,
+	defaultAgentId,
+	defaultProviderId,
+	defaultModelId,
 }: {
 	title?: string;
 	onTitleChange?: (value: string) => void;
@@ -103,6 +106,12 @@ export function TaskInlineCreateCard({
 	onClineProviderIdChange?: (value: string | undefined) => void;
 	clineModelId?: string | undefined;
 	onClineModelIdChange?: (value: string | undefined) => void;
+	/** Default agent ID from runtimeConfig.selectedAgentId, used to show "Default (AgentName)" in picker */
+	defaultAgentId?: RuntimeAgentId | null;
+	/** Default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
+	defaultProviderId?: string | null;
+	/** Default Cline model ID from runtimeConfig.clineProviderSettings.modelId */
+	defaultModelId?: string | null;
 }): ReactElement {
 	const promptId = `${idPrefix}-prompt-input`;
 	const planModeId = `${idPrefix}-plan-mode-toggle`;
@@ -129,12 +138,16 @@ export function TaskInlineCreateCard({
 	const cancelLabel = hideCancelShortcut ? "Cancel" : "Cancel (esc)";
 	const cardMarginBottom = mode === "create" ? 6 : 0;
 
-	const { clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } = useTaskAgentModelPicker({
-		active: true,
-		workspaceId,
-		agentId,
-		clineProviderId,
-	});
+	const { agentOptions, clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } =
+		useTaskAgentModelPicker({
+			active: true,
+			workspaceId,
+			agentId,
+			clineProviderId,
+			defaultAgentId,
+			defaultProviderId,
+			defaultModelId,
+		});
 
 	useHotkeys(
 		"escape",
@@ -302,10 +315,13 @@ export function TaskInlineCreateCard({
 						onClineProviderIdChange={onClineProviderIdChange}
 						clineModelId={clineModelId}
 						onClineModelIdChange={onClineModelIdChange}
+						agentOptions={agentOptions}
 						clineProviderOptions={clineProviderOptions}
 						clineModelOptions={clineModelOptions}
 						isLoadingProviders={isLoadingProviders}
 						isLoadingModels={isLoadingModels}
+						defaultAgentId={defaultAgentId}
+						defaultProviderId={defaultProviderId}
 						onPopoverOpenChange={setIsModelPickerPopoverOpen}
 					/>
 				) : null}

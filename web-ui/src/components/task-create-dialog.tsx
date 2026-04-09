@@ -126,6 +126,9 @@ export function TaskCreateDialog({
 	onClineProviderIdChange,
 	clineModelId,
 	onClineModelIdChange,
+	defaultAgentId,
+	defaultProviderId,
+	defaultModelId,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -157,6 +160,12 @@ export function TaskCreateDialog({
 	onClineProviderIdChange?: (value: string | undefined) => void;
 	clineModelId?: string | undefined;
 	onClineModelIdChange?: (value: string | undefined) => void;
+	/** Default agent ID from runtimeConfig.selectedAgentId, used to show "Default (AgentName)" in picker */
+	defaultAgentId?: RuntimeAgentId | null;
+	/** Default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
+	defaultProviderId?: string | null;
+	/** Default Cline model ID from runtimeConfig.clineProviderSettings.modelId */
+	defaultModelId?: string | null;
 }): ReactElement {
 	const [mode, setMode] = useState<"single" | "multi">("single");
 	const [createMore, setCreateMore] = useState(false);
@@ -173,12 +182,16 @@ export function TaskCreateDialog({
 		normalizeStoredTaskCreateStartAction,
 	);
 
-	const { clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } = useTaskAgentModelPicker({
-		active: open,
-		workspaceId,
-		agentId,
-		clineProviderId,
-	});
+	const { agentOptions, clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } =
+		useTaskAgentModelPicker({
+			active: open,
+			workspaceId,
+			agentId,
+			clineProviderId,
+			defaultAgentId,
+			defaultProviderId,
+			defaultModelId,
+		});
 
 	const detectedItems = useMemo(() => parseListItems(prompt), [prompt]);
 	const validTaskCount = useMemo(() => taskPrompts.filter((p) => p.trim()).length, [taskPrompts]);
@@ -586,10 +599,13 @@ export function TaskCreateDialog({
 							onClineProviderIdChange={onClineProviderIdChange}
 							clineModelId={clineModelId}
 							onClineModelIdChange={onClineModelIdChange}
+							agentOptions={agentOptions}
 							clineProviderOptions={clineProviderOptions}
 							clineModelOptions={clineModelOptions}
 							isLoadingProviders={isLoadingProviders}
 							isLoadingModels={isLoadingModels}
+							defaultAgentId={defaultAgentId}
+							defaultProviderId={defaultProviderId}
 						/>
 					) : null}
 				</div>

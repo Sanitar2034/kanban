@@ -786,6 +786,9 @@ export default function App(): ReactElement {
 			onClineProviderIdChange={setEditTaskClineProviderId}
 			clineModelId={editTaskClineModelId}
 			onClineModelIdChange={setEditTaskClineModelId}
+			defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
+			defaultProviderId={runtimeProjectConfig?.clineProviderSettings?.providerId ?? null}
+			defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
 			mode="edit"
 			idPrefix={`inline-edit-task-${editingTaskId}`}
 		/>
@@ -1133,6 +1136,9 @@ export default function App(): ReactElement {
 					onClineProviderIdChange={setNewTaskClineProviderId}
 					clineModelId={newTaskClineModelId}
 					onClineModelIdChange={setNewTaskClineModelId}
+					defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
+					defaultProviderId={runtimeProjectConfig?.clineProviderSettings?.providerId ?? null}
+					defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
 				/>
 				<ClearTrashDialog
 					open={isClearTrashDialogOpen}

@@ -7,14 +7,6 @@ import { SearchSelectDropdown } from "@/components/search-select-dropdown";
 import { fetchClineProviderCatalog, fetchClineProviderModels } from "@/runtime/runtime-config-query";
 import type { RuntimeAgentId, RuntimeClineProviderCatalogItem, RuntimeClineProviderModel } from "@/runtime/types";
 
-const AGENT_OPTIONS: Array<{ value: string; label: string }> = [
-	{ value: "", label: "Default (from settings)" },
-	...getRuntimeLaunchSupportedAgentCatalog().map((agent) => ({
-		value: agent.id,
-		label: agent.label,
-	})),
-];
-
 // ---------------------------------------------------------------------------
 // Hook: manages fetch state for Cline provider catalog + model lists
 // ---------------------------------------------------------------------------
@@ -24,9 +16,16 @@ export interface UseTaskAgentModelPickerInput {
 	workspaceId: string | null;
 	agentId: RuntimeAgentId | undefined;
 	clineProviderId: string | undefined;
+	/** The default agent ID from runtimeConfig.selectedAgentId — used to build the "Default (…)" label */
+	defaultAgentId?: RuntimeAgentId | null;
+	/** The default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
+	defaultProviderId?: string | null;
+	/** The default Cline model ID from runtimeConfig.clineProviderSettings.modelId */
+	defaultModelId?: string | null;
 }
 
 export interface UseTaskAgentModelPickerResult {
+	agentOptions: Array<{ value: string; label: string }>;
 	clineProviderOptions: Array<{ value: string; label: string }>;
 	clineModelOptions: Array<{ value: string; label: string }>;
 	isLoadingProviders: boolean;
@@ -38,14 +37,20 @@ export function useTaskAgentModelPicker({
 	workspaceId,
 	agentId,
 	clineProviderId,
+	defaultAgentId,
+	defaultProviderId,
+	defaultModelId,
 }: UseTaskAgentModelPickerInput): UseTaskAgentModelPickerResult {
 	const [providerCatalog, setProviderCatalog] = useState<RuntimeClineProviderCatalogItem[]>([]);
 	const [providerModels, setProviderModels] = useState<RuntimeClineProviderModel[]>([]);
 	const [isLoadingProviders, setIsLoadingProviders] = useState(false);
 	const [isLoadingModels, setIsLoadingModels] = useState(false);
 
+	// Derive the effective agent: explicit override takes precedence, then the global default
+	const effectiveAgentId = agentId ?? defaultAgentId ?? null;
+
 	useEffect(() => {
-		if (!active || agentId !== "cline") {
+		if (!active || effectiveAgentId !== "cline") {
 			return;
 		}
 		let cancelled = false;
@@ -69,17 +74,19 @@ export function useTaskAgentModelPicker({
 		return () => {
 			cancelled = true;
 		};
-	}, [active, agentId, workspaceId]);
+	}, [active, effectiveAgentId, workspaceId]);
+
+	// Derive the effective provider: explicit override takes precedence, then the global default
+	const effectiveProviderId = (clineProviderId ?? defaultProviderId ?? "").trim() || null;
 
 	useEffect(() => {
-		const trimmedProvider = clineProviderId?.trim();
-		if (!active || agentId !== "cline" || !trimmedProvider) {
+		if (!active || effectiveAgentId !== "cline" || !effectiveProviderId) {
 			setProviderModels([]);
 			return;
 		}
 		let cancelled = false;
 		setIsLoadingModels(true);
-		void fetchClineProviderModels(workspaceId, trimmedProvider)
+		void fetchClineProviderModels(workspaceId, effectiveProviderId)
 			.then((models) => {
 				if (!cancelled) {
 					setProviderModels(models);
@@ -98,25 +105,56 @@ export function useTaskAgentModelPicker({
 		return () => {
 			cancelled = true;
 		};
-	}, [active, agentId, clineProviderId, workspaceId]);
+	}, [active, effectiveAgentId, effectiveProviderId, workspaceId]);
 
-	const clineProviderOptions = useMemo(
-		() => [
-			{ value: "", label: "Default (from settings)" },
-			...providerCatalog.filter((p) => p.enabled).map((p) => ({ value: p.id, label: p.name })),
-		],
-		[providerCatalog],
-	);
+	const agentOptions = useMemo(() => {
+		const catalog = getRuntimeLaunchSupportedAgentCatalog();
+		let defaultLabel = "Default (from settings)";
+		if (defaultAgentId) {
+			const defaultAgent = catalog.find((a) => a.id === defaultAgentId);
+			if (defaultAgent) {
+				defaultLabel = `Default (${defaultAgent.label})`;
+			}
+		}
+		return [
+			{ value: "", label: defaultLabel },
+			// Exclude the default agent from the explicit list — it's already represented by the "Default" option
+			...catalog
+				.filter((agent) => agent.id !== defaultAgentId)
+				.map((agent) => ({ value: agent.id, label: agent.label })),
+		];
+	}, [defaultAgentId]);
 
-	const clineModelOptions = useMemo(
-		() => [
-			{ value: "", label: "Default (from settings)" },
-			...providerModels.map((m) => ({ value: m.id, label: m.name })),
-		],
-		[providerModels],
-	);
+	const clineProviderOptions = useMemo(() => {
+		let defaultLabel = "Default (from settings)";
+		if (defaultProviderId) {
+			const defaultProvider = providerCatalog.find((p) => p.id === defaultProviderId);
+			defaultLabel = defaultProvider ? `Default (${defaultProvider.name})` : `Default (${defaultProviderId})`;
+		}
+		return [
+			{ value: "", label: defaultLabel },
+			// Exclude the default provider from the explicit list — it's already represented by the "Default" option
+			...providerCatalog
+				.filter((p) => p.enabled && p.id !== defaultProviderId)
+				.map((p) => ({ value: p.id, label: p.name })),
+		];
+	}, [providerCatalog, defaultProviderId]);
 
-	return { clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels };
+	const clineModelOptions = useMemo(() => {
+		let defaultLabel = "Default (from settings)";
+		if (defaultModelId) {
+			const defaultModel = providerModels.find((m) => m.id === defaultModelId);
+			// Fall back to the raw modelId string if the model is not in the fetched list
+			defaultLabel = defaultModel ? `Default (${defaultModel.name})` : `Default (${defaultModelId})`;
+		}
+		return [
+			{ value: "", label: defaultLabel },
+			// Exclude the default model from the explicit list — it's already represented by the "Default" option
+			...providerModels.filter((m) => m.id !== defaultModelId).map((m) => ({ value: m.id, label: m.name })),
+		];
+	}, [providerModels, defaultModelId]);
+
+	return { agentOptions, clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels };
 }
 
 // ---------------------------------------------------------------------------
@@ -130,11 +168,14 @@ export function TaskAgentModelPicker({
 	onClineProviderIdChange,
 	clineModelId,
 	onClineModelIdChange,
+	agentOptions,
 	clineProviderOptions,
 	clineModelOptions,
 	isLoadingProviders,
 	isLoadingModels,
 	onPopoverOpenChange,
+	defaultAgentId,
+	defaultProviderId,
 }: {
 	agentId: RuntimeAgentId | undefined;
 	onAgentIdChange: (value: RuntimeAgentId | undefined) => void;
@@ -142,13 +183,26 @@ export function TaskAgentModelPicker({
 	onClineProviderIdChange: (value: string | undefined) => void;
 	clineModelId: string | undefined;
 	onClineModelIdChange: (value: string | undefined) => void;
+	agentOptions: Array<{ value: string; label: string }>;
 	clineProviderOptions: Array<{ value: string; label: string }>;
 	clineModelOptions: Array<{ value: string; label: string }>;
 	isLoadingProviders: boolean;
 	isLoadingModels: boolean;
 	onPopoverOpenChange?: (open: boolean) => void;
+	/** The default agent ID from runtimeConfig — used to decide if Cline pickers should show by default */
+	defaultAgentId?: RuntimeAgentId | null;
+	/** The default Cline provider ID from runtimeConfig — used to decide if model picker should show by default */
+	defaultProviderId?: string | null;
 }): ReactElement {
-	const showClineModelPicker = agentId === "cline";
+	// Show the Cline provider picker when the effective agent is "cline"
+	// (either explicitly overridden to cline, or defaulting to cline)
+	const effectiveAgentId = agentId ?? defaultAgentId ?? null;
+	const showClineProviderPicker = effectiveAgentId === "cline";
+
+	// Show the Cline model picker when a provider is effectively selected
+	// (either explicitly overridden, or the global default provider is set)
+	const effectiveProviderId = clineProviderId ?? defaultProviderId ?? null;
+	const showClineModelPicker = showClineProviderPicker && Boolean(effectiveProviderId);
 
 	return (
 		<div className="flex flex-col gap-2">
@@ -167,7 +221,7 @@ export function TaskAgentModelPicker({
 						}}
 						className="h-7 w-full appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none"
 					>
-						{AGENT_OPTIONS.map((option) => (
+						{agentOptions.map((option) => (
 							<option key={option.value} value={option.value}>
 								{option.label}
 							</option>
@@ -179,7 +233,7 @@ export function TaskAgentModelPicker({
 					/>
 				</div>
 			</div>
-			{showClineModelPicker ? (
+			{showClineProviderPicker ? (
 				<>
 					<div>
 						<span className="text-[11px] text-text-secondary block mb-1">
@@ -207,25 +261,27 @@ export function TaskAgentModelPicker({
 							/>
 						</div>
 					</div>
-					<div>
-						<span className="text-[11px] text-text-secondary block mb-1">
-							Cline model{isLoadingModels ? " (loading\u2026)" : ""}
-						</span>
-						<SearchSelectDropdown
-							options={clineModelOptions}
-							selectedValue={clineModelId ?? ""}
-							onSelect={(value) => onClineModelIdChange(value || undefined)}
-							disabled={isLoadingModels}
-							fill
-							size="sm"
-							placeholder="Search models..."
-							emptyText="No models available"
-							noResultsText="No matching models"
-							showSelectedIndicator
-							buttonClassName="w-full justify-between rounded-md border-border-bright bg-surface-2 text-text-secondary shadow-none hover:bg-surface-3 hover:text-text-primary"
-							onPopoverOpenChange={onPopoverOpenChange}
-						/>
-					</div>
+					{showClineModelPicker ? (
+						<div>
+							<span className="text-[11px] text-text-secondary block mb-1">
+								Cline model{isLoadingModels ? " (loading\u2026)" : ""}
+							</span>
+							<SearchSelectDropdown
+								options={clineModelOptions}
+								selectedValue={clineModelId ?? ""}
+								onSelect={(value) => onClineModelIdChange(value || undefined)}
+								disabled={isLoadingModels}
+								fill
+								size="sm"
+								placeholder="Search models..."
+								emptyText="No models available"
+								noResultsText="No matching models"
+								showSelectedIndicator
+								buttonClassName="w-full justify-between rounded-md border-border-bright bg-surface-2 text-text-secondary shadow-none hover:bg-surface-3 hover:text-text-primary"
+								onPopoverOpenChange={onPopoverOpenChange}
+							/>
+						</div>
+					) : null}
 				</>
 			) : null}
 		</div>
