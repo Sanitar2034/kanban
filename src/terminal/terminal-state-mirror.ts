@@ -55,6 +55,32 @@ export class TerminalStateMirror {
 		});
 	}
 
+	applySerializedSnapshot(snapshot: string, cols: number | null, rows: number | null): void {
+		const shouldResize =
+			Number.isFinite(cols ?? Number.NaN) &&
+			Number.isFinite(rows ?? Number.NaN) &&
+			cols !== null &&
+			rows !== null &&
+			cols > 0 &&
+			rows > 0 &&
+			(this.terminal.cols !== cols || this.terminal.rows !== rows);
+		if (shouldResize) {
+			this.enqueueOperation(() => {
+				this.terminal.resize(cols, rows);
+			});
+		}
+		if (snapshot.length > 0) {
+			this.enqueueOperation(
+				() =>
+					new Promise<void>((resolve) => {
+						this.terminal.write(snapshot, () => {
+							resolve();
+						});
+					}),
+			);
+		}
+	}
+
 	async getSnapshot(): Promise<TerminalRestoreSnapshot> {
 		await this.operationQueue;
 		return {

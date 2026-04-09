@@ -32,7 +32,7 @@ import {
 	type TerminalProtocolFilterState,
 } from "./terminal-protocol-filter";
 import type { TerminalSessionListener, TerminalSessionService } from "./terminal-session-service";
-import { TerminalStateMirror } from "./terminal-state-mirror";
+import { type TerminalRestoreSnapshot, TerminalStateMirror } from "./terminal-state-mirror";
 
 const MAX_WORKSPACE_TRUST_BUFFER_CHARS = 16_384;
 const AUTO_RESTART_WINDOW_MS = 5_000;
@@ -302,6 +302,11 @@ export class TerminalSessionManager implements TerminalSessionService {
 			return cloneSummary(entry.summary);
 		}
 
+		let previousRestoreSnapshot: TerminalRestoreSnapshot | null = null;
+		if (request.resumeFromTrash && entry.terminalStateMirror) {
+			previousRestoreSnapshot = await entry.terminalStateMirror.getSnapshot().catch(() => null);
+		}
+
 		if (entry.active) {
 			stopWorkspaceTrustTimers(entry.active);
 			entry.active.session.stop();
@@ -320,6 +325,13 @@ export class TerminalSessionManager implements TerminalSessionService {
 				entry.active.session.write(data);
 			},
 		});
+		if (request.resumeFromTrash && previousRestoreSnapshot) {
+			terminalStateMirror.applySerializedSnapshot(
+				previousRestoreSnapshot.snapshot,
+				previousRestoreSnapshot.cols,
+				previousRestoreSnapshot.rows,
+			);
+		}
 
 		const launch = await prepareAgentLaunch({
 			taskId: request.taskId,
