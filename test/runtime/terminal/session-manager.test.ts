@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-
-import type { RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
 import type {
 	CodexAppServerClient,
 	CodexRpcNotification,
 	CodexRpcServerRequest,
 } from "../../../src/codex-sdk/codex-app-server-client";
+import type { RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
 import { buildShellCommandLine } from "../../../src/core/shell";
 import { TerminalSessionManager } from "../../../src/terminal/session-manager";
 
@@ -367,6 +366,119 @@ describe("TerminalSessionManager", () => {
 		});
 	});
 
+	it("falls back to the persisted terminal restore snapshot when the live mirror is blank", async () => {
+		const manager = new TerminalSessionManager();
+		manager.hydrateFromRecord({
+			"task-restore": createSummary({
+				taskId: "task-restore",
+				state: "idle",
+				terminalRestoreSnapshot: "persisted terminal",
+				terminalRestoreCols: 132,
+				terminalRestoreRows: 44,
+			}),
+		});
+		const entry = (
+			manager as unknown as {
+				entries: Map<
+					string,
+					{
+						terminalStateMirror: { getSnapshot: () => Promise<{ snapshot: string; cols: number; rows: number }> };
+					}
+				>;
+			}
+		).entries.get("task-restore");
+		expect(entry).toBeDefined();
+		if (!entry) {
+			return;
+		}
+		entry.terminalStateMirror = {
+			getSnapshot: vi.fn(async () => ({
+				snapshot: "",
+				cols: 80,
+				rows: 24,
+			})),
+		};
+
+		const snapshot = await manager.getRestoreSnapshot("task-restore");
+
+		expect(snapshot).toEqual({
+			snapshot: "persisted terminal",
+			cols: 132,
+			rows: 44,
+		});
+	});
+
+	it("reuses the live Codex mirror snapshot when restoring from trash before persistence catches up", async () => {
+		const fakeClient = new FakeCodexClient();
+		fakeClient.setRequestHandler("thread/resume", async () => ({
+			thread: {
+				id: "thr-restore",
+				cwd: "/tmp/worktree",
+				turns: [],
+			},
+		}));
+		const manager = new TerminalSessionManager({
+			createCodexClient: () => fakeClient,
+		});
+		manager.hydrateFromRecord({
+			"task-codex-restore": createSummary({
+				taskId: "task-codex-restore",
+				state: "awaiting_review",
+				agentId: "codex",
+				agentSessionId: "thr-restore",
+				workspacePath: "/tmp/worktree",
+				lastKnownWorkspacePath: "/tmp/worktree",
+				terminalRestoreSnapshot: null,
+				terminalRestoreCols: null,
+				terminalRestoreRows: null,
+			}),
+		});
+		const disposeSpy = vi.fn();
+		const entry = (
+			manager as unknown as {
+				entries: Map<
+					string,
+					{
+						terminalStateMirror: {
+							getSnapshot: () => Promise<{ snapshot: string; cols: number; rows: number }>;
+							dispose: () => void;
+						} | null;
+					}
+				>;
+			}
+		).entries.get("task-codex-restore");
+		expect(entry).toBeDefined();
+		if (!entry) {
+			return;
+		}
+		entry.terminalStateMirror = {
+			getSnapshot: vi.fn(async () => ({
+				snapshot: "live before restore",
+				cols: 100,
+				rows: 30,
+			})),
+			dispose: disposeSpy,
+		};
+
+		const summary = await manager.startTaskSession({
+			taskId: "task-codex-restore",
+			agentId: "codex",
+			binary: "codex",
+			args: [],
+			cwd: "/tmp/worktree",
+			prompt: "",
+			resumeFromTrash: true,
+			resumeSessionId: "thr-restore",
+		});
+		const snapshot = await manager.getRestoreSnapshot("task-codex-restore");
+
+		expect(disposeSpy).toHaveBeenCalledTimes(1);
+		expect(summary.terminalRestoreSnapshot).toBe("live before restore");
+		expect(summary.terminalRestoreCols).toBe(100);
+		expect(summary.terminalRestoreRows).toBe(30);
+		expect(snapshot?.snapshot).toContain("live before restore");
+	});
+
 	it("falls back to a fresh Codex thread when exact resume fails", async () => {
 		const fakeClient = new FakeCodexClient();
 		fakeClient.setRequestHandler("thread/resume", async () => {
@@ -397,10 +509,7 @@ describe("TerminalSessionManager", () => {
 		await waitForAssertion(() => {
 			expect(manager.getSummary("task-codex-fallback")?.agentSessionId).toBe("thr-new");
 		});
-		expect(fakeClient.requests.map((request) => request.method)).toEqual([
-			"thread/resume",
-			"thread/start",
-		]);
+		expect(fakeClient.requests.map((request) => request.method)).toEqual(["thread/resume", "thread/start"]);
 	});
 
 	it("queues Codex input until attach completes and then starts the turn", async () => {
@@ -445,6 +554,80 @@ describe("TerminalSessionManager", () => {
 		const turnStartRequest = fakeClient.requests.find((request) => request.method === "turn/start");
 		expect(turnStartRequest).toBeDefined();
 		expect(JSON.stringify(turnStartRequest?.params)).toContain("hello");
+	});
+
+	it("treats Codex turn completion as a reusable prompt, not a process exit", async () => {
+		const fakeClient = new FakeCodexClient();
+		fakeClient.setRequestHandler("thread/start", async () => ({
+			thread: {
+				id: "thr-complete",
+				cwd: "/tmp/worktree",
+				turns: [],
+			},
+		}));
+		fakeClient.setRequestHandler("turn/start", async () => ({
+			thread: {
+				id: "thr-complete",
+			},
+			turn: {
+				id: "turn-1",
+				status: "inProgress",
+			},
+		}));
+		const manager = new TerminalSessionManager({
+			createCodexClient: () => fakeClient,
+		});
+		const exitCodes: Array<number | null> = [];
+		const outputChunks: string[] = [];
+
+		await manager.startTaskSession({
+			taskId: "task-codex-complete",
+			agentId: "codex",
+			binary: "codex",
+			args: [],
+			cwd: "/tmp/worktree",
+			prompt: "hello world",
+		});
+
+		const detach = manager.attach("task-codex-complete", {
+			onExit: (code) => {
+				exitCodes.push(code);
+			},
+			onOutput: (chunk) => {
+				outputChunks.push(chunk.toString("utf8"));
+			},
+		});
+
+		await waitForAssertion(() => {
+			expect(fakeClient.requests.map((request) => request.method)).toContain("turn/start");
+		});
+
+		fakeClient.emitNotification({
+			method: "turn/completed",
+			params: {
+				thread: {
+					id: "thr-complete",
+				},
+				turn: {
+					id: "turn-1",
+					status: "completed",
+				},
+			},
+		});
+
+		await waitForAssertion(() => {
+			expect(manager.getSummary("task-codex-complete")?.state).toBe("awaiting_review");
+		});
+		await waitForAssertion(() => {
+			expect(manager.getSummary("task-codex-complete")?.terminalRestoreSnapshot).toContain(
+				"Turn completed. Type another instruction to continue this task.",
+			);
+		});
+		expect(exitCodes).toEqual([]);
+		expect(outputChunks.join("")).toContain("Turn completed. Type another instruction to continue this task.");
+		expect(outputChunks.join("")).toContain("› ");
+
+		detach?.();
 	});
 
 	it("closes the shared Codex host when the terminal manager is disposed", async () => {

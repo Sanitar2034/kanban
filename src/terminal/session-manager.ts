@@ -1,9 +1,16 @@
 // PTY-backed runtime for non-Cline task sessions and the workspace shell terminal.
 // It owns process lifecycle, terminal protocol filtering, and summary updates
 // for command-driven agents such as Claude Code, Codex, Gemini, and shell sessions.
+
+import {
+	type CodexAppServerClient,
+	type CodexRpcNotification,
+	type CodexRpcServerRequest,
+	createCodexAppServerClient,
+} from "../codex-sdk/codex-app-server-client";
 import { resolveCodexSessionMetadataForCwd } from "../commands/codex-hook-events";
-import type { RuntimeAgentId } from "../core/api-contract";
 import type {
+	RuntimeAgentId,
 	RuntimeTaskHookActivity,
 	RuntimeTaskImage,
 	RuntimeTaskSessionReviewReason,
@@ -11,12 +18,6 @@ import type {
 	RuntimeTaskSessionSummary,
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
-import {
-	createCodexAppServerClient,
-	type CodexAppServerClient,
-	type CodexRpcNotification,
-	type CodexRpcServerRequest,
-} from "../codex-sdk/codex-app-server-client";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import {
 	type AgentAdapterLaunchInput,
@@ -49,6 +50,7 @@ const MAX_AUTO_RESTARTS_PER_WINDOW = 3;
 const CODEX_SNAPSHOT_PERSIST_DEBOUNCE_MS = 1_000;
 const CODEX_ATTACH_RETRY_DELAY_MS = 1_000;
 const CODEX_INLINE_PROMPT = "› ";
+const CODEX_TURN_COMPLETE_MESSAGE = "[kanban] Turn completed. Type another instruction to continue this task.";
 // TUI apps (Codex, OpenCode) can query OSC 10/11 before the browser terminal is attached
 // and ready to answer. We intercept those startup probes during early PTY output, synthesize
 // foreground/background color replies, then disable the filter once a live terminal listener
@@ -76,9 +78,7 @@ interface ActivePtyState {
 	workspaceTrustConfirmTimer: NodeJS.Timeout | null;
 }
 
-type CodexQueuedInput =
-	| { kind: "submit"; text: string; images?: RuntimeTaskImage[] }
-	| { kind: "interrupt" };
+type CodexQueuedInput = { kind: "submit"; text: string; images?: RuntimeTaskImage[] } | { kind: "interrupt" };
 
 interface CodexPendingApproval {
 	requestId: number | string;
@@ -264,10 +264,6 @@ function readStringField(record: Record<string, unknown>, key: string): string |
 	return readStringValue(record[key]);
 }
 
-function readBooleanField(record: Record<string, unknown>, key: string): boolean | null {
-	return typeof record[key] === "boolean" ? record[key] : null;
-}
-
 function getCodexPromptText(prompt: string, startInPlanMode: boolean | undefined): string {
 	const trimmedPrompt = prompt.trim();
 	if (startInPlanMode) {
@@ -292,14 +288,13 @@ function buildCodexUserInputs(text: string, images: RuntimeTaskImage[] | undefin
 	return inputs;
 }
 
-function buildCodexThreadSandboxMode(autonomousModeEnabled: boolean | undefined): "danger-full-access" | "workspace-write" {
+function buildCodexThreadSandboxMode(
+	autonomousModeEnabled: boolean | undefined,
+): "danger-full-access" | "workspace-write" {
 	return autonomousModeEnabled ? "danger-full-access" : "workspace-write";
 }
 
-function buildCodexTurnSandboxPolicy(
-	autonomousModeEnabled: boolean | undefined,
-	cwd: string,
-): Record<string, unknown> {
+function buildCodexTurnSandboxPolicy(autonomousModeEnabled: boolean | undefined, cwd: string): Record<string, unknown> {
 	if (autonomousModeEnabled) {
 		return {
 			type: "dangerFullAccess",
@@ -419,11 +414,6 @@ function extractCodexItem(value: unknown): Record<string, unknown> | null {
 function extractCodexItemType(value: unknown): string | null {
 	const item = extractCodexItem(value);
 	return item ? readStringField(item, "type") : null;
-}
-
-function extractCodexItemId(value: unknown): string | null {
-	const item = extractCodexItem(value);
-	return item ? readStringField(item, "id") : null;
 }
 
 function extractCodexAgentDelta(value: unknown): string | null {
@@ -563,6 +553,33 @@ export class TerminalSessionManager implements TerminalSessionService {
 		};
 	}
 
+	private async getPreferredRestoreSnapshot(
+		entry: SessionEntry | null | undefined,
+	): Promise<TerminalRestoreSnapshot | null> {
+		if (!entry) {
+			return null;
+		}
+		const persistedSnapshot = this.getPersistedRestoreSnapshot(entry.summary);
+		if (!entry.terminalStateMirror) {
+			return persistedSnapshot;
+		}
+		const liveSnapshot = await entry.terminalStateMirror.getSnapshot().catch(() => null);
+		if (liveSnapshot?.snapshot) {
+			return liveSnapshot;
+		}
+		return persistedSnapshot ?? liveSnapshot;
+	}
+
+	private seedTerminalStateMirrorFromSnapshot(
+		terminalStateMirror: TerminalStateMirror,
+		snapshot: TerminalRestoreSnapshot | null,
+	): void {
+		if (!snapshot?.snapshot) {
+			return;
+		}
+		terminalStateMirror.applyOutput(Buffer.from(snapshot.snapshot, "utf8"));
+	}
+
 	private registerCodexThread(taskId: string, threadId: string | null | undefined): void {
 		const normalizedThreadId = threadId?.trim();
 		if (!normalizedThreadId) {
@@ -603,16 +620,6 @@ export class TerminalSessionManager implements TerminalSessionService {
 		}
 		for (const listener of entry.listeners.values()) {
 			listener.onState?.(cloneSummary(summary));
-		}
-	}
-
-	private notifyTaskExit(taskId: string, code: number | null): void {
-		const entry = this.entries.get(taskId);
-		if (!entry) {
-			return;
-		}
-		for (const listener of entry.listeners.values()) {
-			listener.onExit?.(code);
 		}
 	}
 
@@ -796,11 +803,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 	}
 
 	async getRestoreSnapshot(taskId: string) {
-		const entry = this.entries.get(taskId);
-		if (entry?.terminalStateMirror) {
-			return await entry.terminalStateMirror.getSnapshot();
-		}
-		return this.getPersistedRestoreSnapshot(entry?.summary ?? null);
+		return await this.getPreferredRestoreSnapshot(this.entries.get(taskId));
 	}
 
 	private createTerminalStateMirror(entry: SessionEntry, cols: number, rows: number): TerminalStateMirror {
@@ -870,7 +873,12 @@ export class TerminalSessionManager implements TerminalSessionService {
 	}
 
 	private emitCodexInlinePromptIfNeeded(taskId: string, entry: SessionEntry, active: ActiveCodexState): void {
-		if (active.activeTurnId || active.pendingApproval || active.lineBuffer.length > 0 || active.inputQueue.length > 0) {
+		if (
+			active.activeTurnId ||
+			active.pendingApproval ||
+			active.lineBuffer.length > 0 ||
+			active.inputQueue.length > 0
+		) {
 			return;
 		}
 		if ((entry.summary.terminalRestoreSnapshot?.length ?? 0) > 0) {
@@ -1078,10 +1086,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 					if (active.pendingApproval) {
 						const decision = normalizeCodexApprovalDecision(next.text);
 						if (!decision) {
-							this.emitOutput(
-								taskId,
-								Buffer.from("\r\n[kanban] Type y, n, or c.\r\napproval> ", "utf8"),
-							);
+							this.emitOutput(taskId, Buffer.from("\r\n[kanban] Type y, n, or c.\r\napproval> ", "utf8"));
 							continue;
 						}
 						this.resolveCodexPendingApproval(taskId, entry, active, decision);
@@ -1268,9 +1273,13 @@ export class TerminalSessionManager implements TerminalSessionService {
 					this.emitOutput(taskId, Buffer.from(`\r\n[kanban] ${errorMessage}\r\n`, "utf8"));
 				}
 				if (nextState === "awaiting_review" || nextState === "interrupted" || nextState === "idle") {
-					this.emitOutput(taskId, Buffer.from(`\r\n${CODEX_INLINE_PROMPT}`, "utf8"));
+					const promptPrefix =
+						nextState === "awaiting_review" && stopMode === "none" && status === "completed"
+							? `\r\n${CODEX_TURN_COMPLETE_MESSAGE}\r\n`
+							: "\r\n";
+					this.emitOutput(taskId, Buffer.from(`${promptPrefix}${CODEX_INLINE_PROMPT}`, "utf8"));
 				}
-				this.notifyTaskExit(taskId, status === "completed" ? 0 : status === "failed" ? 1 : null);
+				void this.persistRestoreSnapshot(taskId, entry.sessionGeneration);
 				break;
 			}
 			case "item/started": {
@@ -1328,9 +1337,10 @@ export class TerminalSessionManager implements TerminalSessionService {
 		}
 
 		if (request.agentId === "codex") {
-			const previousSnapshot = this.getPersistedRestoreSnapshot(entry.summary);
+			const previousSnapshot = await this.getPreferredRestoreSnapshot(entry);
 			entry.terminalStateMirror?.dispose();
 			entry.terminalStateMirror = this.createTerminalStateMirror(entry, cols, rows);
+			this.seedTerminalStateMirrorFromSnapshot(entry.terminalStateMirror, previousSnapshot);
 			const active = this.ensureCodexActiveState(request.taskId, entry, {
 				cols,
 				rows,
@@ -1348,11 +1358,11 @@ export class TerminalSessionManager implements TerminalSessionService {
 				request.resumeSessionId?.trim() ||
 				entry.summary.agentSessionId?.trim() ||
 				(request.resumeFromTrash
-					? (
+					? ((
 							await resolveCodexSessionMetadataForCwd(
 								entry.summary.lastKnownWorkspacePath ?? entry.summary.workspacePath ?? request.cwd,
 							).catch(() => null)
-					  )?.sessionId ?? null
+						)?.sessionId ?? null)
 					: null);
 			this.unregisterCodexThread(request.taskId, active.threadId);
 			active.threadId = resumedSessionId;
@@ -1463,7 +1473,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 								currentActive.autoConfirmedWorkspaceTrust = true;
 								const trustConfirmDelayMs = WORKSPACE_TRUST_CONFIRM_DELAY_MS;
 								currentActive.workspaceTrustConfirmTimer = setTimeout(() => {
-										const activeEntry = this.entries.get(request.taskId)?.active ?? null;
+									const activeEntry = this.entries.get(request.taskId)?.active ?? null;
 									if (!isPtyActive(activeEntry) || !activeEntry.autoConfirmedWorkspaceTrust) {
 										return;
 									}
