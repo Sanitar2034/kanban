@@ -53,6 +53,23 @@ export interface RuntimeChildManagerOptions {
 // Allowed environment variables forwarded to the child process.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// V8 heap configuration for the runtime child process.
+//
+// When forked from Electron, the child inherits the main process's execArgv
+// which may include restrictive V8 flags (e.g. smaller heap limits). The
+// runtime child runs all agent sessions, message repositories, and PTY
+// processes in a single Node process, so it needs a generous heap — especially
+// when multiple agents run concurrently across different projects.
+//
+// Without an explicit execArgv override, the child can OOM within minutes
+// under multi-agent workloads (the crash manifests as SIGABRT from
+// node::OnFatalError during V8 GC).
+// ---------------------------------------------------------------------------
+
+/** Heap limit in MB for the runtime child process. */
+const RUNTIME_CHILD_MAX_OLD_SPACE_MB = 4096;
+
 const ALLOWED_ENV_KEYS: ReadonlySet<string> = new Set([
 	'PATH', 'PATHEXT',
 	'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH',
@@ -299,6 +316,11 @@ export class RuntimeChildManager extends EventEmitter {
 			const child = this.opts.forkFn(scriptPath, [], {
 				stdio: ["ignore", "pipe", "pipe", "ipc"],
 				env: buildFilteredEnv(),
+				// Override execArgv so the child does NOT inherit Electron's
+				// restrictive V8 flags.  Give the runtime a generous heap —
+				// it hosts all agent sessions, message stores, and PTY
+				// processes in one process.
+				execArgv: [`--max-old-space-size=${RUNTIME_CHILD_MAX_OLD_SPACE_MB}`],
 			});
 			this.child = child;
 			child.stdout?.on('data', () => {});
