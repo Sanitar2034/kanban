@@ -426,6 +426,9 @@ export function useTaskEditor({
 					autoReviewEnabled: newTaskAutoReviewEnabled,
 					autoReviewMode: newTaskAutoReviewMode,
 					images: newTaskImages,
+					agentId: newTaskAgentId,
+					clineProviderId: newTaskClineProviderId,
+					clineModelId: newTaskClineModelId,
 					baseRef,
 				});
 				updatedBoard = created.board;
@@ -434,7 +437,7 @@ export function useTaskEditor({
 			setBoard(updatedBoard);
 			for (const prompt of validPrompts) {
 				trackTaskCreated({
-					selected_agent_id: toTelemetrySelectedAgentId(selectedAgentId),
+					selected_agent_id: toTelemetrySelectedAgentId(newTaskAgentId ?? selectedAgentId),
 					start_in_plan_mode: newTaskStartInPlanMode,
 					...(newTaskAutoReviewEnabled ? { auto_review_mode: newTaskAutoReviewMode } : {}),
 					prompt_character_count: prompt.length,
@@ -458,9 +461,12 @@ export function useTaskEditor({
 		[
 			board,
 			currentProjectId,
+			newTaskAgentId,
 			newTaskAutoReviewEnabled,
 			newTaskAutoReviewMode,
 			newTaskBranchRef,
+			newTaskClineModelId,
+			newTaskClineProviderId,
 			newTaskImages,
 			newTaskStartInPlanMode,
 			resolvedDefaultTaskBranchRef,

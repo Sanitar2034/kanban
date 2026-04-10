@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useTaskEditor } from "@/hooks/use-task-editor";
+import type { RuntimeAgentId } from "@/runtime/types";
 import type { BoardCard, BoardData, TaskAutoReviewMode, TaskImage } from "@/types";
 
 function createTask(taskId: string, prompt: string, createdAt: number, overrides: Partial<BoardCard> = {}): BoardCard {
@@ -53,6 +54,9 @@ interface HookSnapshot {
 	setEditTaskPrompt: (value: string) => void;
 	setEditTaskAutoReviewEnabled: (value: boolean) => void;
 	setEditTaskAutoReviewMode: (value: TaskAutoReviewMode) => void;
+	setNewTaskAgentId: (value: RuntimeAgentId | undefined) => void;
+	setNewTaskClineProviderId: (value: string | undefined) => void;
+	setNewTaskClineModelId: (value: string | undefined) => void;
 }
 
 function requireSnapshot(snapshot: HookSnapshot | null): HookSnapshot {
@@ -106,6 +110,9 @@ function HookHarness({
 			setEditTaskPrompt: editor.setEditTaskPrompt,
 			setEditTaskAutoReviewEnabled: editor.setEditTaskAutoReviewEnabled,
 			setEditTaskAutoReviewMode: editor.setEditTaskAutoReviewMode,
+			setNewTaskAgentId: editor.setNewTaskAgentId,
+			setNewTaskClineProviderId: editor.setNewTaskClineProviderId,
+			setNewTaskClineModelId: editor.setNewTaskClineModelId,
 		});
 	}, [
 		board,
@@ -374,5 +381,44 @@ describe("useTaskEditor", () => {
 			],
 		]);
 		expect(requireSnapshot(latestSnapshot).newTaskImages).toEqual([]);
+	});
+
+	it("preserves per-task agent/model override fields on each split task", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					initialBoard={createBoard()}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+		});
+
+		await act(async () => {
+			requireSnapshot(latestSnapshot).handleOpenCreateTask();
+		});
+
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setNewTaskAgentId("codex");
+			requireSnapshot(latestSnapshot).setNewTaskClineProviderId("provider-abc");
+			requireSnapshot(latestSnapshot).setNewTaskClineModelId("model-xyz");
+		});
+
+		let createdTaskIds: string[] = [];
+		await act(async () => {
+			createdTaskIds = requireSnapshot(latestSnapshot).handleCreateTasks(["Task A", "Task B", "Task C"]);
+		});
+
+		expect(createdTaskIds).toHaveLength(3);
+		const backlogCards = requireSnapshot(latestSnapshot).board.columns[0]?.cards ?? [];
+		expect(backlogCards).toHaveLength(3);
+		for (const card of backlogCards) {
+			expect(card.agentId).toBe("codex");
+			expect(card.clineProviderId).toBe("provider-abc");
+			expect(card.clineModelId).toBe("model-xyz");
+		}
 	});
 });
