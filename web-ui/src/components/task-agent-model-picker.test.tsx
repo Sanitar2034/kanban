@@ -385,4 +385,35 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 
 		expect(onClineModelIdChange).not.toHaveBeenCalled();
 	});
+
+	it("does not reset when model options only contain the default placeholder (race condition guard)", async () => {
+		const onClineModelIdChange = vi.fn();
+		// Only the "Default" placeholder — real models haven't loaded yet
+		const modelOptions = [{ value: "", label: "Default" }];
+
+		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+
+		await act(async () =>
+			root.render(
+				<TaskAgentModelPicker
+					agentId={"cline" as RuntimeAgentId}
+					onAgentIdChange={() => {}}
+					clineProviderId="groq"
+					onClineProviderIdChange={() => {}}
+					clineModelId="mixtral-8x7b-32768" // valid saved model, but models haven't loaded yet
+					onClineModelIdChange={onClineModelIdChange}
+					agentOptions={[{ value: "", label: "Cline" }]}
+					clineProviderOptions={[{ value: "", label: "Groq" }]}
+					clineModelOptions={modelOptions}
+					isLoadingProviders={false}
+					isLoadingModels={false} // <-- false (initial state before fetch sets it to true)
+					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultProviderId="anthropic"
+				/>,
+			),
+		);
+
+		// Should NOT clear the model — the stale/empty options list should not trigger auto-correct
+		expect(onClineModelIdChange).not.toHaveBeenCalled();
+	});
 });

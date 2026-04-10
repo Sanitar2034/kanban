@@ -239,8 +239,15 @@ export function TaskAgentModelPicker({
 	// options list, auto-select the first real model so the button never shows
 	// "No models available". Pick the first non-empty option (skipping the
 	// "Default" placeholder) so the user immediately sees a concrete model name.
+	//
+	// Guard: also skip when clineModelOptions only contains the "Default"
+	// placeholder (length <= 1). This prevents a race condition where the
+	// effect fires on the initial render before models have been fetched —
+	// at that point isLoadingModels is still false (hasn't been set to true
+	// yet by the fetch effect) and the stale/empty options list would
+	// incorrectly clear a valid saved clineModelId.
 	useEffect(() => {
-		if (isLoadingModels || !clineModelId) {
+		if (isLoadingModels || !clineModelId || clineModelOptions.length <= 1) {
 			return;
 		}
 		const modelExists = clineModelOptions.some((opt) => opt.value === clineModelId);
