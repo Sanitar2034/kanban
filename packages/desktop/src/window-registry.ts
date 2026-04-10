@@ -89,14 +89,18 @@ export class WindowRegistry {
 	createWindow(options: CreateWindowOptions): BrowserWindow {
 		const projectId = options.projectId ?? null;
 
-		// Duplicate prevention — focus existing window for this project.
-		if (projectId !== null) {
-			const existing = this.findByProjectId(projectId);
-			if (existing) {
-				if (existing.isMinimized()) existing.restore();
-				existing.focus();
-				return existing;
-			}
+		// Duplicate prevention — focus existing window for this project
+		// (or the single overview window when projectId is null).
+		const existing = projectId !== null
+			? this.findByProjectId(projectId)
+			: this.findOverviewWindow();
+		if (existing) {
+			// On macOS, windows can be hidden (not destroyed) via hide-on-close.
+			// We need to show them before focusing.
+			if (!existing.isVisible()) existing.show();
+			if (existing.isMinimized()) existing.restore();
+			existing.focus();
+			return existing;
 		}
 
 		const savedState = options.savedState;
@@ -205,6 +209,16 @@ export class WindowRegistry {
 	findByProjectId(projectId: string): BrowserWindow | null {
 		for (const entry of this.windows.values()) {
 			if (entry.projectId === projectId && !entry.window.isDestroyed()) {
+				return entry.window;
+			}
+		}
+		return null;
+	}
+
+	/** Find the overview (unscoped) window — projectId is null. */
+	findOverviewWindow(): BrowserWindow | null {
+		for (const entry of this.windows.values()) {
+			if (entry.projectId === null && !entry.window.isDestroyed()) {
 				return entry.window;
 			}
 		}

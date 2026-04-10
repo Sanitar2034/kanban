@@ -170,12 +170,19 @@ export function loadAllWindowStates(
 		if (!Array.isArray(parsed)) return [];
 
 		const results: PersistedWindowState[] = [];
+		const seenProjectIds = new Set<string | null>();
 		for (const entry of parsed) {
 			if (typeof entry !== "object" || entry === null) continue;
 			const state = parsePersistedWindowState(
 				entry as Record<string, unknown>,
 			);
-			if (state) results.push(state);
+			if (!state) continue;
+			// Deduplicate: at most one window per projectId (including null
+			// for the overview window). Stale duplicates can accumulate from
+			// macOS hide-on-close or previous bugs.
+			if (seenProjectIds.has(state.projectId)) continue;
+			seenProjectIds.add(state.projectId);
+			results.push(state);
 		}
 
 		return results;

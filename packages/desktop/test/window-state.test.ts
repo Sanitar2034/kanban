@@ -360,4 +360,29 @@ describe("edge cases", () => {
 		expect(loaded).toHaveLength(1);
 		expect(loaded[0].projectId).toBeNull();
 	});
+
+	it("deduplicates entries with the same projectId (keeps first)", () => {
+		const raw = [
+			{ x: 10, y: 20, width: 800, height: 600, isMaximized: false, projectId: "proj-a" },
+			{ x: 30, y: 40, width: 900, height: 700, isMaximized: true, projectId: "proj-a" },
+			{ x: 50, y: 60, width: 1000, height: 800, isMaximized: false, projectId: "proj-b" },
+		];
+		writeFileSync(resolveMultiWindowStatePath(tmpDir), JSON.stringify(raw), "utf-8");
+		const loaded = loadAllWindowStates(tmpDir);
+		expect(loaded).toHaveLength(2);
+		expect(loaded[0].x).toBe(10); // first proj-a entry kept
+		expect(loaded[1].projectId).toBe("proj-b");
+	});
+
+	it("deduplicates null-projectId overview windows (keeps first)", () => {
+		const raw = [
+			{ x: 0, y: 0, width: 800, height: 600, isMaximized: false },
+			{ x: 100, y: 100, width: 900, height: 700, isMaximized: true },
+		];
+		writeFileSync(resolveMultiWindowStatePath(tmpDir), JSON.stringify(raw), "utf-8");
+		const loaded = loadAllWindowStates(tmpDir);
+		expect(loaded).toHaveLength(1);
+		expect(loaded[0].x).toBe(0);
+		expect(loaded[0].projectId).toBeNull();
+	});
 });
