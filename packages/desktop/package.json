@@ -1,6 +1,6 @@
 {
 	"name": "@kanban/desktop",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"private": true,
 	"description": "Kanban desktop app — Electron shell for the Kanban runtime",
 	"type": "module",
