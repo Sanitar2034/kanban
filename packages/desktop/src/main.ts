@@ -3,15 +3,16 @@
  *
  * Responsibilities:
  * - Single instance enforcement via app.requestSingleInstanceLock()
- * - Secure BrowserWindow with strict webPreferences
+ * - Multi-window support via WindowRegistry
  * - RuntimeChildManager lifecycle (start, heartbeat, shutdown)
- * - Ephemeral auth token generation + header injection
- * - Custom application menu
+ * - Ephemeral auth token generation + header injection (per-window)
+ * - Custom application menu with Window submenu
  * - macOS App Nap / Linux suspend prevention, Dock reactivation
  * - powerMonitor resume health check
- * - Window state persistence to userData/window-state.json
+ * - Window state persistence to userData/window-states.json
  * - Interrupted tasks notification on restart
  * - kanban:// custom protocol for OAuth deep-links
+ * - IPC: open-project-window for renderer-initiated new windows
  */
 
 import {
@@ -19,6 +20,7 @@ import {
 	Menu,
 	app,
 	dialog,
+	ipcMain,
 	powerMonitor,
 	powerSaveBlocker,
 	shell,
@@ -47,11 +49,7 @@ import { relayOAuthCallback } from "./oauth-relay.js";
 import { attemptOrphanCleanup } from "./orphan-cleanup.js";
 import { attachRendererRecoveryHandlers } from "./renderer-recovery.js";
 import { RuntimeChildManager } from "./runtime-child.js";
-import {
-	type WindowState,
-	loadWindowState,
-	saveWindowState,
-} from "./window-state.js";
+import { WindowRegistry } from "./window-registry.js";
 import {
 	clearRuntimeDescriptor,
 	evaluateDescriptorTrust,
@@ -62,10 +60,6 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_WIDTH = 1400;
-const DEFAULT_HEIGHT = 900;
-const MIN_WIDTH = 800;
-const MIN_HEIGHT = 600;
 const BACKGROUND_COLOR = "#1F2428";
 const RUNTIME_HEALTH_TIMEOUT_MS = 3_000;
 
@@ -77,9 +71,7 @@ const RUNTIME_HEALTH_TIMEOUT_MS = 3_000;
 const desktopSessionId: string = randomUUID();
 
 // ---------------------------------------------------------------------------
-// Runtime descriptor helpers — delegate to the shared implementation in
-// src/core/runtime-descriptor.ts so desktop doesn't duplicate path
-// constants or write logic.
+// Runtime descriptor helpers
 // ---------------------------------------------------------------------------
 
 async function publishRuntimeDescriptor(url: string, token: string): Promise<void> {
@@ -93,40 +85,14 @@ async function publishRuntimeDescriptor(url: string, token: string): Promise<voi
 			desktopSessionId,
 		});
 	} catch {
-		// Best effort — if we can't write the descriptor, CLI fallback won't work
-		// but the desktop app itself is unaffected.
+		// Best effort.
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Helper: capture BrowserWindow bounds for persistence
-// ---------------------------------------------------------------------------
-
-/** Capture the current window bounds/maximized state. */
-function captureWindowState(window: BrowserWindow): WindowState {
-	const isMaximized = window.isMaximized();
-	const bounds = isMaximized ? window.getNormalBounds() : window.getBounds();
-	return {
-		x: bounds.x,
-		y: bounds.y,
-		width: bounds.width,
-		height: bounds.height,
-		isMaximized,
-	};
 }
 
 // ---------------------------------------------------------------------------
 // Interrupted tasks detection
 // ---------------------------------------------------------------------------
 
-/**
- * Scan the kanban workspace index for workspaces that have tasks in the
- * "In Progress" column (i.e. tasks that were interrupted by a previous shutdown).
- *
- * TODO: Re-implement once the kanban package can be statically imported from
- * the desktop main process. The previous implementation used a dynamic
- * `await import("kanban")` which violates the project's no-inline-import rule.
- */
 async function detectInterruptedTasks(): Promise<{
 	count: number;
 	workspacePaths: string[];
@@ -153,7 +119,7 @@ async function exportDiagnostics(): Promise<void> {
 	const snapshot = await collectDiagnosticsSnapshot(buildDiagnosticsContext());
 	const json = JSON.stringify(snapshot, null, "\t");
 
-	const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+	const window = windowRegistry.getFocused();
 	const result = await dialog.showSaveDialog({
 		...(window ? { browserWindow: window } : {}),
 		title: "Export Diagnostics",
@@ -175,15 +141,6 @@ async function exportDiagnostics(): Promise<void> {
 // Application menu
 // ---------------------------------------------------------------------------
 
-/**
- * Check whether the runtime is available for use.
- *
- * Returns `true` only when the connection manager exists, boot has reached
- * the `"ready"` phase, and no failure has been recorded.  Menu items that
- * depend on an active runtime connection use this to decide their `enabled`
- * state — keeping recovery-path items (diagnostics, connection switching,
- * quit, about, dev tools) always enabled.
- */
 function isRuntimeAvailable(): boolean {
 	if (!connectionManager) return false;
 	const boot = getBootState();
@@ -209,6 +166,21 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 			{ role: "unhide" },
 			{ type: "separator" },
 			{ role: "quit" },
+		],
+	};
+
+	const fileMenu: Electron.MenuItemConstructorOptions = {
+		label: "File",
+		submenu: [
+			{
+				label: "New Window",
+				accelerator: isMac ? "CmdOrCtrl+Shift+N" : "Ctrl+Shift+N",
+				click: () => {
+					createAppWindow({ projectId: null });
+				},
+			},
+			{ type: "separator" },
+			isMac ? { role: "close" } : { role: "quit" },
 		],
 	};
 
@@ -245,19 +217,48 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 			{
 				label: "Diagnostics",
 				click: () => {
-					if (mainWindow && !mainWindow.isDestroyed()) {
-						mainWindow.webContents.send("open-diagnostics");
+					const focusedWindow = windowRegistry.getFocused();
+					if (focusedWindow) {
+						focusedWindow.webContents.send("open-diagnostics");
 					}
 				},
 			},
 		],
 	};
 
+	// -- Window submenu with list of open windows --
+	const windowEntries = windowRegistry.getAll();
+	const windowListItems: Electron.MenuItemConstructorOptions[] = windowEntries.map(
+		(entry) => {
+			const title = entry.window.isDestroyed()
+				? "Kanban"
+				: entry.window.getTitle() || "Kanban";
+			const focused = windowRegistry.getFocused();
+			return {
+				label: title,
+				type: "checkbox" as const,
+				checked: focused?.id === entry.window.id,
+				click: () => {
+					if (!entry.window.isDestroyed()) {
+						if (entry.window.isMinimized()) entry.window.restore();
+						entry.window.focus();
+					}
+				},
+			};
+		},
+	);
+
 	const windowMenu: Electron.MenuItemConstructorOptions = {
 		label: "Window",
 		submenu: [
 			{ role: "minimize" },
 			{ role: "zoom" },
+			...(windowListItems.length > 0
+				? [
+						{ type: "separator" } as Electron.MenuItemConstructorOptions,
+						...windowListItems,
+					]
+				: []),
 			...(isMac
 				? [
 						{ type: "separator" } as Electron.MenuItemConstructorOptions,
@@ -289,7 +290,7 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 
 	const template: Electron.MenuItemConstructorOptions[] = [];
 	if (isMac) template.push(appMenu);
-	template.push(editMenu, viewMenu, windowMenu, helpMenu);
+	template.push(fileMenu, editMenu, viewMenu, windowMenu, helpMenu);
 	return template;
 }
 
@@ -297,8 +298,8 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 // Main process state
 // ---------------------------------------------------------------------------
 
-/** The single application window. Null until created. */
-let mainWindow: BrowserWindow | null = null;
+/** The window registry — owns all BrowserWindow instances. */
+const windowRegistry = new WindowRegistry();
 
 /** The runtime child process manager. */
 let runtimeManager: RuntimeChildManager | null = null;
@@ -318,10 +319,10 @@ let runtimeUrl: string | null = null;
 /** In-flight runtime restart promise used to deduplicate resume-triggered restarts. */
 let runtimeRestartPromise: Promise<void> | null = null;
 
-/** Power save blocker ID to prevent macOS App Nap. -1 if not active. */
 /** Preflight result — stored for diagnostics export. */
 let preflightResult: DesktopPreflightResult | null = null;
 
+/** Power save blocker ID to prevent macOS App Nap. -1 if not active. */
 let powerSaveBlockerId = -1;
 
 /** Whether `before-quit` has been signalled. */
@@ -330,30 +331,144 @@ let isQuitting = false;
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 
 // ---------------------------------------------------------------------------
+// Preload path (resolved once, reused for all windows)
+// ---------------------------------------------------------------------------
+
+const preloadPath = path.join(import.meta.dirname, "preload.js");
+
+// ---------------------------------------------------------------------------
 // kanban:// protocol registration
 // ---------------------------------------------------------------------------
 
-// Register the protocol before the app is ready — this is required on
-// Windows/Linux so the OS knows to route kanban:// URLs to this app even
-// on the very first launch. On macOS the Info.plist declared by
-// electron-builder handles association, but we still call the API for
-// development builds that don't go through the builder.
 registerProtocol(app);
+
+// ---------------------------------------------------------------------------
+// Auth interceptor helpers — install per-window, idempotent per session
+// ---------------------------------------------------------------------------
+
+/**
+ * Track sessions that already have an auth interceptor installed.
+ * Key: session partition string (or "default" for the default session).
+ */
+const installedAuthSessions = new Set<string>();
+
+/**
+ * Install auth interceptor on all windows' sessions.
+ * Idempotent per Electron session.
+ */
+async function installAuthOnAllWindows(serverUrl: string, token: string): Promise<void> {
+	if (!token || !serverUrl) return;
+
+	let origin: string;
+	try {
+		origin = new URL(serverUrl).origin;
+	} catch {
+		return;
+	}
+
+	for (const entry of windowRegistry.getAll()) {
+		if (entry.window.isDestroyed()) continue;
+		const session = entry.window.webContents.session;
+		const sessionKey = session.storagePath ?? "default";
+
+		// Only install once per session (all windows sharing a session get it).
+		if (!installedAuthSessions.has(sessionKey)) {
+			const filter = { urls: [`${origin}/*`] };
+			session.webRequest.onBeforeSendHeaders(
+				filter,
+				(
+					details: { requestHeaders: Record<string, string> },
+					callback: (response: { requestHeaders: Record<string, string> }) => void,
+				) => {
+					const headers = { ...details.requestHeaders };
+					headers["Authorization"] = `Bearer ${token}`;
+					callback({ requestHeaders: headers });
+				},
+			);
+
+			const url = new URL(serverUrl);
+			await session.cookies.set({
+				url: origin,
+				name: "kanban-auth",
+				value: token,
+				path: "/",
+				httpOnly: true,
+				secure: url.protocol === "https:",
+				sameSite: "strict",
+			});
+
+			installedAuthSessions.add(sessionKey);
+
+			windowRegistry.setAuthDisposer(entry.window.id, () => {
+				session.webRequest.onBeforeSendHeaders(null);
+				session.cookies.remove(origin, "kanban-auth").catch(() => {});
+				installedAuthSessions.delete(sessionKey);
+			});
+		}
+	}
+}
+
+/** Remove auth interceptors from all windows. */
+function removeAuthFromAllWindows(): void {
+	for (const entry of windowRegistry.getAll()) {
+		if (entry.disposeAuth) {
+			entry.disposeAuth();
+			entry.disposeAuth = null;
+		}
+	}
+	installedAuthSessions.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Window creation helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new app window via the registry. Wires up recovery handlers,
+ * loads the runtime URL if available, and rebuilds the menu.
+ */
+function createAppWindow(options: { projectId?: string | null; savedState?: import("./window-state.js").PersistedWindowState }): BrowserWindow {
+	const window = windowRegistry.createWindow({
+		projectId: options.projectId ?? null,
+		savedState: options.savedState,
+		preloadPath,
+		isPackaged: app.isPackaged,
+		backgroundColor: BACKGROUND_COLOR,
+		runtimeUrl: runtimeUrl ?? undefined,
+		hideOnCloseForMac: true,
+		isQuitting: () => isQuitting,
+		onWindowClosed: () => {
+			rebuildMenu();
+		},
+		onWindowFocused: () => {
+			rebuildMenu();
+		},
+	});
+
+	// Attach renderer recovery handlers.
+	attachRendererRecoveryHandlers(window, () => connectionManager);
+
+	// If the runtime is already running, load the URL in this window.
+	if (runtimeUrl && authToken) {
+		const url = WindowRegistry.buildWindowUrl(runtimeUrl, options.projectId ?? null);
+		installAuthOnAllWindows(runtimeUrl, authToken).then(() => {
+			window.loadURL(url);
+		}).catch((err: unknown) => {
+			console.error(
+				"[desktop] Failed to load URL in new window:",
+				err instanceof Error ? err.message : err,
+			);
+		});
+	}
+
+	rebuildMenu();
+	return window;
+}
 
 // ---------------------------------------------------------------------------
 // Protocol URL handling
 // ---------------------------------------------------------------------------
 
-/**
- * Forward a `kanban://` URL to the runtime server's OAuth callback endpoint.
- *
- * When the OS delivers a `kanban://oauth/callback?code=...&state=...` URL,
- * we translate it into a fetch against the runtime's HTTP server so that the
- * existing server-side OAuth exchange logic can complete the flow.
- *
- * This keeps the OAuth completion logic entirely within the runtime server —
- * the Electron shell only acts as a relay.
- */
 function handleProtocolUrl(raw: string): void {
 	const parsed = parseProtocolUrl(raw);
 	if (!parsed) {
@@ -366,7 +481,6 @@ function handleProtocolUrl(raw: string): void {
 	);
 
 	if (!parsed.isOAuthCallback) {
-		// Future: handle other kanban:// paths here.
 		return;
 	}
 
@@ -377,33 +491,29 @@ function handleProtocolUrl(raw: string): void {
 		return;
 	}
 
-	// Relay the OAuth parameters to the runtime server's MCP OAuth callback
-	// endpoint so the existing server-side logic can complete the exchange.
 	const relayTarget = new URL("/kanban-mcp/mcp-oauth-callback", runtimeUrl);
 	for (const [key, value] of parsed.searchParams.entries()) {
 		relayTarget.searchParams.set(key, value);
 	}
 
-	// Relay with retry (2 retries, 1s delay) — if the runtime is temporarily
-	// unreachable (sleep/restart), the callback isn't silently lost.
+	const focusedWindow = windowRegistry.getFocused();
+
 	relayOAuthCallback(relayTarget.toString(), authToken, {
 		fetch: globalThis.fetch,
-		getMainWindow: () => mainWindow,
+		getMainWindow: () => focusedWindow,
 	}).catch((err) => {
 		console.error("[desktop] OAuth relay error:", err);
 	});
 
-	// Bring the window to the foreground so the user sees the result.
-	if (mainWindow && !mainWindow.isDestroyed()) {
-		if (mainWindow.isMinimized()) mainWindow.restore();
-		mainWindow.show();
-		mainWindow.focus();
+	// Bring a window to the foreground.
+	if (focusedWindow && !focusedWindow.isDestroyed()) {
+		if (focusedWindow.isMinimized()) focusedWindow.restore();
+		focusedWindow.show();
+		focusedWindow.focus();
 	}
 }
 
 // macOS: the OS delivers the URL via the open-url event.
-// This must be registered before app.whenReady() to catch URLs that arrive
-// before the app finishes launching.
 app.on("open-url", (event, url) => {
 	event.preventDefault();
 	handleProtocolUrl(url);
@@ -412,125 +522,76 @@ app.on("open-url", (event, url) => {
 // ---------------------------------------------------------------------------
 // E2E state isolation — userData override
 // ---------------------------------------------------------------------------
-// When KANBAN_DESKTOP_USER_DATA is set, override Electron's userData path
-// BEFORE requesting the singleton lock. The lock is scoped to the userData
-// directory, so each E2E test gets its own lock and won't collide with the
-// installed app or other parallel test runs. No-op when the env var is absent.
 
 if (process.env.KANBAN_DESKTOP_USER_DATA) {
 	app.setPath("userData", process.env.KANBAN_DESKTOP_USER_DATA);
 }
 
 // ---------------------------------------------------------------------------
-// Single instance lock
+// Second instance / --project parsing
 // ---------------------------------------------------------------------------
+
+/**
+ * Parse `--project <id>` or `--project=<id>` from an argv array.
+ * Returns the project ID string or null if not found / malformed.
+ */
+function parseProjectFromArgv(argv: string[]): string | null {
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === "--project" && i + 1 < argv.length) {
+			const value = argv[i + 1];
+			if (value && !value.startsWith("-")) return value;
+		}
+		if (arg.startsWith("--project=")) {
+			const value = arg.slice("--project=".length);
+			if (value) return value;
+		}
+	}
+	return null;
+}
 
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
 	app.quit();
 } else {
-	// Windows/Linux: when a second instance is launched with a kanban:// URL,
-	// the OS passes the URL as a command-line argument. The second instance
-	// forwards it here via the second-instance event, then exits.
 	app.on("second-instance", (_event, argv) => {
+		// Check for protocol URL first.
 		const protocolUrl = extractProtocolUrlFromArgv(argv);
 		if (protocolUrl) {
 			handleProtocolUrl(protocolUrl);
 		}
 
-		if (mainWindow) {
-			if (mainWindow.isMinimized()) mainWindow.restore();
-			mainWindow.focus();
+		// Check for --project flag to open a new project window.
+		const projectId = parseProjectFromArgv(argv);
+		if (projectId) {
+			createAppWindow({ projectId });
+			return;
+		}
+
+		// Default: focus an existing window.
+		const focusedWindow = windowRegistry.getFocused();
+		if (focusedWindow) {
+			if (focusedWindow.isMinimized()) focusedWindow.restore();
+			focusedWindow.focus();
 		}
 	});
 }
 
 // ---------------------------------------------------------------------------
-// Window creation
+// IPC: open-project-window (renderer → main)
 // ---------------------------------------------------------------------------
 
-function createMainWindow(): BrowserWindow {
-	const savedState = loadWindowState(app.getPath("userData"));
-
-	const window = new BrowserWindow({
-		x: savedState?.x,
-		y: savedState?.y,
-		width: savedState?.width ?? DEFAULT_WIDTH,
-		height: savedState?.height ?? DEFAULT_HEIGHT,
-		minWidth: MIN_WIDTH,
-		minHeight: MIN_HEIGHT,
-		title: "Kanban",
-		backgroundColor: BACKGROUND_COLOR,
-		show: false,
-		webPreferences: {
-			preload: path.join(import.meta.dirname, "preload.js"),
-			contextIsolation: true,
-			nodeIntegration: false,
-			sandbox: true,
-			webSecurity: true,
-			devTools: !app.isPackaged,
-		},
-	});
-
-	if (savedState?.isMaximized) {
-		window.maximize();
+ipcMain.on("open-project-window", (_event, projectId: string) => {
+	if (typeof projectId === "string" && projectId) {
+		createAppWindow({ projectId });
 	}
-
-	// Show once content is ready to avoid a white flash.
-	window.once("ready-to-show", () => {
-		window.show();
-		// Persist initial window state eagerly so window-state.json
-		// exists immediately after first launch (not only after a
-		// resize/move event).
-		saveWindowState(app.getPath("userData"), captureWindowState(window));
-	});
-
-	// Persist window state on move/resize/maximize/unmaximize.
-	const persist = () => {
-		if (window.isDestroyed()) return;
-		saveWindowState(app.getPath("userData"), captureWindowState(window));
-	};
-
-	window.on("resize", persist);
-	window.on("move", persist);
-	window.on("maximize", persist);
-	window.on("unmaximize", persist);
-
-	// Prevent navigation to external URLs — keep the renderer locked to the runtime.
-	window.webContents.on("will-navigate", (event, url) => {
-		if (runtimeUrl && !url.startsWith(runtimeUrl)) {
-			event.preventDefault();
-		}
-	});
-
-	// Block new-window requests (e.g. target="_blank") — open in the system browser.
-	window.webContents.setWindowOpenHandler(({ url }) => {
-		shell.openExternal(url);
-		return { action: "deny" };
-	});
-
-	// On macOS, intercept the close to hide-to-dock unless the user is quitting.
-	window.on("close", (event) => {
-		if (process.platform === "darwin" && !isQuitting) {
-			event.preventDefault();
-			window.hide();
-		}
-	});
-
-	return window;
-}
+});
 
 // ---------------------------------------------------------------------------
 // Runtime child process lifecycle
 // ---------------------------------------------------------------------------
 
-/**
- * Create the RuntimeChildManager and wire its event handlers.
- *
- * The returned manager is NOT started yet — the ConnectionManager will
- * start it when the active connection is "local".
- */
 function createRuntimeChildManager(): RuntimeChildManager {
 	const childScriptPath = path.join(import.meta.dirname, "runtime-child-entry.js");
 
@@ -542,27 +603,14 @@ function createRuntimeChildManager(): RuntimeChildManager {
 		restartDecayMs: 300_000,
 	});
 
-	// When the runtime reports ready (initial start or auto-restart after crash),
-	// update local state and publish the descriptor for CLI helpers.
-	//
-	// NOTE: We do NOT install auth interceptors or call loadURL here — that is
-	// ConnectionManager's responsibility (switchToLocal handles both).
-	// Doing it here too causes double-registration of onBeforeSendHeaders and
-	// double loadURL, which race and break auth.
 	manager.on("ready", (url: string) => {
 		runtimeUrl = url;
 		authToken = connectionManager?.getLocalAuthToken() ?? authToken;
-		// Publish descriptor so CLI helpers can discover this runtime.
 		publishRuntimeDescriptor(url, authToken!);
 
-		// If boot already completed, this is an auto-restart after a crash.
-		// Update the ConnectionManager's local URL (the child got a new port)
-		// and reload the renderer so the user doesn't see a stale "Disconnected" page.
 		if (
 			getBootState().currentPhase === "ready" &&
-			connectionManager &&
-			mainWindow &&
-			!mainWindow.isDestroyed()
+			connectionManager
 		) {
 			console.log("[desktop] Runtime auto-restarted after crash — updating URL and reloading renderer.");
 			connectionManager.updateLocalRuntime(url);
@@ -577,7 +625,8 @@ function createRuntimeChildManager(): RuntimeChildManager {
 
 	manager.on("error", (message: string) => {
 		console.error(`[desktop] Runtime error: ${message}`);
-		if (mainWindow && !mainWindow.isDestroyed()) {
+		const focusedWindow = windowRegistry.getFocused();
+		if (focusedWindow && !focusedWindow.isDestroyed()) {
 			dialog.showErrorBox(
 				"Kanban Runtime Error",
 				`The runtime process encountered an error:\n\n${message}`,
@@ -630,12 +679,12 @@ async function restartRuntimeChild(): Promise<void> {
 	runtimeRestartPromise = (async () => {
 		resetBootState();
 		advanceBootPhase("preflight");
-		rebuildConnectionMenu();
+		rebuildMenu();
 
 		if (!connectionManager) {
 			console.error("[desktop] Cannot restart: connectionManager is not initialized.");
 			recordBootFailure("UNKNOWN_STARTUP_FAILURE", "ConnectionManager unavailable during restart");
-			rebuildConnectionMenu();
+			rebuildMenu();
 			return;
 		}
 
@@ -651,7 +700,7 @@ async function restartRuntimeChild(): Promise<void> {
 		if (!getBootState().failureCode) {
 			advanceBootPhase("ready");
 		}
-		rebuildConnectionMenu();
+		rebuildMenu();
 	})().finally(() => {
 		runtimeRestartPromise = null;
 	});
@@ -660,20 +709,12 @@ async function restartRuntimeChild(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// App Nap / suspend prevention (macOS + Linux)
+// App Nap / suspend prevention
 // ---------------------------------------------------------------------------
-// On macOS, "prevent-app-suspension" stops App Nap from throttling the
-// runtime child when the window is hidden.
-// On Linux, the same Electron API prevents the desktop environment from
-// suspending the process (e.g. via systemd-logind idle handling).
-// On Windows this is unnecessary — Windows does not suspend GUI processes
-// that hold open child processes.
 
 function startAppNapPrevention(): void {
 	if (process.platform !== "darwin" && process.platform !== "linux" && process.platform !== "win32") return;
 	if (powerSaveBlockerId !== -1) return;
-	// "prevent-app-suspension" keeps the app active even when hidden,
-	// ensuring the runtime child process keeps running.
 	powerSaveBlockerId = powerSaveBlocker.start("prevent-app-suspension");
 }
 
@@ -689,13 +730,10 @@ function stopAppNapPrevention(): void {
 
 function setupPowerMonitorHealthCheck(): void {
 	powerMonitor.on("resume", () => {
-		// After waking from sleep, the runtime child may have stalled.
-		// Only relevant when the active connection is local (child process).
 		const activeId = connectionManager?.getActiveConnectionId() ?? "local";
 		if (activeId !== "local") return;
 
 		if (runtimeManager?.running) {
-			// Child is still alive — send a heartbeat-ack and verify HTTP health.
 			runtimeManager.send({ type: "heartbeat-ack" });
 			void isRuntimeHealthy().then(async (healthy) => {
 				if (healthy) {
@@ -712,9 +750,6 @@ function setupPowerMonitorHealthCheck(): void {
 				}
 			});
 		} else {
-			// Child already died during sleep (heartbeat timeout killed it).
-			// The auto-restart may have fired, but the renderer still needs
-			// a full reconnect cycle to load the new URL.
 			console.warn("[desktop] Runtime child not running after resume; triggering full restart.");
 			void restartRuntimeChild().catch((error) => {
 				console.error(
@@ -756,36 +791,26 @@ async function showInterruptedTasksToast(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Application lifecycle
+// Menu rebuild helper
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Helper: rebuild the entire application menu including connection menu.
-//
-// Called when:
-// - Connection changes (onConnectionChanged callback)
-// - Boot state transitions to "ready" or records a failure
-// - Window is (re)created
-//
-// Rebuilds the base template first (so runtime-gated items reflect current
-// boot state), then layers the Connection submenu on top.
-// ---------------------------------------------------------------------------
-
-function rebuildConnectionMenu(): void {
-	if (!mainWindow || !connectionStore || !connectionManager) return;
-
-	// Rebuild the base application menu so runtime-gated items are updated.
+function rebuildMenu(): void {
 	const menu = Menu.buildFromTemplate(buildMenuTemplate());
 	Menu.setApplicationMenu(menu);
 
-	// Layer the Connection submenu into the rebuilt menu.
-	installConnectionMenu({
-		store: connectionStore,
-		manager: connectionManager,
-		window: mainWindow,
-	});
+	// Layer the Connection submenu if everything is initialized.
+	const focusedWindow = windowRegistry.getFocused();
+	if (focusedWindow && connectionStore && connectionManager) {
+		installConnectionMenu({
+			store: connectionStore,
+			manager: connectionManager,
+			window: focusedWindow,
+		});
+	}
 }
 
+// ---------------------------------------------------------------------------
+// Application lifecycle
 // ---------------------------------------------------------------------------
 
 if (gotTheLock) {
@@ -793,13 +818,10 @@ if (gotTheLock) {
 		// ── preflight ─────────────────────────────────────────────────────
 		advanceBootPhase("preflight");
 
-		// Ensure userData directory exists for window-state persistence.
 		await mkdir(app.getPath("userData"), { recursive: true }).catch(
 			() => {},
 		);
 
-		// Run preflight checks to ensure critical resources exist.
-		const preloadPath = path.join(import.meta.dirname, "preload.js");
 		const childScriptPath = path.join(import.meta.dirname, "runtime-child-entry.js");
 		let cliShimPath: string;
 		if (app.isPackaged) {
@@ -830,9 +852,6 @@ if (gotTheLock) {
 		}
 
 		// ── descriptor trust check ───────────────────────────────────────
-		// Evaluate whether a leftover runtime descriptor from a prior session
-		// should be trusted.  Stale descriptors with dead PIDs are cleaned up
-		// automatically; orphaned desktop descriptors are logged as warnings.
 		const trustResult = await evaluateDescriptorTrust(desktopSessionId);
 
 		switch (trustResult.reason) {
@@ -846,11 +865,6 @@ if (gotTheLock) {
 					"[desktop] Found descriptor from a prior desktop session with a live PID — " +
 						"attempting orphan cleanup before starting a fresh runtime.",
 				);
-				// Best-effort orphan cleanup — fire-and-forget so startup is
-				// never blocked.  The cleanup runs concurrently with the rest
-				// of the boot sequence.  By the time ConnectionManager starts
-				// a new child on an ephemeral port, the orphan is usually
-				// already gone.
 				if (trustResult.descriptor) {
 					void attemptOrphanCleanup(trustResult.descriptor).then((result) => {
 						if (result.cleaned) {
@@ -875,23 +889,34 @@ if (gotTheLock) {
 				);
 				break;
 			case "current-session":
-				// Should not normally happen during initial startup, but harmless.
 				console.log("[desktop] Descriptor already belongs to this session.");
 				break;
 			case "no-descriptor":
-				// Nothing on disk — expected for a clean first launch.
 				break;
 		}
 
-		// ── create-window ─────────────────────────────────────────────────
+		// ── create windows ────────────────────────────────────────────────
 		advanceBootPhase("create-window");
 
-		// Create the main window.
-		mainWindow = createMainWindow();
+		// Load persisted window states and recreate windows.
+		const persistedStates = WindowRegistry.loadPersistedWindows(
+			app.getPath("userData"),
+		);
+
+		if (persistedStates.length > 0) {
+			for (const savedState of persistedStates) {
+				createAppWindow({
+					projectId: savedState.projectId,
+					savedState,
+				});
+			}
+		} else {
+			// First launch — create a single overview window.
+			createAppWindow({ projectId: null });
+		}
 
 		// Build and apply the base application menu.
-		const menu = Menu.buildFromTemplate(buildMenuTemplate());
-		Menu.setApplicationMenu(menu);
+		rebuildMenu();
 
 		// Prevent macOS App Nap.
 		startAppNapPrevention();
@@ -899,13 +924,10 @@ if (gotTheLock) {
 		// ── load-persisted-state (synchronous) ────────────────────────────
 		advanceBootPhase("load-persisted-state");
 
-		// Instantiate the connection store (reads persisted connections).
 		connectionStore = new ConnectionStore(app.getPath("userData"));
 
-		// Create the RuntimeChildManager (not started yet).
 		runtimeManager = createRuntimeChildManager();
 
-		// Compute the absolute path to the bundled CLI shim.
 		let kanbanCliCommand: string;
 		if (app.isPackaged) {
 			const shimName = process.platform === "win32" ? "kanban.cmd" : "kanban";
@@ -915,14 +937,22 @@ if (gotTheLock) {
 			kanbanCliCommand = path.join(import.meta.dirname, "..", "build", "bin", devCliShimName);
 		}
 
-		// Instantiate the connection manager.
 		connectionManager = new ConnectionManager({
-			window: mainWindow,
 			childManager: runtimeManager,
 			store: connectionStore,
 			kanbanCliCommand,
+			getDialogParent: () => windowRegistry.getFocused(),
+			onLoadUrl: async (url: string) => {
+				await windowRegistry.loadUrlInAllWindows(url);
+			},
+			onInstallAuth: async (serverUrl: string, token: string) => {
+				await installAuthOnAllWindows(serverUrl, token);
+			},
+			onRemoveAuth: () => {
+				removeAuthFromAllWindows();
+			},
 			onConnectionChanged: () => {
-				rebuildConnectionMenu();
+				rebuildMenu();
 			},
 			onLocalRuntimeReady: (url, token) => {
 				runtimeUrl = url;
@@ -935,43 +965,27 @@ if (gotTheLock) {
 			},
 		});
 
-		// Attach renderer recovery handlers (did-fail-load + render-process-gone)
-		// so the user gets a recovery dialog instead of a blank/frozen window.
-		attachRendererRecoveryHandlers(mainWindow, () => connectionManager);
-
-		// Install the Connection menu into the app menu bar.
-		rebuildConnectionMenu();
+		rebuildMenu();
 
 		// ── initialize-connections ─────────────────────────────────────────
 		advanceBootPhase("initialize-connections");
 
-		// Initialize the connection (restores persisted active connection,
-		// starts local runtime if active connection is "local", or connects
-		// to a remote/WSL server).
 		try {
 			await connectionManager.initialize();
 
-			// Only advance to 'ready' if no failure was recorded during startup.
-			// switchToLocal/switchToRemote/switchToWsl now handle failures internally
-			// and call recordBootFailure() on dismiss, so failureCode is the single
-			// source of truth for whether boot succeeded.
 			if (!getBootState().failureCode) {
 				advanceBootPhase("ready");
-				rebuildConnectionMenu();
+				rebuildMenu();
 				showInterruptedTasksToast();
 			} else {
-				// Boot failed (failure was recorded by switchToLocal/switchToRemote/switchToWsl).
-				// Rebuild menu so runtime-dependent items are disabled.
-				rebuildConnectionMenu();
+				rebuildMenu();
 			}
 		} catch (error) {
-			// Only reached if something outside switchToLocal/switchToWsl/switchToRemote
-			// throws unexpectedly.
 			const message =
 				error instanceof Error ? error.message : String(error);
 			console.error(`[desktop] Unexpected startup failure: ${message}`);
 			recordBootFailure("UNKNOWN_STARTUP_FAILURE", message);
-			rebuildConnectionMenu();
+			rebuildMenu();
 			dialog.showErrorBox(
 				"Kanban Startup Error",
 				`Unexpected error:\n\n${message}`,
@@ -984,17 +998,10 @@ if (gotTheLock) {
 		// macOS: re-create window when dock icon is clicked and no windows exist.
 		app.on("activate", async () => {
 			if (BrowserWindow.getAllWindows().length === 0) {
-				// If preflight failed, connectionManager is null.
-				// Skip window creation entirely — an empty BrowserWindow with nothing
-				// to load is worse than no window. The dock icon stays active and the
-				// user can still Cmd+Q.
 				if (!connectionManager) return;
 
 				advanceBootPhase("create-window");
-				mainWindow = createMainWindow();
-				connectionManager.updateWindow(mainWindow);
-				attachRendererRecoveryHandlers(mainWindow, () => connectionManager);
-				rebuildConnectionMenu();
+				createAppWindow({ projectId: null });
 				advanceBootPhase("initialize-connections");
 				try {
 					await connectionManager.reconnectActiveConnection();
@@ -1005,14 +1012,17 @@ if (gotTheLock) {
 					const message = error instanceof Error ? error.message : String(error);
 					recordBootFailure("UNKNOWN_STARTUP_FAILURE", message);
 				}
-			} else if (mainWindow && !mainWindow.isVisible()) {
-				mainWindow.show();
+			} else {
+				// Show the most recent window.
+				const focusedWindow = windowRegistry.getFocused();
+				if (focusedWindow && !focusedWindow.isVisible()) {
+					focusedWindow.show();
+				}
 			}
 		});
 	});
 
-	// Quit when all windows are closed (except on macOS where apps stay in
-	// the dock until the user explicitly quits with Cmd+Q).
+	// Quit when all windows are closed (except on macOS).
 	app.on("window-all-closed", () => {
 		if (process.platform !== "darwin") {
 			app.quit();
@@ -1023,16 +1033,10 @@ if (gotTheLock) {
 		if (isQuitting) return;
 		isQuitting = true;
 
-		// Persist final window state.
-		if (mainWindow && !mainWindow.isDestroyed()) {
-			saveWindowState(
-				app.getPath("userData"),
-				captureWindowState(mainWindow),
-			);
-		}
+		// Persist all window states.
+		windowRegistry.saveAllStates(app.getPath("userData"));
 
-		// Shut down through the connection manager — this handles both
-		// local child process and WSL launcher cleanup.
+		// Shut down through the connection manager.
 		if (connectionManager) {
 			event.preventDefault();
 			try {
@@ -1052,17 +1056,13 @@ if (gotTheLock) {
 	});
 
 	app.on("will-quit", async () => {
-		// Clear the runtime descriptor so CLI helpers don't try to connect
-		// to a runtime that is shutting down.
 		await clearRuntimeDescriptor();
 
-		// Final cleanup — dispose the runtime manager to remove all listeners.
 		if (runtimeManager) {
 			await runtimeManager.dispose().catch(() => {});
 			runtimeManager = null;
 		}
 
-		// Clear references.
 		connectionManager = null;
 		connectionStore = null;
 	});

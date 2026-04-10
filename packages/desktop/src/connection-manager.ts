@@ -25,7 +25,7 @@
 
 import http from "node:http";
 import https from "node:https";
-import { BrowserWindow, dialog, type Session } from "electron";
+import { BrowserWindow, dialog } from "electron";
 import type { RuntimeChildManager } from "./runtime-child.js";
 import type { ConnectionStore, SavedConnection } from "./connection-store.js";
 import { generateAuthToken } from "./auth.js";
@@ -45,7 +45,6 @@ const REMOTE_HEALTH_TIMEOUT_MS = 5_000;
 // ---------------------------------------------------------------------------
 
 export interface ConnectionManagerOptions {
-	window: BrowserWindow;
 	childManager: RuntimeChildManager;
 	store: ConnectionStore;
 	onConnectionChanged?: () => void;
@@ -70,6 +69,25 @@ export interface ConnectionManagerOptions {
 	 * Only set when WSL is available on this machine.
 	 */
 	createWslLauncher?: (authToken: string) => WslLauncher;
+	/**
+	 * Returns the BrowserWindow to use as the parent for dialog boxes.
+	 * Typically wired to `windowRegistry.getFocused()`.
+	 */
+	getDialogParent?: () => BrowserWindow | null;
+	/**
+	 * Navigate all renderer windows to the given URL.
+	 * Called after auth has been installed and the connection is ready.
+	 */
+	onLoadUrl?: (url: string) => Promise<void>;
+	/**
+	 * Install the auth interceptor for the given server URL and token.
+	 * Called before loadURL so that requests carry the correct credentials.
+	 */
+	onInstallAuth?: (serverUrl: string, token: string) => Promise<void>;
+	/**
+	 * Remove all auth interceptors.
+	 */
+	onRemoveAuth?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +95,6 @@ export interface ConnectionManagerOptions {
 // ---------------------------------------------------------------------------
 
 export class ConnectionManager {
-	private window: BrowserWindow;
 	private readonly childManager: RuntimeChildManager;
 	private readonly store: ConnectionStore;
 	private readonly onConnectionChanged?: () => void;
@@ -85,7 +102,6 @@ export class ConnectionManager {
 	private localAuthToken = "";
 	private localUrl = "";
 	private childRunning = false;
-	private disposeAuthInterceptor: (() => void) | null = null;
 
 	private readonly createWslLauncher?: (authToken: string) => WslLauncher;
 	private wslLauncher: WslLauncher | null = null;
@@ -96,9 +112,12 @@ export class ConnectionManager {
 	private readonly onLocalRuntimeStopped?: () => void;
 
 	private readonly kanbanCliCommand?: string;
+	private readonly getDialogParent: () => BrowserWindow | null;
+	private readonly onLoadUrl: (url: string) => Promise<void>;
+	private readonly onInstallAuth: (serverUrl: string, token: string) => Promise<void>;
+	private readonly onRemoveAuth: () => void;
 
 	constructor(options: ConnectionManagerOptions) {
-		this.window = options.window;
 		this.childManager = options.childManager;
 		this.store = options.store;
 		this.onConnectionChanged = options.onConnectionChanged;
@@ -106,6 +125,10 @@ export class ConnectionManager {
 		this.onLocalRuntimeReady = options.onLocalRuntimeReady;
 		this.onLocalRuntimeStopped = options.onLocalRuntimeStopped;
 		this.createWslLauncher = options.createWslLauncher;
+		this.getDialogParent = options.getDialogParent ?? (() => null);
+		this.onLoadUrl = options.onLoadUrl ?? (() => Promise.resolve());
+		this.onInstallAuth = options.onInstallAuth ?? (() => Promise.resolve());
+		this.onRemoveAuth = options.onRemoveAuth ?? (() => {});
 	}
 
 	/**
@@ -242,19 +265,7 @@ export class ConnectionManager {
 	}
 
 	/**
-	 * Replace the managed window reference.
-	 *
-	 * Called when a new BrowserWindow is created (e.g. macOS dock reactivation
-	 * after the previous window was closed). The old window's session is
-	 * destroyed, so the previous auth interceptor is no longer valid.
-	 */
-	updateWindow(window: BrowserWindow): void {
-		this.disposeAuthInterceptor = null; // old window's session is destroyed
-		this.window = window;
-	}
-
-	/**
-	 * Reconnect the active connection on a (possibly new) window.
+	 * Reconnect the active connection on all windows.
 	 *
 	 * Used by the activate handler to restore the active connection without
 	 * going through initialize() (which is for first boot only).
@@ -268,7 +279,7 @@ export class ConnectionManager {
 			if (this.childRunning) {
 				try {
 					await this.installAuthInterceptor(this.localUrl, this.localAuthToken);
-					await this.window.loadURL(this.localUrl);
+					await this.onLoadUrl(this.localUrl);
 				} catch {
 					// Child may have restarted on a different port.
 					await this.loadLocal();
@@ -326,7 +337,10 @@ export class ConnectionManager {
 				canFallbackToLocal: false,
 			};
 
-			const action = await showDesktopFailureDialog(this.window, failure);
+			const parentWindow = this.getDialogParent();
+			const action = parentWindow
+				? await showDesktopFailureDialog(parentWindow, failure)
+				: "dismiss";
 			if (action === "retry") {
 				return this.ensureLocalChildRunning();
 			}
@@ -336,12 +350,12 @@ export class ConnectionManager {
 	}
 
 	/**
-	 * Navigate the renderer to the local runtime URL.
+	 * Navigate all renderer windows to the local runtime URL.
 	 * Assumes the local child is already running.
 	 */
 	private async loadLocal(): Promise<void> {
 		await this.installAuthInterceptor(this.localUrl, this.localAuthToken);
-		await this.window.loadURL(this.localUrl);
+		await this.onLoadUrl(this.localUrl);
 	}
 
 	// -- Private: remote health check ----------------------------------------
@@ -390,18 +404,19 @@ export class ConnectionManager {
 	}
 
 	/**
-	 * Navigate the renderer to a remote server URL.
+	 * Navigate all renderer windows to a remote server URL.
 	 * Does NOT shut down the local child — it stays alive for fallback.
 	 */
 	private async loadRemote(connection: SavedConnection): Promise<void> {
 		const token = connection.authToken ?? "";
 		await this.installAuthInterceptor(connection.serverUrl, token);
-		await this.window.loadURL(connection.serverUrl);
+		await this.onLoadUrl(connection.serverUrl);
 	}
 
 	private async switchToRemote(connection: SavedConnection): Promise<void> {
-		if (isInsecureRemoteUrl(connection.serverUrl)) {
-			const { response } = await dialog.showMessageBox(this.window, {
+		const parentWindow = this.getDialogParent();
+		if (isInsecureRemoteUrl(connection.serverUrl) && parentWindow) {
+			const { response } = await dialog.showMessageBox(parentWindow, {
 				type: "warning",
 				title: "Insecure Connection",
 				message:
@@ -427,7 +442,10 @@ export class ConnectionManager {
 				canFallbackToLocal: true,
 			};
 
-			const action = await showDesktopFailureDialog(this.window, failure);
+			const dialogParent = this.getDialogParent();
+			const action = dialogParent
+				? await showDesktopFailureDialog(dialogParent, failure)
+				: "dismiss";
 			if (action === "retry") {
 				return this.switchToRemote(connection);
 			}
@@ -459,7 +477,10 @@ export class ConnectionManager {
 				canFallbackToLocal: true,
 			};
 
-			const action = await showDesktopFailureDialog(this.window, failure);
+			const dialogParent2 = this.getDialogParent();
+			const action = dialogParent2
+				? await showDesktopFailureDialog(dialogParent2, failure)
+				: "dismiss";
 			if (action === "retry") {
 				return this.switchToRemote(connection);
 			}
@@ -503,7 +524,10 @@ export class ConnectionManager {
 				canFallbackToLocal: true,
 			};
 
-			const action = await showDesktopFailureDialog(this.window, failure);
+			const wslDialogParent = this.getDialogParent();
+			const action = wslDialogParent
+				? await showDesktopFailureDialog(wslDialogParent, failure)
+				: "dismiss";
 			if (action === "retry") {
 				return this.switchToWsl();
 			}
@@ -514,7 +538,7 @@ export class ConnectionManager {
 			return;
 		}
 		await this.installAuthInterceptor(this.wslUrl, this.wslAuthToken);
-		await this.window.loadURL(this.wslUrl);
+		await this.onLoadUrl(this.wslUrl);
 	}
 
 	private stopWsl(): void {
@@ -529,56 +553,10 @@ export class ConnectionManager {
 	private async installAuthInterceptor(serverUrl: string, token: string): Promise<void> {
 		this.removeAuthInterceptor();
 		if (!token || !serverUrl) return;
-
-		let origin: string;
-		try {
-			origin = new URL(serverUrl).origin;
-		} catch {
-			return;
-		}
-
-		const session: Session = this.window.webContents.session;
-		const filter = { urls: [`${origin}/*`] };
-
-		// 1. Header interceptor — covers all HTTP requests from the renderer.
-		session.webRequest.onBeforeSendHeaders(
-			filter,
-			(
-				details: { requestHeaders: Record<string, string> },
-				callback: (response: { requestHeaders: Record<string, string> }) => void,
-			) => {
-				const headers = { ...details.requestHeaders };
-				headers["Authorization"] = `Bearer ${token}`;
-				callback({ requestHeaders: headers });
-			},
-		);
-
-		// 2. Session cookie — covers WebSocket upgrade requests which bypass
-		//    onBeforeSendHeaders in Electron (Chromium sends WS upgrades
-		//    through the network stack without the webRequest intercept).
-		//    The runtime auth middleware accepts this cookie as a fallback.
-		const url = new URL(serverUrl);
-		await session.cookies.set({
-			url: origin,
-			name: "kanban-auth",
-			value: token,
-			path: "/",
-			httpOnly: true,
-			secure: url.protocol === "https:",
-			sameSite: "strict",
-		});
-
-		this.disposeAuthInterceptor = () => {
-			session.webRequest.onBeforeSendHeaders(null);
-			// Best-effort cookie removal.
-			session.cookies.remove(origin, "kanban-auth").catch(() => {});
-		};
+		await this.onInstallAuth(serverUrl, token);
 	}
 
 	private removeAuthInterceptor(): void {
-		if (this.disposeAuthInterceptor) {
-			this.disposeAuthInterceptor();
-			this.disposeAuthInterceptor = null;
-		}
+		this.onRemoveAuth();
 	}
 }

@@ -136,6 +136,7 @@ export default function App(): ReactElement {
 		isLocal,
 		reconnectAttemptCount,
 		resetProjectNavigationState,
+		lockedProjectId,
 	} = useProjectNavigation({
 		onProjectSwitchStart: handleProjectSwitchStart,
 	});
@@ -787,6 +788,20 @@ export default function App(): ReactElement {
 		return undefined;
 	}, [selectedCard]);
 
+	// -- Window title: "Kanban — <project name>" for locked project windows --
+	useEffect(() => {
+		if (!lockedProjectId || !currentProjectId) return;
+		const project = projects.find((p) => p.id === currentProjectId);
+		if (project) {
+			document.title = `Kanban — ${project.name}`;
+		} else {
+			document.title = "Kanban";
+		}
+		return () => {
+			document.title = "Kanban";
+		};
+	}, [lockedProjectId, currentProjectId, projects]);
+
 	const sidebarLayout = useProjectNavigationLayout();
 	const handleToggleSidebar = useCallback(() => {
 		sidebarLayout.setSidebarCollapsed(!sidebarLayout.isCollapsed);
@@ -866,7 +881,7 @@ export default function App(): ReactElement {
 						onDismiss={handleReconnectionBannerDismiss}
 					/>
 				) : null}
-				{!selectedCard ? (
+				{!selectedCard && !lockedProjectId ? (
 					<ProjectNavigationPanel
 						projects={displayedProjects}
 						isLoadingProjects={isProjectListLoading}

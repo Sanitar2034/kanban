@@ -27,6 +27,14 @@ const desktopApi = {
 			ipcRenderer.removeListener("open-diagnostics", handler);
 		};
 	},
+
+	/**
+	 * Open a new Electron window locked to the given project.
+	 * If a window for this project already exists, it will be focused instead.
+	 */
+	openProjectWindow(projectId: string): void {
+		ipcRenderer.send("open-project-window", projectId);
+	},
 } as const;
 
 contextBridge.exposeInMainWorld("desktop", desktopApi);
