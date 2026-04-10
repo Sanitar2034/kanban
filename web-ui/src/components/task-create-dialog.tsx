@@ -182,16 +182,22 @@ export function TaskCreateDialog({
 		normalizeStoredTaskCreateStartAction,
 	);
 
-	const { agentOptions, clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } =
-		useTaskAgentModelPicker({
-			active: open,
-			workspaceId,
-			agentId,
-			clineProviderId,
-			defaultAgentId,
-			defaultProviderId,
-			defaultModelId,
-		});
+	const {
+		agentOptions,
+		clineProviderOptions,
+		clineModelOptions,
+		isLoadingProviders,
+		isLoadingModels,
+		providerDefaultModels,
+	} = useTaskAgentModelPicker({
+		active: open,
+		workspaceId,
+		agentId,
+		clineProviderId,
+		defaultAgentId,
+		defaultProviderId,
+		defaultModelId,
+	});
 
 	const detectedItems = useMemo(() => parseListItems(prompt), [prompt]);
 	const validTaskCount = useMemo(() => taskPrompts.filter((p) => p.trim()).length, [taskPrompts]);
@@ -606,6 +612,7 @@ export function TaskCreateDialog({
 							isLoadingModels={isLoadingModels}
 							defaultAgentId={defaultAgentId}
 							defaultProviderId={defaultProviderId}
+							providerDefaultModels={providerDefaultModels}
 						/>
 					) : null}
 				</div>

@@ -16,7 +16,7 @@ export interface UseTaskAgentModelPickerInput {
 	workspaceId: string | null;
 	agentId: RuntimeAgentId | undefined;
 	clineProviderId: string | undefined;
-	/** The default agent ID from runtimeConfig.selectedAgentId — used to build the "Default (…)" label */
+	/** The default agent ID from runtimeConfig.selectedAgentId — used to build the first option label */
 	defaultAgentId?: RuntimeAgentId | null;
 	/** The default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
 	defaultProviderId?: string | null;
@@ -30,6 +30,8 @@ export interface UseTaskAgentModelPickerResult {
 	clineModelOptions: Array<{ value: string; label: string }>;
 	isLoadingProviders: boolean;
 	isLoadingModels: boolean;
+	/** Map of provider ID → its default model ID (from the provider catalog). */
+	providerDefaultModels: Record<string, string>;
 }
 
 export function useTaskAgentModelPicker({
@@ -109,16 +111,16 @@ export function useTaskAgentModelPicker({
 
 	const agentOptions = useMemo(() => {
 		const catalog = getRuntimeLaunchSupportedAgentCatalog();
-		let defaultLabel = "Default (from settings)";
+		let firstLabel = "Default";
 		if (defaultAgentId) {
 			const defaultAgent = catalog.find((a) => a.id === defaultAgentId);
 			if (defaultAgent) {
-				defaultLabel = `Default (${defaultAgent.label})`;
+				firstLabel = defaultAgent.label;
 			}
 		}
 		return [
-			{ value: "", label: defaultLabel },
-			// Exclude the default agent from the explicit list — it's already represented by the "Default" option
+			{ value: "", label: firstLabel },
+			// Exclude the default agent from the explicit list — it's already represented by the first option
 			...catalog
 				.filter((agent) => agent.id !== defaultAgentId)
 				.map((agent) => ({ value: agent.id, label: agent.label })),
@@ -126,33 +128,61 @@ export function useTaskAgentModelPicker({
 	}, [defaultAgentId]);
 
 	const clineProviderOptions = useMemo(() => {
-		let defaultLabel = "Default (from settings)";
+		let firstLabel = "Default";
 		if (defaultProviderId) {
 			const defaultProvider = providerCatalog.find((p) => p.id === defaultProviderId);
-			defaultLabel = defaultProvider ? `Default (${defaultProvider.name})` : `Default (${defaultProviderId})`;
+			firstLabel = defaultProvider ? defaultProvider.name : defaultProviderId;
 		}
 		return [
-			{ value: "", label: defaultLabel },
-			// Exclude the default provider from the explicit list — it's already represented by the "Default" option
+			{ value: "", label: firstLabel },
+			// Exclude the default provider from the explicit list — it's already represented by the first option
 			...providerCatalog.filter((p) => p.id !== defaultProviderId).map((p) => ({ value: p.id, label: p.name })),
 		];
 	}, [providerCatalog, defaultProviderId]);
 
+	// Map of provider ID → its catalog default model ID. Used by the component to
+	// auto-select the right model when the user switches providers.
+	const providerDefaultModels = useMemo(() => {
+		const map: Record<string, string> = {};
+		for (const p of providerCatalog) {
+			if (p.defaultModelId) {
+				map[p.id] = p.defaultModelId;
+			}
+		}
+		return map;
+	}, [providerCatalog]);
+
+	// When an explicit provider override is selected, the "Default" model label should
+	// reflect that provider's default model — not the global settings model.
+	const effectiveDefaultModelId = useMemo(() => {
+		if (clineProviderId) {
+			const provider = providerCatalog.find((p) => p.id === clineProviderId);
+			return provider?.defaultModelId ?? defaultModelId ?? null;
+		}
+		return defaultModelId ?? null;
+	}, [clineProviderId, providerCatalog, defaultModelId]);
+
 	const clineModelOptions = useMemo(() => {
-		let defaultLabel = "Default (from settings)";
-		if (defaultModelId) {
-			const defaultModel = providerModels.find((m) => m.id === defaultModelId);
-			// Fall back to the raw modelId string if the model is not in the fetched list
-			defaultLabel = defaultModel ? `Default (${defaultModel.name})` : `Default (${defaultModelId})`;
+		let defaultLabel = "Default";
+		if (effectiveDefaultModelId) {
+			const defaultModel = providerModels.find((m) => m.id === effectiveDefaultModelId);
+			defaultLabel = defaultModel ? defaultModel.name : effectiveDefaultModelId;
 		}
 		return [
 			{ value: "", label: defaultLabel },
-			// Exclude the default model from the explicit list — it's already represented by the "Default" option
-			...providerModels.filter((m) => m.id !== defaultModelId).map((m) => ({ value: m.id, label: m.name })),
+			// Exclude the default model from the explicit list — it's already represented by the first option
+			...providerModels.filter((m) => m.id !== effectiveDefaultModelId).map((m) => ({ value: m.id, label: m.name })),
 		];
-	}, [providerModels, defaultModelId]);
+	}, [providerModels, effectiveDefaultModelId]);
 
-	return { agentOptions, clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels };
+	return {
+		agentOptions,
+		clineProviderOptions,
+		clineModelOptions,
+		isLoadingProviders,
+		isLoadingModels,
+		providerDefaultModels,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +204,7 @@ export function TaskAgentModelPicker({
 	onPopoverOpenChange,
 	defaultAgentId,
 	defaultProviderId,
+	providerDefaultModels,
 }: {
 	agentId: RuntimeAgentId | undefined;
 	onAgentIdChange: (value: RuntimeAgentId | undefined) => void;
@@ -191,6 +222,8 @@ export function TaskAgentModelPicker({
 	defaultAgentId?: RuntimeAgentId | null;
 	/** The default Cline provider ID from runtimeConfig — used to decide if model picker should show by default */
 	defaultProviderId?: string | null;
+	/** Map of provider ID → its default model ID (from the provider catalog). */
+	providerDefaultModels?: Record<string, string>;
 }): ReactElement {
 	// Show the Cline provider picker when the effective agent is "cline"
 	// (either explicitly overridden to cline, or defaulting to cline)
@@ -201,6 +234,21 @@ export function TaskAgentModelPicker({
 	// (either explicitly overridden, or the global default provider is set)
 	const effectiveProviderId = clineProviderId ?? defaultProviderId ?? null;
 	const showClineModelPicker = showClineProviderPicker && Boolean(effectiveProviderId);
+
+	// When models finish loading and the currently selected model isn't in the
+	// options list, auto-select the first real model so the button never shows
+	// "No models available". Pick the first non-empty option (skipping the
+	// "Default" placeholder) so the user immediately sees a concrete model name.
+	useEffect(() => {
+		if (isLoadingModels || !clineModelId) {
+			return;
+		}
+		const modelExists = clineModelOptions.some((opt) => opt.value === clineModelId);
+		if (!modelExists) {
+			const firstRealModel = clineModelOptions.find((opt) => opt.value !== "");
+			onClineModelIdChange(firstRealModel?.value ?? undefined);
+		}
+	}, [isLoadingModels, clineModelId, clineModelOptions, onClineModelIdChange]);
 
 	return (
 		<div className="flex flex-col gap-2">
@@ -241,8 +289,13 @@ export function TaskAgentModelPicker({
 							<select
 								value={clineProviderId ?? ""}
 								onChange={(e) => {
-									onClineProviderIdChange(e.currentTarget.value || undefined);
-									onClineModelIdChange(undefined);
+									const newProviderId = e.currentTarget.value || undefined;
+									onClineProviderIdChange(newProviderId);
+									// Auto-select the new provider's default model so the
+									// model dropdown shows a model that the provider supports.
+									const newDefaultModel =
+										newProviderId && providerDefaultModels ? providerDefaultModels[newProviderId] : undefined;
+									onClineModelIdChange(newDefaultModel);
 								}}
 								disabled={isLoadingProviders}
 								className="h-7 w-full appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none disabled:opacity-50 disabled:cursor-default"

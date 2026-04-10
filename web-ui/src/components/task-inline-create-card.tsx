@@ -138,16 +138,22 @@ export function TaskInlineCreateCard({
 	const cancelLabel = hideCancelShortcut ? "Cancel" : "Cancel (esc)";
 	const cardMarginBottom = mode === "create" ? 6 : 0;
 
-	const { agentOptions, clineProviderOptions, clineModelOptions, isLoadingProviders, isLoadingModels } =
-		useTaskAgentModelPicker({
-			active: true,
-			workspaceId,
-			agentId,
-			clineProviderId,
-			defaultAgentId,
-			defaultProviderId,
-			defaultModelId,
-		});
+	const {
+		agentOptions,
+		clineProviderOptions,
+		clineModelOptions,
+		isLoadingProviders,
+		isLoadingModels,
+		providerDefaultModels,
+	} = useTaskAgentModelPicker({
+		active: true,
+		workspaceId,
+		agentId,
+		clineProviderId,
+		defaultAgentId,
+		defaultProviderId,
+		defaultModelId,
+	});
 
 	useHotkeys(
 		"escape",
@@ -322,6 +328,7 @@ export function TaskInlineCreateCard({
 						isLoadingModels={isLoadingModels}
 						defaultAgentId={defaultAgentId}
 						defaultProviderId={defaultProviderId}
+						providerDefaultModels={providerDefaultModels}
 						onPopoverOpenChange={setIsModelPickerPopoverOpen}
 					/>
 				) : null}
