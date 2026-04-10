@@ -540,6 +540,7 @@ describe("useBoardInteractions", () => {
 
 		const trashTask: BoardCard = {
 			id: "task-trash-model",
+			title: "Trash task with model title",
 			prompt: "Trash task with model",
 			startInPlanMode: false,
 			autoReviewEnabled: false,
