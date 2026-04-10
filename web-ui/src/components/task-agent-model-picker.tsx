@@ -134,9 +134,7 @@ export function useTaskAgentModelPicker({
 		return [
 			{ value: "", label: defaultLabel },
 			// Exclude the default provider from the explicit list — it's already represented by the "Default" option
-			...providerCatalog
-				.filter((p) => p.enabled && p.id !== defaultProviderId)
-				.map((p) => ({ value: p.id, label: p.name })),
+			...providerCatalog.filter((p) => p.id !== defaultProviderId).map((p) => ({ value: p.id, label: p.name })),
 		];
 	}, [providerCatalog, defaultProviderId]);
 
