@@ -347,6 +347,7 @@ async function deleteTaskWorkspace(
 
 async function createTask(input: {
 	cwd: string;
+	title?: string;
 	prompt: string;
 	projectPath?: string;
 	baseRef?: string;
@@ -366,6 +367,7 @@ async function createTask(input: {
 			state.board,
 			"backlog",
 			{
+				title: input.title,
 				prompt: input.prompt,
 				startInPlanMode: input.startInPlanMode,
 				autoReviewEnabled: input.autoReviewEnabled,
@@ -386,6 +388,7 @@ async function createTask(input: {
 			id: created.id,
 			column: "backlog",
 			workspacePath: workspaceRepoPath,
+			title: created.title,
 			prompt: created.prompt,
 			baseRef: created.baseRef,
 			startInPlanMode: created.startInPlanMode,
@@ -398,6 +401,7 @@ async function createTask(input: {
 async function updateTaskCommand(input: {
 	cwd: string;
 	taskId: string;
+	title?: string;
 	projectPath?: string;
 	prompt?: string;
 	baseRef?: string;
@@ -406,6 +410,7 @@ async function updateTaskCommand(input: {
 	autoReviewMode?: "commit" | "pr" | "move_to_trash";
 }): Promise<JsonRecord> {
 	if (
+		input.title === undefined &&
 		input.prompt === undefined &&
 		input.baseRef === undefined &&
 		input.startInPlanMode === undefined &&
@@ -425,6 +430,7 @@ async function updateTaskCommand(input: {
 		}
 
 		const updatedTask = updateTask(runtimeState.board, input.taskId, {
+			title: input.title ?? taskRecord.task.title,
 			prompt: input.prompt ?? taskRecord.task.prompt,
 			baseRef: input.baseRef ?? taskRecord.task.baseRef,
 			startInPlanMode: input.startInPlanMode ?? taskRecord.task.startInPlanMode,
@@ -553,6 +559,7 @@ async function startTask(input: { cwd: string; taskId: string; projectPath?: str
 		const started = await runtimeClient.runtime.startTaskSession.mutate({
 			taskId: task.id,
 			prompt: task.prompt,
+			taskTitle: task.title,
 			startInPlanMode: task.startInPlanMode,
 			baseRef: task.baseRef,
 		});
@@ -963,6 +970,7 @@ export function registerTaskCommand(program: Command): void {
 	task
 		.command("create")
 		.description("Create a task in backlog.")
+		.option("--title <text>", "Task title.")
 		.requiredOption("--prompt <text>", "Task prompt text.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.option("--base-ref <branch>", "Task base branch/ref.")
@@ -971,6 +979,7 @@ export function registerTaskCommand(program: Command): void {
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr | move_to_trash.", parseAutoReviewMode)
 		.action(
 			async (options: {
+				title?: string;
 				prompt: string;
 				projectPath?: string;
 				baseRef?: string;
@@ -982,6 +991,7 @@ export function registerTaskCommand(program: Command): void {
 					async () =>
 						await createTask({
 							cwd: process.cwd(),
+							title: options.title,
 							prompt: options.prompt,
 							projectPath: options.projectPath,
 							baseRef: options.baseRef,
@@ -997,6 +1007,7 @@ export function registerTaskCommand(program: Command): void {
 		.command("update")
 		.description("Update an existing task.")
 		.requiredOption("--task-id <id>", "Task ID.")
+		.option("--title <text>", "Replacement task title.")
 		.option("--prompt <text>", "Replacement task prompt.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.option("--base-ref <branch>", "Replacement base branch/ref.")
@@ -1006,6 +1017,7 @@ export function registerTaskCommand(program: Command): void {
 		.action(
 			async (options: {
 				taskId: string;
+				title?: string;
 				prompt?: string;
 				projectPath?: string;
 				baseRef?: string;
@@ -1018,6 +1030,7 @@ export function registerTaskCommand(program: Command): void {
 						await updateTaskCommand({
 							cwd: process.cwd(),
 							taskId: options.taskId,
+							title: options.title,
 							projectPath: options.projectPath,
 							prompt: options.prompt,
 							baseRef: options.baseRef,
