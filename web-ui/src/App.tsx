@@ -721,6 +721,21 @@ export default function App(): ReactElement {
 		selectedCard?.card.id,
 		latestTaskChatMessage,
 	);
+	// Dual-write handler: when the user changes the model from the task detail view,
+	// the new model is persisted in two places:
+	//   1. Global provider settings — handled upstream by persistClineModelSettings()
+	//      in cline-agent-chat-panel.tsx, which calls saveProviderSettings(). This
+	//      updates the shared default so future tasks (and existing tasks that inherit
+	//      defaults) use the new model.
+	//   2. Per-task override — handled here. We stamp clineProviderId + clineModelId
+	//      directly onto the task card so it keeps an explicit record of the model
+	//      that was chosen while the task was open.
+	//
+	// agentId is hardcoded to "cline" because the detail-view model picker is only
+	// rendered inside the Cline agent chat panel — it is never shown for other agent
+	// types. If the card previously had agentId=undefined (inheriting the global
+	// default), this explicitly pins it to "cline", which is correct: the user just
+	// interacted with the Cline model picker, confirming the task is a Cline task.
 	const handleClineModelChangedForTask = useCallback(
 		(providerId: string, modelId: string) => {
 			if (!selectedCard) {

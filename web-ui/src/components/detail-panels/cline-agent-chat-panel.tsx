@@ -299,6 +299,16 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			reasoningEffort?: RuntimeClineReasoningEffort | "";
 		};
 
+		// Persists the Cline model/reasoning-effort selection via a dual-write:
+		//
+		// 1. saveProviderSettings() writes to the GLOBAL shared Cline provider
+		//    settings for this workspace. This is intentional — changing the model
+		//    from the detail view updates the default so that future tasks (and
+		//    existing tasks that inherit defaults) pick up the new model.
+		//
+		// 2. onClineModelChanged() fires after a successful save and writes the
+		//    explicit per-task override (clineProviderId + clineModelId) onto the
+		//    current task card. See handleClineModelChangedForTask in App.tsx.
 		const persistClineModelSettings = useCallback(
 			async (overrides?: PersistClineModelSettingsOverrides): Promise<boolean> => {
 				if (!workspaceId) {
