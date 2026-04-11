@@ -30,8 +30,8 @@ const fakeWindow = {} as BrowserWindow;
 
 function makeFailure(overrides: Partial<DesktopFailureState> = {}): DesktopFailureState {
 	return {
-		code: "WSL_RUNTIME_START_FAILED",
-		title: "WSL Runtime Failed",
+		code: "RUNTIME_CHILD_START_FAILED",
+		title: "Local Runtime Failed",
 		message: "Something went wrong",
 		canRetry: false,
 		canFallbackToLocal: false,

@@ -66,18 +66,8 @@ const LOCAL_CONNECTION: SavedConnection = {
 	serverUrl: "",
 };
 
-/**
- * The built-in WSL connection. Inserted after "local" when WSL is detected.
- * The `serverUrl` is empty because it is determined at launch time.
- */
-export const WSL_CONNECTION: SavedConnection = {
-	id: "wsl",
-	label: "WSL",
-	serverUrl: "",
-};
-
 /** IDs that are reserved for built-in connections and cannot be removed. */
-export const BUILTIN_CONNECTION_IDS = new Set(["local", "wsl"]);
+export const BUILTIN_CONNECTION_IDS = new Set(["local"]);
 
 function defaultData(): ConnectionStoreData {
 	return {
@@ -147,23 +137,6 @@ export class ConnectionStore {
 		this.data.connections.push(saved);
 		this.persist();
 		return saved;
-	}
-
-	/**
-	 * Insert the built-in WSL connection into the store.
-	 * Call this when WSL is detected at startup. No-op if already present.
-	 */
-	enableWslConnection(): void {
-		if (this.data.connections.some((c) => c.id === "wsl")) return;
-		// Insert WSL right after "local".
-		const localIdx = this.data.connections.findIndex((c) => c.id === "local");
-		this.data.connections.splice(localIdx + 1, 0, { ...WSL_CONNECTION });
-		this.persist();
-	}
-
-	/** Whether the WSL connection is present in the store. */
-	hasWslConnection(): boolean {
-		return this.data.connections.some((c) => c.id === "wsl");
 	}
 
 	/** Update an existing connection (cannot update built-in connections). */

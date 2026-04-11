@@ -30,7 +30,6 @@ import type { RuntimeChildManager } from "./runtime-child.js";
 import type { ConnectionStore, SavedConnection } from "./connection-store.js";
 import { generateAuthToken } from "./auth.js";
 import { isInsecureRemoteUrl } from "./connection-utils.js";
-import type { WslLauncher } from "./wsl-launch.js";
 import { getBootState, recordBootFailure } from "./desktop-boot-state.js";
 import { showDesktopFailureDialog, type DesktopFailureState } from "./desktop-failure.js";
 
@@ -65,11 +64,6 @@ export interface ConnectionManagerOptions {
 	 */
 	onLocalRuntimeStopped?: () => void;
 	/**
-	 * Factory that creates a `WslLauncher` on demand (with the given auth token).
-	 * Only set when WSL is available on this machine.
-	 */
-	createWslLauncher?: (authToken: string) => WslLauncher;
-	/**
 	 * Returns the BrowserWindow to use as the parent for dialog boxes.
 	 * Typically wired to `windowRegistry.getFocused()`.
 	 */
@@ -103,11 +97,6 @@ export class ConnectionManager {
 	private localUrl = "";
 	private childRunning = false;
 
-	private readonly createWslLauncher?: (authToken: string) => WslLauncher;
-	private wslLauncher: WslLauncher | null = null;
-	private wslUrl = "";
-	private wslAuthToken = "";
-
 	private readonly onLocalRuntimeReady?: (url: string, authToken: string) => void;
 	private readonly onLocalRuntimeStopped?: () => void;
 
@@ -124,7 +113,6 @@ export class ConnectionManager {
 		this.kanbanCliCommand = options.kanbanCliCommand;
 		this.onLocalRuntimeReady = options.onLocalRuntimeReady;
 		this.onLocalRuntimeStopped = options.onLocalRuntimeStopped;
-		this.createWslLauncher = options.createWslLauncher;
 		this.getDialogParent = options.getDialogParent ?? (() => null);
 		this.onLoadUrl = options.onLoadUrl ?? (() => Promise.resolve());
 		this.onInstallAuth = options.onInstallAuth ?? (() => Promise.resolve());
@@ -144,17 +132,9 @@ export class ConnectionManager {
 			.find((c) => c.id === connectionId);
 		if (!connection) return;
 
-		// Stop any running WSL launcher when switching away.
-		if (connection.id !== "wsl") {
-			this.stopWsl();
-		}
-
 		if (connection.id === "local") {
 			await this.switchToLocal();
 			this.store.setActiveConnection("local");
-		} else if (connection.id === "wsl") {
-			// switchToWsl handles its own store updates on success/failure.
-			await this.switchToWsl();
 		} else {
 			// switchToRemote handles its own store updates:
 			// - success → sets to connectionId
@@ -182,18 +162,6 @@ export class ConnectionManager {
 		const active = this.store.getActiveConnection();
 		if (active.id === "local") {
 			await this.loadLocal();
-		} else if (active.id === "wsl") {
-			try {
-				await this.switchToWsl();
-			} catch (err) {
-				console.warn(
-					`[ConnectionManager] Failed to restore WSL connection, falling back to local:`,
-					err instanceof Error ? err.message : err,
-				);
-				this.store.setActiveConnection("local");
-				this.onConnectionChanged?.();
-				await this.loadLocal();
-			}
 		} else {
 			// Remote — health-check first, auto-fallback on failure.
 			const healthy = await this.checkRemoteHealth(active.serverUrl, active.authToken);
@@ -220,7 +188,7 @@ export class ConnectionManager {
 		}
 	}
 
-	/** Graceful shutdown — stop child and/or WSL if running. */
+	/** Graceful shutdown — stop child if running. */
 	async shutdown(): Promise<void> {
 		if (this.childRunning) {
 			this.onLocalRuntimeStopped?.();
@@ -231,7 +199,6 @@ export class ConnectionManager {
 			}
 			this.childRunning = false;
 		}
-		this.stopWsl();
 		this.removeAuthInterceptor();
 	}
 
@@ -288,8 +255,6 @@ export class ConnectionManager {
 				await this.ensureLocalChildRunning();
 				await this.loadLocal();
 			}
-		} else if (connection.id === "wsl") {
-			await this.switchToWsl();
 		} else {
 			// Health-check remote; fallback to local if dead.
 			const healthy = await this.checkRemoteHealth(connection.serverUrl, connection.authToken);
@@ -493,58 +458,6 @@ export class ConnectionManager {
 				recordBootFailure("REMOTE_CONNECTION_UNREACHABLE", message);
 			}
 			return;
-		}
-	}
-
-	private async switchToWsl(): Promise<void> {
-		if (!this.createWslLauncher) {
-			console.error("[ConnectionManager] WSL launcher factory not available.");
-			return;
-		}
-		// Stop existing WSL if running (but keep local child alive).
-		this.stopWsl();
-
-		this.wslAuthToken = generateAuthToken();
-		this.wslLauncher = this.createWslLauncher(this.wslAuthToken);
-
-		try {
-			const result = await this.wslLauncher.start();
-			this.wslUrl = result.url;
-		} catch (err) {
-			const message =
-				err instanceof Error ? err.message : String(err);
-			console.error("[ConnectionManager] Failed to start WSL runtime:", message);
-			recordBootFailure("WSL_RUNTIME_START_FAILED", message);
-
-			const failure: DesktopFailureState = {
-				code: "WSL_RUNTIME_START_FAILED",
-				title: "WSL Runtime Failed",
-				message: `Failed to start the Kanban runtime in WSL:\n\n${message}`,
-				canRetry: true,
-				canFallbackToLocal: true,
-			};
-
-			const wslDialogParent = this.getDialogParent();
-			const action = wslDialogParent
-				? await showDesktopFailureDialog(wslDialogParent, failure)
-				: "dismiss";
-			if (action === "retry") {
-				return this.switchToWsl();
-			}
-			if (action === "fallback-local") {
-				return this.switchToLocal();
-			}
-			// 'dismiss' — leave window in its current state, do not load about:blank.
-			return;
-		}
-		await this.installAuthInterceptor(this.wslUrl, this.wslAuthToken);
-		await this.onLoadUrl(this.wslUrl);
-	}
-
-	private stopWsl(): void {
-		if (this.wslLauncher) {
-			this.wslLauncher.stop();
-			this.wslLauncher = null;
 		}
 	}
 
