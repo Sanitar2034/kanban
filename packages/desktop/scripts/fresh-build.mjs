@@ -66,14 +66,12 @@ for (const dir of dirsToRemove) {
 	}
 }
 
-// Remove stale tarballs from root and desktop
-for (const dir of [ROOT, DESKTOP]) {
-	for (const file of readdirSync(dir)) {
-		if (file.endsWith(".tgz")) {
-			const full = join(dir, file);
-			console.log(`  rm ${full}`);
-			rmSync(full, { force: true });
-		}
+// Remove stale tarballs from desktop package
+for (const file of readdirSync(DESKTOP)) {
+	if (file.endsWith(".tgz")) {
+		const full = join(DESKTOP, file);
+		console.log(`  rm ${full}`);
+		rmSync(full, { force: true });
 	}
 }
 
@@ -95,10 +93,10 @@ run("npm run build");
 // ─── 5. Pack tarball ─────────────────────────────────────────────────────────
 
 step("5/7  Pack tarball");
-run("npm pack");
+run(`npm pack --pack-destination "${DESKTOP}"`);
 
 // Find the tarball
-const tarballs = readdirSync(ROOT).filter((f) => f.startsWith("kanban-") && f.endsWith(".tgz"));
+const tarballs = readdirSync(DESKTOP).filter((f) => f.startsWith("kanban-") && f.endsWith(".tgz"));
 if (tarballs.length === 0) {
 	console.error("ERROR: No kanban-*.tgz found after npm pack");
 	process.exit(1);
@@ -106,11 +104,6 @@ if (tarballs.length === 0) {
 const tarball = tarballs.sort().pop(); // latest
 const version = tarball.replace("kanban-", "").replace(".tgz", "");
 console.log(`  Tarball: ${tarball} (version ${version})`);
-
-// Copy to desktop
-const tarballSrc = join(ROOT, tarball);
-const tarballDest = join(DESKTOP, tarball);
-execSync(`cp "${tarballSrc}" "${tarballDest}"`);
 
 // ─── 6. Update desktop package.json + install ────────────────────────────────
 
