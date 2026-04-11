@@ -33,6 +33,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./runtime-start": {
+      "types": "./dist/runtime-start.d.ts",
+      "import": "./dist/runtime-start.js"
+    },
+    "./core/runtime-descriptor": {
+      "types": "./dist/core/runtime-descriptor.d.ts",
+      "import": "./dist/core/runtime-descriptor.js"
     }
   },
   "files": [
