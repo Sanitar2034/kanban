@@ -154,13 +154,13 @@ describe("ConnectionManager integration", () => {
 
 	it("switches to a saved remote and loads its URL", async () => {
 		const store = new ConnectionStore(tmpDir);
-		const conn = store.addConnection({ label: "Remote", serverUrl: "https://kanban.io" });
+		const conn = store.addConnection({ label: "Remote", serverUrl: "https://cline.bot" });
 		const win = createMockWindow();
 		const child = createMockChildManager();
 		const mgr = new ConnectionManager({ window: win as unknown as BW, childManager: child, store });
 		await mgr.initialize();
 		await mgr.switchTo(conn.id);
-		expect(win.loadURL).toHaveBeenCalledWith("https://kanban.io");
+		expect(win.loadURL).toHaveBeenCalledWith("https://cline.bot");
 		expect(store.getActiveConnectionId()).toBe(conn.id);
 	});
 

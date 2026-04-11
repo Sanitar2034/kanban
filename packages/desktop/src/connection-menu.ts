@@ -75,7 +75,7 @@ function buildDialogHtml(): string {
   <h2>Add Remote Connection</h2>
   <form action="kanban-connection://submit" method="get">
     <label>Label<input name="label" placeholder="My Server" autofocus required spellcheck="false"></label>
-    <label>Server URL<input name="serverUrl" type="url" placeholder="https://kanban.example.com" required spellcheck="false"></label>
+    <label>Server URL<input name="serverUrl" type="url" placeholder="https://cline.bot/kanban" required spellcheck="false"></label>
     <label>Auth Token (optional)<input name="authToken" placeholder="Bearer token" spellcheck="false"></label>
     <div class="buttons">
       <button type="submit" formaction="kanban-connection://cancel" formnovalidate>Cancel</button>

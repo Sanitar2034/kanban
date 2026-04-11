@@ -28,7 +28,7 @@ export interface SavedConnection {
 	id: string;
 	/** Human-readable label shown in the Connection menu. */
 	label: string;
-	/** Full server URL (e.g. "https://kanban.example.com"). Ignored for "local". */
+	/** Full server URL (e.g. "https://cline.bot/kanban"). Ignored for "local". */
 	serverUrl: string;
 	/** Optional auth token to send as a Bearer header to the remote server. */
 	authToken?: string;
