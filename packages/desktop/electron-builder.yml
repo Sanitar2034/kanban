@@ -178,7 +178,7 @@ win:
   # Custom signing hook — delegates to signtool.exe or a cloud HSM tool
   # (Azure SignTool / DigiCert smctl) when EV cert env vars are present.
   # Falls back to electron-builder's built-in PFX signing otherwise.
-  sign: ./scripts/win-sign.cjs
+  # sign: ./scripts/win-sign.cjs  # Deferred to post-alpha
   # Publish timestamp server — embeds a countersignature so the signature
   # remains valid after the certificate expires.
   rfc3161TimeStampServer: "http://timestamp.acs.microsoft.com"
