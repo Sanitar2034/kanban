@@ -853,6 +853,8 @@ export const runtimeTaskSessionStartRequestSchema = z.object({
 	baseRef: z.string(),
 	cols: z.number().int().positive().optional(),
 	rows: z.number().int().positive().optional(),
+	/** Terminal color scheme from the frontend theme. Determines COLORFGBG for CLI agents. */
+	terminalColorScheme: z.enum(["light", "dark"]).optional(),
 });
 export type RuntimeTaskSessionStartRequest = z.infer<typeof runtimeTaskSessionStartRequestSchema>;
 

@@ -44,8 +44,8 @@ function ToolMessageBlock({ message }: { message: ClineChatMessage }): ReactElem
 				) : null}
 				<span
 					className={cn(
-						"shrink-0 font-semibold group-hover:text-[#C9D1D9]",
-						expanded ? "text-[#C9D1D9]" : "text-text-secondary",
+						"shrink-0 font-semibold group-hover:text-text-primary",
+						expanded ? "text-text-primary" : "text-text-secondary",
 					)}
 				>
 					{toolDisplay.toolName}

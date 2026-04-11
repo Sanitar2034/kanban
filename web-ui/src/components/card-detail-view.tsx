@@ -165,7 +165,7 @@ function BottomTerminalSection({
 					onClose={onClose}
 					minimalHeaderTitle="Terminal"
 					minimalHeaderSubtitle={subtitle}
-					panelBackgroundColor={terminalThemeColors.surfaceRaised}
+					panelBackgroundColor="var(--color-surface-1)"
 					terminalBackgroundColor={terminalThemeColors.surfaceRaised}
 					cursorColor={terminalThemeColors.textPrimary}
 					onConnectionReady={onConnectionReady}
@@ -680,8 +680,9 @@ export function CardDetailView({
 					? getTaskAutoReviewCancelButtonLabel(selection.card.autoReviewMode)
 					: null
 			}
-			panelBackgroundColor={terminalThemeColors.surfacePrimary}
+			panelBackgroundColor="var(--color-surface-0)"
 			terminalBackgroundColor={terminalThemeColors.surfacePrimary}
+			cursorColor={terminalThemeColors.textPrimary}
 			taskColumnId={selection.column.id}
 		/>
 	);

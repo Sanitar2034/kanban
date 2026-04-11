@@ -164,6 +164,18 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 					baseRef: task.baseRef,
 					cols: geometry.cols,
 					rows: geometry.rows,
+					terminalColorScheme:
+						document.documentElement.hasAttribute("data-theme") &&
+						[
+							"light",
+							"overcast",
+							"solarized-light",
+							"latte",
+							"high-contrast-light",
+							"soft-contrast-light",
+						].includes(document.documentElement.getAttribute("data-theme") ?? "")
+							? "light"
+							: "dark",
 				});
 				if (!payload.ok || !payload.summary) {
 					return {

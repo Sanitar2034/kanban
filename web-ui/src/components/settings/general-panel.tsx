@@ -1,12 +1,12 @@
+import * as RadixSelect from "@radix-ui/react-select";
 import * as RadixSwitch from "@radix-ui/react-switch";
-import { ExternalLink } from "lucide-react";
+import { Check, ChevronDown, ExternalLink } from "lucide-react";
 import type { ReactElement } from "react";
 
 import { SettingRow } from "@/components/settings/setting-row";
 import { SettingSection } from "@/components/settings/setting-section";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/components/ui/cn";
-import { previewThemeId, THEMES, type ThemeId } from "@/hooks/use-theme";
+import { previewThemeId, THEME_GROUPS, THEMES, type ThemeId } from "@/hooks/use-theme";
 import type { RuntimeConfigResponse } from "@/runtime/types";
 import type { BrowserNotificationPermission } from "@/utils/notification-permission";
 import { formatPathForDisplay } from "@/utils/path-display";
@@ -16,6 +16,17 @@ function formatNotificationPermissionStatus(permission: BrowserNotificationPermi
 		return "not requested yet";
 	}
 	return permission;
+}
+
+function ThemeSwatch({ themeId }: { themeId: ThemeId }): ReactElement {
+	const theme = THEMES.find((t) => t.id === themeId);
+	return (
+		<span className="flex shrink-0 h-5 w-10 rounded overflow-hidden border border-border">
+			<span className="flex-1" style={{ background: theme?.surface ?? "#1F2428" }} />
+			<span className="flex-1" style={{ background: theme?.accent ?? "#0084FF" }} />
+			<span className="flex-1" style={{ background: theme?.accent2 ?? "#7C5CFF" }} />
+		</span>
+	);
 }
 
 export function GeneralPanel({
@@ -50,30 +61,68 @@ export function GeneralPanel({
 
 			<SettingSection title="Appearance">
 				<SettingRow label="Theme" description="Choose a color theme for the interface.">
-					<div className="flex flex-wrap gap-2 mt-1">
-						{THEMES.map((theme) => (
-							<button
-								key={theme.id}
-								type="button"
-								aria-label={theme.label}
-								title={theme.label}
-								onClick={() => {
-									onThemeChange(theme.id);
-									previewThemeId(theme.id);
-								}}
-								className={cn(
-									"w-7 h-7 rounded-full border-2 cursor-pointer transition-all hover:scale-110",
-									draftThemeId === theme.id ? "border-accent ring-2 ring-accent/40" : "border-transparent",
-								)}
-								style={{
-									background: `radial-gradient(circle at 60% 40%, ${theme.accent}, ${theme.surface})`,
-								}}
-							/>
-						))}
-					</div>
-					<p className="text-text-tertiary text-[11px] mt-1.5 mb-0">
-						{THEMES.find((t) => t.id === draftThemeId)?.label ?? "Default"}
-					</p>
+					<RadixSelect.Root
+						value={draftThemeId}
+						onValueChange={(value) => {
+							onThemeChange(value as ThemeId);
+							previewThemeId(value as ThemeId);
+						}}
+						onOpenChange={(open) => {
+							if (!open) {
+								previewThemeId(draftThemeId);
+							}
+						}}
+					>
+						<RadixSelect.Trigger
+							className="flex h-9 w-full items-center justify-between rounded-md border border-border bg-surface-2 px-3 text-[13px] text-text-primary outline-none transition-colors hover:bg-surface-3 focus:border-border-focus"
+							aria-label="Theme"
+						>
+							<span className="flex items-center gap-2.5">
+								<ThemeSwatch themeId={draftThemeId} />
+								<RadixSelect.Value />
+							</span>
+							<RadixSelect.Icon>
+								<ChevronDown size={14} className="text-text-tertiary" />
+							</RadixSelect.Icon>
+						</RadixSelect.Trigger>
+						<RadixSelect.Portal>
+							<RadixSelect.Content
+								className="z-50 max-h-72 w-(--radix-select-trigger-width) overflow-auto rounded-lg border border-border bg-surface-1 p-1 shadow-xl"
+								position="popper"
+								sideOffset={4}
+								align="start"
+							>
+								<RadixSelect.Viewport>
+									{THEME_GROUPS.map((group) => {
+										const groupThemes = THEMES.filter((t) => t.group === group.key);
+										if (groupThemes.length === 0) return null;
+										return (
+											<RadixSelect.Group key={group.key}>
+												<RadixSelect.Label className="px-2 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+													{group.label}
+												</RadixSelect.Label>
+												{groupThemes.map((theme) => (
+													<RadixSelect.Item
+														key={theme.id}
+														value={theme.id}
+														className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-text-secondary outline-none data-highlighted:bg-surface-3 data-highlighted:text-text-primary data-[state=checked]:text-text-primary"
+														onMouseEnter={() => previewThemeId(theme.id)}
+														onFocus={() => previewThemeId(theme.id)}
+													>
+														<ThemeSwatch themeId={theme.id} />
+														<RadixSelect.ItemText>{theme.label}</RadixSelect.ItemText>
+														<RadixSelect.ItemIndicator className="ml-auto">
+															<Check size={14} className="text-accent-2" />
+														</RadixSelect.ItemIndicator>
+													</RadixSelect.Item>
+												))}
+											</RadixSelect.Group>
+										);
+									})}
+								</RadixSelect.Viewport>
+							</RadixSelect.Content>
+						</RadixSelect.Portal>
+					</RadixSelect.Root>
 				</SettingRow>
 
 				<SettingRow

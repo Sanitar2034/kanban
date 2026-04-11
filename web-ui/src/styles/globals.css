@@ -984,6 +984,30 @@ body.kb-dependency-link-mode {
 	border-radius: 999px;
 }
 
+/* -- Terminal light-mode inversion --
+   Terminal internally renders pure black bg with dark-mode colors so all CLI
+   agent ANSI output (including 24-bit RGB) is correct. The CSS filter inverts
+   the xterm canvas to appear light. Pure black (#000) inverts to pure white
+   (#FFF) so there's no gray tint. Panel chrome stays untouched. */
+
+[data-theme="light"] .kb-terminal-container,
+[data-theme="overcast"] .kb-terminal-container,
+[data-theme="solarized-light"] .kb-terminal-container,
+[data-theme="latte"] .kb-terminal-container,
+[data-theme="high-contrast-light"] .kb-terminal-container,
+[data-theme="soft-contrast-light"] .kb-terminal-container {
+	background: var(--color-surface-1) !important;
+}
+
+[data-theme="light"] .kb-terminal-container .xterm,
+[data-theme="overcast"] .kb-terminal-container .xterm,
+[data-theme="solarized-light"] .kb-terminal-container .xterm,
+[data-theme="latte"] .kb-terminal-container .xterm,
+[data-theme="high-contrast-light"] .kb-terminal-container .xterm,
+[data-theme="soft-contrast-light"] .kb-terminal-container .xterm {
+	filter: invert(1) hue-rotate(180deg);
+}
+
 /* -- Animations -- */
 
 @keyframes kb-overlay-show {
