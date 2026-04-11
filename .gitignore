@@ -13,4 +13,3 @@ playwright-report
 web-ui/.env
 web-ui/.env.*
 !web-ui/.env.example
-packages/desktop/out
