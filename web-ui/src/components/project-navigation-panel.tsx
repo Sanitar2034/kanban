@@ -1,7 +1,6 @@
 import * as Collapsible from "@radix-ui/react-collapsible";
-import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { AppWindow, ChevronDown, ChevronUp, Ellipsis, ExternalLink, Info, Lightbulb, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Ellipsis, ExternalLink, Info, Lightbulb, Plus, X } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { canShowFeaturebaseFeedbackButton } from "@/components/featurebase-feedback-button";
 import { Button } from "@/components/ui/button";
@@ -746,13 +745,6 @@ function ProjectRow({
 		},
 	].filter((item) => item.count > 0);
 
-	const isDesktop = isDesktopApiAvailable();
-
-	const openInNewWindow = useCallback(() => {
-		const desktop = (window as unknown as { desktop: { openProjectWindow: (id: string) => void } }).desktop;
-		desktop.openProjectWindow(project.id);
-	}, [project.id]);
-
 	const rowContent = (
 		<div
 			role="button"
@@ -833,21 +825,7 @@ function ProjectRow({
 							className="z-50 min-w-[160px] rounded-md border border-border-bright bg-surface-1 p-1 shadow-lg"
 							onCloseAutoFocus={(event) => event.preventDefault()}
 						>
-							{isDesktopApiAvailable() ? (
-								<DropdownMenu.Item
-									className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] text-text-primary cursor-pointer outline-none data-[highlighted]:bg-surface-3"
-									onSelect={() => {
-										const desktop = (
-											window as unknown as { desktop: { openProjectWindow: (id: string) => void } }
-										).desktop;
-										desktop.openProjectWindow(project.id);
-									}}
-								>
-									<AppWindow size={14} className="text-text-secondary" />
-									Open in New Window
-								</DropdownMenu.Item>
-							) : null}
-							<DropdownMenu.Item
+						<DropdownMenu.Item
 								className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] text-status-red cursor-pointer outline-none data-[highlighted]:bg-surface-3"
 								onSelect={() => onRemove(project.id)}
 							>
@@ -860,24 +838,5 @@ function ProjectRow({
 		</div>
 	);
 
-	if (!isDesktop) {
-		return rowContent;
-	}
-
-	return (
-		<ContextMenu.Root>
-			<ContextMenu.Trigger asChild>{rowContent}</ContextMenu.Trigger>
-			<ContextMenu.Portal>
-				<ContextMenu.Content className="z-50 min-w-[180px] rounded-md border border-border-bright bg-surface-1 p-1 shadow-lg">
-					<ContextMenu.Item
-						className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] text-text-primary cursor-pointer outline-none data-[highlighted]:bg-surface-3"
-						onSelect={openInNewWindow}
-					>
-						<AppWindow size={14} className="text-text-secondary" />
-						Open in New Window
-					</ContextMenu.Item>
-				</ContextMenu.Content>
-			</ContextMenu.Portal>
-		</ContextMenu.Root>
-	);
+	return rowContent;
 }

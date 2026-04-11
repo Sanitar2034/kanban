@@ -23,6 +23,21 @@ const desktopApi = {
 		ipcRenderer.send("open-project-window", projectId);
 	},
 
+	/**
+	 * Persist a key/value setting to a file-backed store that survives
+	 * origin/port changes across restarts.
+	 */
+	setDesktopSetting(key: string, value: string): void {
+		ipcRenderer.send("set-desktop-setting", key, value);
+	},
+
+	/**
+	 * Read a persisted setting. Returns null if the key has never been set.
+	 */
+	getDesktopSetting(key: string): Promise<string | null> {
+		return ipcRenderer.invoke("get-desktop-setting", key);
+	},
+
 } as const;
 
 contextBridge.exposeInMainWorld("desktop", desktopApi);

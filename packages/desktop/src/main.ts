@@ -26,7 +26,7 @@ import {
 	shell,
 } from "electron";
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { ConnectionManager } from "./connection-manager.js";
@@ -189,9 +189,23 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 			{
 				label: "New Window",
 				accelerator: isMac ? "CmdOrCtrl+Shift+N" : "Ctrl+Shift+N",
-				click: () => {
-					createAppWindow({ projectId: null });
-				},
+			click: () => {
+				// Extract the current project from the focused window's URL
+				// pathname (e.g. "/my-project") — NOT as a locked projectId.
+				const focused = windowRegistry.getFocused();
+				let initialPath: string | null = null;
+				if (focused && !focused.isDestroyed()) {
+					try {
+						const currentUrl = new URL(focused.webContents.getURL());
+						if (currentUrl.pathname && currentUrl.pathname !== "/") {
+							initialPath = currentUrl.pathname;
+						}
+					} catch {
+						// best effort
+					}
+				}
+				createAppWindow({ projectId: null, initialPath });
+			},
 			},
 			{ type: "separator" },
 			isMac ? { role: "close" } : { role: "quit" },
@@ -427,7 +441,7 @@ function removeAuthFromAllWindows(): void {
  * Create a new app window via the registry. Wires up recovery handlers,
  * loads the runtime URL if available, and rebuilds the menu.
  */
-function createAppWindow(options: { projectId?: string | null; savedState?: import("./window-state.js").PersistedWindowState }): BrowserWindow {
+function createAppWindow(options: { projectId?: string | null; initialPath?: string | null; savedState?: import("./window-state.js").PersistedWindowState }): BrowserWindow {
 	const window = windowRegistry.createWindow({
 		projectId: options.projectId ?? null,
 		savedState: options.savedState,
@@ -450,7 +464,18 @@ function createAppWindow(options: { projectId?: string | null; savedState?: impo
 
 	// If the runtime is already running, load the URL in this window.
 	if (runtimeUrl && authToken) {
-		const url = WindowRegistry.buildWindowUrl(runtimeUrl, options.projectId ?? null);
+		let url: string;
+		if (options.projectId) {
+			// Locked window — use ?projectId= query param.
+			url = WindowRegistry.buildWindowUrl(runtimeUrl, options.projectId);
+		} else if (options.initialPath) {
+			// New window with initial project via pathname (not locked).
+			const parsed = new URL(runtimeUrl);
+			parsed.pathname = options.initialPath;
+			url = parsed.toString();
+		} else {
+			url = runtimeUrl;
+		}
 		installAuthOnAllWindows(runtimeUrl, authToken).then(() => {
 			window.loadURL(url);
 		}).catch((err: unknown) => {
@@ -588,6 +613,40 @@ ipcMain.on("open-project-window", (_event, projectId: string) => {
 	}
 });
 
+// ---------------------------------------------------------------------------
+// IPC: desktop persistent settings (survives port/origin changes)
+// ---------------------------------------------------------------------------
+
+function getDesktopSettingsPath(): string {
+	return path.join(app.getPath("userData"), "desktop-settings.json");
+}
+
+async function loadDesktopSettings(): Promise<Record<string, string>> {
+	try {
+		const raw = await readFile(getDesktopSettingsPath(), "utf-8");
+		return JSON.parse(raw) as Record<string, string>;
+	} catch {
+		return {};
+	}
+}
+
+async function saveDesktopSettings(settings: Record<string, string>): Promise<void> {
+	await writeFile(getDesktopSettingsPath(), JSON.stringify(settings, null, "\t"), "utf-8");
+}
+
+ipcMain.on("set-desktop-setting", (_event, key: string, value: string) => {
+	if (typeof key !== "string" || typeof value !== "string") return;
+	void loadDesktopSettings().then((settings) => {
+		settings[key] = value;
+		return saveDesktopSettings(settings);
+	}).catch(() => { /* best effort */ });
+});
+
+ipcMain.handle("get-desktop-setting", async (_event, key: string): Promise<string | null> => {
+	if (typeof key !== "string") return null;
+	const settings = await loadDesktopSettings();
+	return settings[key] ?? null;
+});
 
 // ---------------------------------------------------------------------------
 // Runtime child process lifecycle
