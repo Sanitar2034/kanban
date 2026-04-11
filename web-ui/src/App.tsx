@@ -793,19 +793,8 @@ export default function App(): ReactElement {
 		return undefined;
 	}, [selectedCard]);
 
-	// -- Window title: "Kanban — <project name>" for locked project windows --
-	useEffect(() => {
-		if (!lockedProjectId || !currentProjectId) return;
-		const project = projects.find((p) => p.id === currentProjectId);
-		if (project) {
-			document.title = `Kanban — ${project.name}`;
-		} else {
-			document.title = "Kanban";
-		}
-		return () => {
-			document.title = "Kanban";
-		};
-	}, [lockedProjectId, currentProjectId, projects]);
+	// Window title is managed by useReviewReadyNotifications → useDocumentTitle
+	// which sets "Kanban — <workspace folder name>" (with notification badge prefix).
 
 	const sidebarLayout = useProjectNavigationLayout();
 	const handleToggleSidebar = useCallback(() => {

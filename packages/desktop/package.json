@@ -26,9 +26,9 @@
 		"postinstall": "electron-builder install-app-deps && node scripts/patch-node-pty.mjs"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.55.1",
 		"@electron/notarize": "^3.0.0",
 		"@electron/rebuild": "^3.7.1",
+		"@playwright/test": "^1.55.1",
 		"@types/node": "^22.10.5",
 		"electron": "^33.4.0",
 		"electron-builder": "^25.1.8",

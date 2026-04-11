@@ -30,6 +30,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { ConnectionManager } from "./connection-manager.js";
+import { getDesktopSetting, setDesktopSetting } from "./desktop-settings.js";
 import { installConnectionMenu } from "./connection-menu.js";
 import { ConnectionStore } from "./connection-store.js";
 import {
@@ -53,6 +54,7 @@ import { WindowRegistry } from "./window-registry.js";
 import {
 	clearRuntimeDescriptor,
 	evaluateDescriptorTrust,
+	readRuntimeDescriptor,
 	writeRuntimeDescriptor,
 } from "kanban";
 
@@ -70,9 +72,59 @@ const RUNTIME_HEALTH_TIMEOUT_MS = 3_000;
 
 const desktopSessionId: string = randomUUID();
 
+/**
+ * Set to `true` when a terminal-owned runtime descriptor is detected at boot.
+ * While true the desktop must NOT overwrite or clear the descriptor — the CLI
+ * runtime owns it and agent tasks depend on it to discover the server.
+ */
+let terminalOwnsDescriptor = false;
+
 // ---------------------------------------------------------------------------
 // Runtime descriptor helpers
 // ---------------------------------------------------------------------------
+
+/** Interval handle for the descriptor watcher (null when not running). */
+let descriptorWatcherInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Poll the runtime descriptor every few seconds. When a terminal-owned
+ * descriptor disappears (CLI shuts down), the desktop takes over by
+ * publishing its own descriptor so agents can discover it.
+ */
+function startDescriptorWatcher(): void {
+	if (descriptorWatcherInterval) return; // already running
+
+	descriptorWatcherInterval = setInterval(() => {
+		void (async () => {
+			try {
+				const descriptor = await readRuntimeDescriptor();
+
+		if (!descriptor || descriptor.source !== "terminal") {
+			// CLI's descriptor is gone — desktop takes over.
+					terminalOwnsDescriptor = false;
+					stopDescriptorWatcher();
+
+					if (runtimeUrl && authToken) {
+						console.log(
+							"[desktop] Terminal descriptor disappeared — " +
+								"publishing desktop descriptor.",
+						);
+						await publishRuntimeDescriptor(runtimeUrl, authToken);
+					}
+				}
+			} catch {
+				// Best effort — don't crash on read errors.
+			}
+		})();
+	}, 3_000);
+}
+
+function stopDescriptorWatcher(): void {
+	if (descriptorWatcherInterval) {
+		clearInterval(descriptorWatcherInterval);
+		descriptorWatcherInterval = null;
+	}
+}
 
 async function publishRuntimeDescriptor(url: string, token: string): Promise<void> {
 	try {
@@ -227,7 +279,7 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 	};
 
 	// -- Window submenu with list of open windows --
-	const windowEntries = windowRegistry.getAll();
+	const windowEntries = windowRegistry.getVisible();
 	const windowListItems: Electron.MenuItemConstructorOptions[] = windowEntries.map(
 		(entry) => {
 			const title = entry.window.isDestroyed()
@@ -589,6 +641,22 @@ ipcMain.on("open-project-window", (_event, projectId: string) => {
 });
 
 // ---------------------------------------------------------------------------
+// IPC: desktop-settings (renderer → main)
+// Persistent key-value store that survives port changes (unlike localStorage).
+// ---------------------------------------------------------------------------
+
+ipcMain.on("set-desktop-setting", (_event, key: string, value: string) => {
+	if (typeof key === "string" && typeof value === "string") {
+		setDesktopSetting(app.getPath("userData"), key, value);
+	}
+});
+
+ipcMain.handle("get-desktop-setting", (_event, key: string): string | null => {
+	if (typeof key !== "string") return null;
+	return getDesktopSetting(app.getPath("userData"), key);
+});
+
+// ---------------------------------------------------------------------------
 // Runtime child process lifecycle
 // ---------------------------------------------------------------------------
 
@@ -606,7 +674,9 @@ function createRuntimeChildManager(): RuntimeChildManager {
 	manager.on("ready", (url: string) => {
 		runtimeUrl = url;
 		authToken = connectionManager?.getLocalAuthToken() ?? authToken;
-		publishRuntimeDescriptor(url, authToken!);
+		if (!terminalOwnsDescriptor) {
+			publishRuntimeDescriptor(url, authToken!);
+		}
 
 		if (
 			getBootState().currentPhase === "ready" &&
@@ -882,12 +952,14 @@ if (gotTheLock) {
 					});
 				}
 				break;
-			case "terminal-owned":
-				console.log(
-					"[desktop] Found terminal-owned descriptor — " +
-						"desktop will start its own runtime on a separate port.",
-				);
-				break;
+		case "terminal-owned":
+			terminalOwnsDescriptor = true;
+			console.log(
+				"[desktop] Found terminal-owned descriptor — " +
+					"desktop will start its own runtime on a separate port " +
+					"(descriptor writes suppressed).",
+			);
+			break;
 			case "current-session":
 				console.log("[desktop] Descriptor already belongs to this session.");
 				break;
@@ -954,15 +1026,33 @@ if (gotTheLock) {
 			onConnectionChanged: () => {
 				rebuildMenu();
 			},
-			onLocalRuntimeReady: (url, token) => {
-				runtimeUrl = url;
-				authToken = token;
+		onLocalRuntimeReady: (url, token) => {
+			runtimeUrl = url;
+			authToken = token;
+			if (!terminalOwnsDescriptor) {
 				void publishRuntimeDescriptor(url, token);
-			},
-			onLocalRuntimeStopped: () => {
-				void clearRuntimeDescriptor();
-				runtimeUrl = null;
-			},
+			}
+		},
+		onLocalRuntimeStopped: () => {
+			if (!terminalOwnsDescriptor) {
+				// Only clear if the descriptor still belongs to this desktop session.
+				void (async () => {
+					try {
+						const current = await readRuntimeDescriptor();
+						if (
+							current &&
+							current.source === "desktop" &&
+							current.desktopSessionId === desktopSessionId
+						) {
+							await clearRuntimeDescriptor();
+						}
+					} catch {
+						// Best effort.
+					}
+				})();
+			}
+			runtimeUrl = null;
+		},
 		});
 
 		rebuildMenu();
@@ -977,6 +1067,11 @@ if (gotTheLock) {
 				advanceBootPhase("ready");
 				rebuildMenu();
 				showInterruptedTasksToast();
+
+				// Watch for CLI descriptor disappearing so desktop can take over.
+				if (terminalOwnsDescriptor) {
+					startDescriptorWatcher();
+				}
 			} else {
 				rebuildMenu();
 			}
@@ -1056,7 +1151,24 @@ if (gotTheLock) {
 	});
 
 	app.on("will-quit", async () => {
-		await clearRuntimeDescriptor();
+		stopDescriptorWatcher();
+
+		// Only clear the descriptor if it still belongs to THIS desktop session.
+		// Another process (CLI) may have overwritten it after we booted.
+		if (!terminalOwnsDescriptor) {
+			try {
+				const current = await readRuntimeDescriptor();
+				if (
+					current &&
+					current.source === "desktop" &&
+					current.desktopSessionId === desktopSessionId
+				) {
+					await clearRuntimeDescriptor();
+				}
+			} catch {
+				// Best effort.
+			}
+		}
 
 		if (runtimeManager) {
 			await runtimeManager.dispose().catch(() => {});

@@ -361,7 +361,7 @@ describe("edge cases", () => {
 		expect(loaded[0].projectId).toBeNull();
 	});
 
-	it("deduplicates entries with the same projectId (keeps first)", () => {
+	it("preserves duplicate projectId entries (multiple windows per project)", () => {
 		const raw = [
 			{ x: 10, y: 20, width: 800, height: 600, isMaximized: false, projectId: "proj-a" },
 			{ x: 30, y: 40, width: 900, height: 700, isMaximized: true, projectId: "proj-a" },
@@ -369,20 +369,21 @@ describe("edge cases", () => {
 		];
 		writeFileSync(resolveMultiWindowStatePath(tmpDir), JSON.stringify(raw), "utf-8");
 		const loaded = loadAllWindowStates(tmpDir);
-		expect(loaded).toHaveLength(2);
-		expect(loaded[0].x).toBe(10); // first proj-a entry kept
-		expect(loaded[1].projectId).toBe("proj-b");
+		expect(loaded).toHaveLength(3);
+		expect(loaded[0].x).toBe(10);
+		expect(loaded[1].x).toBe(30);
+		expect(loaded[2].projectId).toBe("proj-b");
 	});
 
-	it("deduplicates null-projectId overview windows (keeps first)", () => {
+	it("preserves multiple overview windows (projectId null)", () => {
 		const raw = [
 			{ x: 0, y: 0, width: 800, height: 600, isMaximized: false },
 			{ x: 100, y: 100, width: 900, height: 700, isMaximized: true },
 		];
 		writeFileSync(resolveMultiWindowStatePath(tmpDir), JSON.stringify(raw), "utf-8");
 		const loaded = loadAllWindowStates(tmpDir);
-		expect(loaded).toHaveLength(1);
+		expect(loaded).toHaveLength(2);
 		expect(loaded[0].x).toBe(0);
-		expect(loaded[0].projectId).toBeNull();
+		expect(loaded[1].x).toBe(100);
 	});
 });

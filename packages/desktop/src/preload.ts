@@ -30,10 +30,24 @@ const desktopApi = {
 
 	/**
 	 * Open a new Electron window locked to the given project.
-	 * If a window for this project already exists, it will be focused instead.
 	 */
 	openProjectWindow(projectId: string): void {
 		ipcRenderer.send("open-project-window", projectId);
+	},
+
+	/**
+	 * Read a persistent desktop setting (survives port/origin changes).
+	 * Returns null if the key doesn't exist.
+	 */
+	getDesktopSetting(key: string): Promise<string | null> {
+		return ipcRenderer.invoke("get-desktop-setting", key);
+	},
+
+	/**
+	 * Write a persistent desktop setting (survives port/origin changes).
+	 */
+	setDesktopSetting(key: string, value: string): void {
+		ipcRenderer.send("set-desktop-setting", key, value);
 	},
 } as const;
 

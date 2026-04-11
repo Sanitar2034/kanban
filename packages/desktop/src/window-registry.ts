@@ -6,8 +6,6 @@
  * The main module should never hold a bare `BrowserWindow` reference.
  *
  * Key behaviours:
- * - Duplicate prevention: `createWindow({ projectId })` focuses an existing
- *   window for that project instead of creating a second one.
  * - Focus tracking: the most-recently-focused window is returned by
  *   `getFocused()` when no window currently has OS focus.
  * - State persistence: `saveAllStates()` captures bounds from every window
@@ -29,6 +27,8 @@ import {
 export interface WindowEntry {
 	window: BrowserWindow;
 	projectId: string | null;
+	/** URL pathname to restore on next boot (for non-locked windows). */
+	lastViewedPath: string | null;
 	disposeAuth: (() => void) | null;
 }
 
@@ -81,27 +81,12 @@ export class WindowRegistry {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Create a new BrowserWindow (or focus an existing one if the projectId
-	 * already has a window).
-	 *
-	 * Returns the BrowserWindow that was created or focused.
+	 * Create a new BrowserWindow. Always creates a fresh window — duplicate
+	 * projectIds are allowed so the user can have multiple windows for the
+	 * same project.
 	 */
 	createWindow(options: CreateWindowOptions): BrowserWindow {
 		const projectId = options.projectId ?? null;
-
-		// Duplicate prevention — focus existing window for this project
-		// (or the single overview window when projectId is null).
-		const existing = projectId !== null
-			? this.findByProjectId(projectId)
-			: this.findOverviewWindow();
-		if (existing) {
-			// On macOS, windows can be hidden (not destroyed) via hide-on-close.
-			// We need to show them before focusing.
-			if (!existing.isVisible()) existing.show();
-			if (existing.isMinimized()) existing.restore();
-			existing.focus();
-			return existing;
-		}
 
 		const savedState = options.savedState;
 		const backgroundColor = options.backgroundColor ?? DEFAULT_BACKGROUND_COLOR;
@@ -133,6 +118,7 @@ export class WindowRegistry {
 		const entry: WindowEntry = {
 			window,
 			projectId,
+			lastViewedPath: options.savedState?.lastViewedPath ?? null,
 			disposeAuth: null,
 		};
 		this.windows.set(window.id, entry);
@@ -169,9 +155,15 @@ export class WindowRegistry {
 				process.platform === "darwin" &&
 				!(options.isQuitting?.() ?? false)
 			) {
-				event.preventDefault();
-				window.hide();
-				return;
+				// macOS convention: hide the last window instead of destroying
+				// it so the app stays running in the dock. Multi-window: only
+				// the last visible window gets this treatment — closing any
+				// other window destroys it normally.
+				if (this.countVisibleWindows() <= 1) {
+					event.preventDefault();
+					window.hide();
+					return;
+				}
 			}
 		});
 
@@ -200,29 +192,27 @@ export class WindowRegistry {
 		return [...this.windows.values()];
 	}
 
+	/** Get all visible, non-destroyed window entries. */
+	getVisible(): WindowEntry[] {
+		return [...this.windows.values()].filter(
+			(entry) => !entry.window.isDestroyed() && entry.window.isVisible(),
+		);
+	}
+
+	/** Count the number of visible (non-hidden, non-destroyed) windows. */
+	countVisibleWindows(): number {
+		let count = 0;
+		for (const entry of this.windows.values()) {
+			if (!entry.window.isDestroyed() && entry.window.isVisible()) {
+				count++;
+			}
+		}
+		return count;
+	}
+
 	/** Get a window entry by BrowserWindow id. */
 	getById(windowId: number): WindowEntry | undefined {
 		return this.windows.get(windowId);
-	}
-
-	/** Find the first window locked to the given projectId. */
-	findByProjectId(projectId: string): BrowserWindow | null {
-		for (const entry of this.windows.values()) {
-			if (entry.projectId === projectId && !entry.window.isDestroyed()) {
-				return entry.window;
-			}
-		}
-		return null;
-	}
-
-	/** Find the overview (unscoped) window — projectId is null. */
-	findOverviewWindow(): BrowserWindow | null {
-		for (const entry of this.windows.values()) {
-			if (entry.projectId === null && !entry.window.isDestroyed()) {
-				return entry.window;
-			}
-		}
-		return null;
 	}
 
 	/**
@@ -303,7 +293,7 @@ export class WindowRegistry {
 	// State persistence
 	// -----------------------------------------------------------------------
 
-	/** Capture bounds from all windows and save to disk. */
+	/** Capture bounds from all windows (including hidden) and save to disk. */
 	saveAllStates(userDataPath: string): void {
 		const states: PersistedWindowState[] = [];
 		for (const entry of this.windows.values()) {
@@ -312,6 +302,22 @@ export class WindowRegistry {
 			const bounds = isMaximized
 				? entry.window.getNormalBounds()
 				: entry.window.getBounds();
+			// Capture the URL pathname the window is currently viewing.
+			// For non-locked (overview) windows this restores the correct
+			// project on next boot instead of defaulting to the first one.
+			let lastViewedPath: string | null = null;
+			try {
+				const currentUrl = entry.window.webContents.getURL();
+				if (currentUrl) {
+					const parsed = new URL(currentUrl);
+					if (parsed.pathname && parsed.pathname !== "/") {
+						lastViewedPath = parsed.pathname;
+					}
+				}
+			} catch {
+				// Best effort — getURL can fail if webContents is gone.
+			}
+
 			states.push({
 				x: bounds.x,
 				y: bounds.y,
@@ -319,6 +325,7 @@ export class WindowRegistry {
 				height: bounds.height,
 				isMaximized,
 				projectId: entry.projectId,
+				lastViewedPath,
 			});
 		}
 		saveAllWindowStates(userDataPath, states);
@@ -362,13 +369,35 @@ export class WindowRegistry {
 	}
 
 	/**
+	 * Build the full URL for a window, incorporating the locked projectId
+	 * (via `?projectId=`) or the last-viewed pathname for overview windows.
+	 */
+	private buildEntryUrl(baseUrl: string, entry: WindowEntry): string {
+		// Locked windows: use the query-param lock.
+		if (entry.projectId) {
+			return WindowRegistry.buildWindowUrl(baseUrl, entry.projectId);
+		}
+		// Non-locked windows: restore the pathname they were viewing.
+		if (entry.lastViewedPath) {
+			try {
+				const url = new URL(baseUrl);
+				url.pathname = entry.lastViewedPath;
+				return url.toString();
+			} catch {
+				// Fall through to base URL.
+			}
+		}
+		return baseUrl;
+	}
+
+	/**
 	 * Load the runtime URL in all windows.
 	 */
 	async loadUrlInAllWindows(baseUrl: string): Promise<void> {
 		const promises: Promise<void>[] = [];
 		for (const entry of this.windows.values()) {
 			if (entry.window.isDestroyed()) continue;
-			const url = WindowRegistry.buildWindowUrl(baseUrl, entry.projectId);
+			const url = this.buildEntryUrl(baseUrl, entry);
 			promises.push(entry.window.loadURL(url));
 		}
 		await Promise.all(promises);

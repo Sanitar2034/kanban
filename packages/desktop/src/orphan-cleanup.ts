@@ -11,7 +11,7 @@
  * best-effort.
  */
 
-import { clearRuntimeDescriptor } from "kanban";
+import { clearRuntimeDescriptor, readRuntimeDescriptor } from "kanban";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +67,19 @@ export async function waitForPidDeath(pid: number, timeoutMs: number): Promise<b
 }
 
 // ---------------------------------------------------------------------------
+// Safe descriptor clear — only clear if the descriptor still belongs to
+// the orphaned PID. Between killing the orphan and clearing, another
+// process (e.g. CLI) may have written a fresh descriptor.
+// ---------------------------------------------------------------------------
+
+async function clearDescriptorIfStillOrphan(orphanPid: number): Promise<void> {
+	const current = await readRuntimeDescriptor();
+	if (!current || current.pid === orphanPid) {
+		await clearRuntimeDescriptor();
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Orphan cleanup
 // ---------------------------------------------------------------------------
 
@@ -76,7 +89,8 @@ export async function waitForPidDeath(pid: number, timeoutMs: number): Promise<b
  * 1. Send SIGTERM and wait up to 3 s for the process to exit.
  * 2. If still alive, escalate to SIGKILL and wait up to 2 s.
  * 3. If the process is gone (by either signal or was already dead),
- *    clear the stale runtime descriptor.
+ *    clear the stale runtime descriptor — but only if it still belongs
+ *    to the orphaned PID (another process may have claimed it).
  *
  * This function **never throws** — all errors are caught and returned
  * as part of the result so callers can fire-and-forget safely.
@@ -92,7 +106,7 @@ export async function attemptOrphanCleanup(
 
 		const died = await waitForPidDeath(descriptor.pid, sigtermTimeout);
 		if (died) {
-			await clearRuntimeDescriptor();
+			await clearDescriptorIfStillOrphan(descriptor.pid);
 			return { cleaned: true, method: "SIGTERM" };
 		}
 
@@ -100,7 +114,7 @@ export async function attemptOrphanCleanup(
 
 		const killedHard = await waitForPidDeath(descriptor.pid, sigkillTimeout);
 		if (killedHard) {
-			await clearRuntimeDescriptor();
+			await clearDescriptorIfStillOrphan(descriptor.pid);
 			return { cleaned: true, method: "SIGKILL" };
 		}
 
@@ -109,7 +123,7 @@ export async function attemptOrphanCleanup(
 		const code = (err as NodeJS.ErrnoException).code;
 		if (code === "ESRCH") {
 			// Process was already dead when we tried to signal it.
-			await clearRuntimeDescriptor();
+			await clearDescriptorIfStillOrphan(descriptor.pid);
 			return { cleaned: true, method: "already-dead" };
 		}
 		return { cleaned: false, method: `error:${code}` };

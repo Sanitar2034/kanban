@@ -40,6 +40,12 @@ export interface WindowState {
  */
 export interface PersistedWindowState extends WindowState {
 	projectId: string | null;
+	/**
+	 * The URL pathname the window was viewing when the app quit.
+	 * Used to restore non-locked (overview) windows to the project they
+	 * were browsing. Locked windows ignore this and use `projectId` instead.
+	 */
+	lastViewedPath?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,11 +108,15 @@ function parsePersistedWindowState(
 	const base = parseWindowState(raw);
 	if (!base) return undefined;
 
-	return {
+	const state: PersistedWindowState = {
 		...base,
 		projectId:
 			typeof raw.projectId === "string" ? raw.projectId : null,
 	};
+	if (typeof raw.lastViewedPath === "string" && raw.lastViewedPath) {
+		state.lastViewedPath = raw.lastViewedPath;
+	}
+	return state;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,18 +180,12 @@ export function loadAllWindowStates(
 		if (!Array.isArray(parsed)) return [];
 
 		const results: PersistedWindowState[] = [];
-		const seenProjectIds = new Set<string | null>();
 		for (const entry of parsed) {
 			if (typeof entry !== "object" || entry === null) continue;
 			const state = parsePersistedWindowState(
 				entry as Record<string, unknown>,
 			);
 			if (!state) continue;
-			// Deduplicate: at most one window per projectId (including null
-			// for the overview window). Stale duplicates can accumulate from
-			// macOS hide-on-close or previous bugs.
-			if (seenProjectIds.has(state.projectId)) continue;
-			seenProjectIds.add(state.projectId);
 			results.push(state);
 		}
 
