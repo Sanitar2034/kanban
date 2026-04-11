@@ -41,6 +41,10 @@
     "./core/runtime-descriptor": {
       "types": "./dist/core/runtime-descriptor.d.ts",
       "import": "./dist/core/runtime-descriptor.js"
+    },
+    "./server/directory-picker": {
+      "types": "./dist/server/directory-picker.d.ts",
+      "import": "./dist/server/directory-picker.js"
     }
   },
   "files": [
