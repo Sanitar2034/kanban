@@ -12,7 +12,6 @@ declare module "kanban/runtime-start" {
 		isLocal?: boolean;
 		openInBrowser?: boolean;
 		callbacks?: RuntimeCallbacks;
-		directoryBrowseRoot?: string;
 	}
 	/** @deprecated Use {@link RuntimeStartOptions} instead. */
 	export type RuntimeOptions = RuntimeStartOptions;

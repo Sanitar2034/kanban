@@ -39,7 +39,6 @@ export interface RuntimeStartOptions {
 	isLocal?: boolean;
 	openInBrowser?: boolean;
 	callbacks?: RuntimeCallbacks;
-	directoryBrowseRoot?: string;
 }
 
 /** @deprecated Use {@link RuntimeStartOptions} instead. */
@@ -115,7 +114,6 @@ async function findAvailableRuntimePort(startPort: number, host: string): Promis
 async function bootServer(
 	warn: (message: string) => void,
 	pickDirectory: () => Promise<string | null>,
-	directoryBrowseRoot: string | undefined,
 	isLocal: boolean,
 	runtimeVersion: string,
 	runtimeCwd: string,
@@ -189,7 +187,6 @@ async function bootServer(
 		disposeWorkspace: disposeTrackedWorkspace,
 		collectProjectWorktreeTaskIdsForRemoval,
 		pickDirectoryPathFromSystemDialog: async () => await pickDirectory(),
-		directoryBrowseRoot,
 		authToken,
 		// Lazy getter: when port 0 is used, getKanbanRuntimeOrigin() returns
 		// the correct origin only after server.listen() updates the global port.
@@ -256,15 +253,7 @@ export async function startRuntime(options?: RuntimeStartOptions): Promise<Runti
 	const isAutoPort = portOption === "auto";
 
 	const boot = async (): Promise<RuntimeHandle> => {
-		const server = await bootServer(
-			warn,
-			pickDirectory,
-			options?.directoryBrowseRoot,
-			isLocal,
-			runtimeVersion,
-			runtimeCwd,
-			options?.authToken,
-		);
+		const server = await bootServer(warn, pickDirectory, isLocal, runtimeVersion, runtimeCwd, options?.authToken);
 		return {
 			url: server.url,
 			shutdown: async (shutdownOptions?: RuntimeShutdownOptions) => {

@@ -26,11 +26,10 @@ import {
 	shell,
 } from "electron";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { ConnectionManager } from "./connection-manager.js";
-import { getDesktopSetting, setDesktopSetting } from "./desktop-settings.js";
 import { installConnectionMenu } from "./connection-menu.js";
 import { ConnectionStore } from "./connection-store.js";
 import {
@@ -39,7 +38,6 @@ import {
 	recordBootFailure,
 	resetBootState,
 } from "./desktop-boot-state.js";
-import { collectDiagnosticsSnapshot, type DiagnosticsContext } from "./desktop-diagnostics.js";
 import { runDesktopPreflight, type DesktopPreflightResult } from "./desktop-preflight.js";
 import {
 	extractProtocolUrlFromArgv,
@@ -152,42 +150,6 @@ async function detectInterruptedTasks(): Promise<{
 	return { count: 0, workspacePaths: [] };
 }
 
-// ---------------------------------------------------------------------------
-// Diagnostics export
-// ---------------------------------------------------------------------------
-
-function buildDiagnosticsContext(): DiagnosticsContext {
-	return {
-		connectionManager,
-		connectionStore,
-		runtimeManager,
-		runtimeUrl,
-		preflightResult,
-		desktopSessionId,
-	};
-}
-
-async function exportDiagnostics(): Promise<void> {
-	const snapshot = await collectDiagnosticsSnapshot(buildDiagnosticsContext());
-	const json = JSON.stringify(snapshot, null, "\t");
-
-	const window = windowRegistry.getFocused();
-	const result = await dialog.showSaveDialog({
-		...(window ? { browserWindow: window } : {}),
-		title: "Export Diagnostics",
-		defaultPath: `kanban-diagnostics-${Date.now()}.json`,
-		filters: [{ name: "JSON", extensions: ["json"] }],
-	} as Electron.SaveDialogOptions);
-
-	if (result.canceled || !result.filePath) return;
-
-	try {
-		await writeFile(result.filePath, json, "utf-8");
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		dialog.showErrorBox("Export Failed", `Failed to write diagnostics file:\n\n${message}`);
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Application menu
@@ -265,16 +227,6 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 			{ role: "zoomOut", enabled: runtimeReady },
 			{ type: "separator" },
 			{ role: "togglefullscreen" },
-			{ type: "separator" },
-			{
-				label: "Diagnostics",
-				click: () => {
-					const focusedWindow = windowRegistry.getFocused();
-					if (focusedWindow) {
-						focusedWindow.webContents.send("open-diagnostics");
-					}
-				},
-			},
 		],
 	};
 
@@ -333,10 +285,6 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
 					shell.openExternal("https://github.com/cline/kanban/issues"),
 			},
 			{ type: "separator" },
-			{
-				label: "Export Diagnostics",
-				click: () => { void exportDiagnostics(); },
-			},
 		],
 	};
 
@@ -640,21 +588,6 @@ ipcMain.on("open-project-window", (_event, projectId: string) => {
 	}
 });
 
-// ---------------------------------------------------------------------------
-// IPC: desktop-settings (renderer → main)
-// Persistent key-value store that survives port changes (unlike localStorage).
-// ---------------------------------------------------------------------------
-
-ipcMain.on("set-desktop-setting", (_event, key: string, value: string) => {
-	if (typeof key === "string" && typeof value === "string") {
-		setDesktopSetting(app.getPath("userData"), key, value);
-	}
-});
-
-ipcMain.handle("get-desktop-setting", (_event, key: string): string | null => {
-	if (typeof key !== "string") return null;
-	return getDesktopSetting(app.getPath("userData"), key);
-});
 
 // ---------------------------------------------------------------------------
 // Runtime child process lifecycle

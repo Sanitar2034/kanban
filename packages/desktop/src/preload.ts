@@ -17,38 +17,12 @@ const desktopApi = {
 	platform: process.platform,
 
 	/**
-	 * Register a callback for the "open-diagnostics" menu action.
-	 * Returns a dispose function to unregister the listener.
-	 */
-	onOpenDiagnostics(callback: () => void): () => void {
-		const handler = () => callback();
-		ipcRenderer.on("open-diagnostics", handler);
-		return () => {
-			ipcRenderer.removeListener("open-diagnostics", handler);
-		};
-	},
-
-	/**
 	 * Open a new Electron window locked to the given project.
 	 */
 	openProjectWindow(projectId: string): void {
 		ipcRenderer.send("open-project-window", projectId);
 	},
 
-	/**
-	 * Read a persistent desktop setting (survives port/origin changes).
-	 * Returns null if the key doesn't exist.
-	 */
-	getDesktopSetting(key: string): Promise<string | null> {
-		return ipcRenderer.invoke("get-desktop-setting", key);
-	},
-
-	/**
-	 * Write a persistent desktop setting (survives port/origin changes).
-	 */
-	setDesktopSetting(key: string, value: string): void {
-		ipcRenderer.send("set-desktop-setting", key, value);
-	},
 } as const;
 
 contextBridge.exposeInMainWorld("desktop", desktopApi);
