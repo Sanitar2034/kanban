@@ -1034,7 +1034,6 @@ export default function App(): ReactElement {
 					workspaceId={settingsWorkspaceId}
 					initialConfig={settingsRuntimeProjectConfig}
 					liveMcpAuthStatuses={latestMcpAuthStatuses}
-					featurebaseFeedbackState={featurebaseFeedbackState}
 					initialSection={settingsInitialSection}
 					onOpenChange={(nextOpen) => {
 						setIsSettingsOpen(nextOpen);
