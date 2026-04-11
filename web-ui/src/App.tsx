@@ -92,6 +92,7 @@ export default function App(): ReactElement {
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
+
 	const handleProjectSwitchStart = useCallback(() => {
 		setCanPersistWorkspaceState(false);
 		setIsGitHistoryOpen(false);
@@ -123,9 +124,13 @@ export default function App(): ReactElement {
 		pendingGitInitializationPath,
 		isInitializingGitProject,
 		resetProjectNavigationState,
+		lockedProjectId,
 	} = useProjectNavigation({
 		onProjectSwitchStart: handleProjectSwitchStart,
 	});
+	const gatedHandleAddProject = useCallback(() => {
+		void handleAddProject();
+	}, [handleAddProject]);
 	const activeNotificationWorkspaceId = navigationCurrentProjectId;
 	const isDocumentVisible = useDocumentVisibility();
 	const isInitialRuntimeLoad =
@@ -174,6 +179,7 @@ export default function App(): ReactElement {
 		settingsRuntimeProjectConfig,
 		onOpenStartupOnboardingDialog: handleOpenStartupOnboardingDialog,
 	});
+
 	const {
 		markConnectionReady: markTerminalConnectionReady,
 		prepareWaitForConnection: prepareWaitForTerminalConnectionReady,
@@ -682,6 +688,9 @@ export default function App(): ReactElement {
 		return undefined;
 	}, [selectedCard]);
 
+	// Window title is managed by useReviewReadyNotifications → useDocumentTitle
+	// which sets "Kanban — <workspace folder name>" (with notification badge prefix).
+
 	const sidebarLayout = useProjectNavigationLayout();
 	const handleToggleSidebar = useCallback(() => {
 		sidebarLayout.setSidebarCollapsed(!sidebarLayout.isCollapsed);
@@ -755,7 +764,7 @@ export default function App(): ReactElement {
 	return (
 		<LayoutCustomizationsProvider onResetBottomTerminalLayoutCustomizations={resetBottomTerminalLayoutCustomizations}>
 			<div className="flex h-[100svh] min-w-0 overflow-hidden">
-				{!selectedCard ? (
+				{!selectedCard && !lockedProjectId ? (
 					<ProjectNavigationPanel
 						projects={displayedProjects}
 						isLoadingProjects={isProjectListLoading}
@@ -765,16 +774,11 @@ export default function App(): ReactElement {
 						onActiveSectionChange={setHomeSidebarSection}
 						canShowAgentSection={!hasNoProjects && Boolean(currentProjectId)}
 						agentSectionContent={homeSidebarAgentPanel}
-						selectedAgentId={settingsRuntimeProjectConfig?.selectedAgentId ?? null}
-						clineProviderSettings={settingsRuntimeProjectConfig?.clineProviderSettings ?? null}
-						featurebaseFeedbackState={featurebaseFeedbackState}
 						onSelectProject={(projectId) => {
 							void handleSelectProject(projectId);
 						}}
 						onRemoveProject={handleRemoveProject}
-						onAddProject={() => {
-							void handleAddProject();
-						}}
+						onAddProject={gatedHandleAddProject}
 						sidebarWidth={sidebarLayout.sidebarWidth}
 						setExpandedSidebarWidth={sidebarLayout.setExpandedSidebarWidth}
 						isCollapsed={sidebarLayout.isCollapsed}
@@ -856,12 +860,7 @@ export default function App(): ReactElement {
 										<p className="text-[13px] text-text-secondary">
 											Add a git repository to start using Kanban.
 										</p>
-										<Button
-											variant="primary"
-											onClick={() => {
-												void handleAddProject();
-											}}
-										>
+										<Button variant="primary" onClick={gatedHandleAddProject}>
 											Add Project
 										</Button>
 									</div>
