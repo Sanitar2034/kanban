@@ -1,6 +1,6 @@
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
 import { deriveTaskTitleFromPrompt } from "@runtime-task-title";
-import { ArrowBigUp, Check, ChevronDown, Command, CornerDownLeft } from "lucide-react";
+import { ArrowBigUp, Check, Command, CornerDownLeft } from "lucide-react";
 import { type Dispatch, type ReactElement, type SetStateAction, useCallback, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
@@ -8,6 +8,7 @@ import { BranchSelectDropdown, type BranchSelectOption } from "@/components/bran
 import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task-agent-model-picker";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import type { RuntimeAgentId, RuntimeClineReasoningEffort, RuntimeTaskClineSettings } from "@/runtime/types";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { pasteShortcutLabel } from "@/utils/platform";
@@ -291,28 +292,22 @@ export function TaskInlineCreateCard({
 						</RadixCheckbox.Root>
 						<span>Automatically</span>
 					</label>
-					<div className="relative inline-flex">
-						<select
-							id={autoReviewModeId}
-							value={autoReviewMode}
-							onChange={(event) => onAutoReviewModeChange(event.currentTarget.value as TaskAutoReviewMode)}
-							className="h-7 appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none"
-							style={{
-								width: `${AUTO_REVIEW_MODE_SELECT_WIDTH_CH}ch`,
-								maxWidth: "100%",
-							}}
-						>
-							{AUTO_REVIEW_MODE_OPTIONS.map((option) => (
-								<option key={option.value} value={option.value}>
-									{option.label}
-								</option>
-							))}
-						</select>
-						<ChevronDown
-							size={14}
-							className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-text-secondary"
-						/>
-					</div>
+					<NativeSelect
+						id={autoReviewModeId}
+						size="sm"
+						value={autoReviewMode}
+						onChange={(event) => onAutoReviewModeChange(event.currentTarget.value as TaskAutoReviewMode)}
+						style={{
+							width: `${AUTO_REVIEW_MODE_SELECT_WIDTH_CH}ch`,
+							maxWidth: "100%",
+						}}
+					>
+						{AUTO_REVIEW_MODE_OPTIONS.map((option) => (
+							<option key={option.value} value={option.value}>
+								{option.label}
+							</option>
+						))}
+					</NativeSelect>
 				</div>
 				{onAgentIdChange && onClineSettingsChange ? (
 					<TaskAgentModelPicker

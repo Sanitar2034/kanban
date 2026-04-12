@@ -12,6 +12,7 @@ import {
 } from "@/components/detail-panels/cline-model-picker-options";
 import { SearchSelectDropdown } from "@/components/search-select-dropdown";
 import { cn } from "@/components/ui/cn";
+import { NativeSelect } from "@/components/ui/native-select";
 import { fetchClineProviderCatalog, fetchClineProviderModels } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
@@ -463,30 +464,25 @@ export function TaskAgentModelPicker({
 					<div className="flex flex-col gap-2">
 						<div className="w-full sm:w-1/2 min-w-0">
 							<span className="text-[11px] text-text-secondary block mb-1">Agent</span>
-							<div className="relative inline-flex w-full">
-								<select
-									value={agentId ?? ""}
-									onChange={(e) => {
-										const value = e.currentTarget.value;
-										onAgentIdChange(value ? (value as RuntimeAgentId) : undefined);
-										if (value !== "cline") {
-											onClineSettingsChange?.(undefined);
-											setReasoningEffort("");
-										}
-									}}
-									className="h-7 w-full appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none"
-								>
-									{agentOptions.map((option) => (
-										<option key={option.value} value={option.value}>
-											{option.label}
-										</option>
-									))}
-								</select>
-								<ChevronDown
-									size={14}
-									className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-text-secondary"
-								/>
-							</div>
+							<NativeSelect
+								size="sm"
+								fill
+								value={agentId ?? ""}
+								onChange={(e) => {
+									const value = e.currentTarget.value;
+									onAgentIdChange(value ? (value as RuntimeAgentId) : undefined);
+									if (value !== "cline") {
+										onClineSettingsChange?.(undefined);
+										setReasoningEffort("");
+									}
+								}}
+							>
+								{agentOptions.map((option) => (
+									<option key={option.value} value={option.value}>
+										{option.label}
+									</option>
+								))}
+							</NativeSelect>
 						</div>
 						{showClineProviderPicker ? (
 							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -537,7 +533,6 @@ export function TaskAgentModelPicker({
 										emptyText="No providers available"
 										noResultsText="No matching providers"
 										showSelectedIndicator
-										buttonClassName="w-full justify-between rounded-md border-border-bright bg-surface-2 text-text-secondary shadow-none hover:bg-surface-3 hover:text-text-primary"
 										onPopoverOpenChange={setIsProviderPopoverOpen}
 									/>
 								</div>
@@ -595,6 +590,7 @@ export function TaskAgentModelPicker({
 											disabled={isLoadingModels}
 											isModelLoading={isLoadingModels}
 											fill
+											triggerVariant="default"
 											onPopoverOpenChange={setIsModelPopoverOpen}
 										/>
 									</div>

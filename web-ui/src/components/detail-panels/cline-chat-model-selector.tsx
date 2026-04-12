@@ -34,6 +34,7 @@ export function ClineChatModelSelector({
 	isModelLoading = false,
 	isModelSaving = false,
 	fill = false,
+	triggerVariant = "subtle",
 	onPopoverOpenChange,
 }: {
 	modelOptions: readonly SearchSelectOption[];
@@ -50,6 +51,7 @@ export function ClineChatModelSelector({
 	isModelLoading?: boolean;
 	isModelSaving?: boolean;
 	fill?: boolean;
+	triggerVariant?: "default" | "subtle";
 	onPopoverOpenChange?: (open: boolean) => void;
 }): ReactElement {
 	const [isOpen, setIsOpen] = useState(false);
@@ -292,7 +294,9 @@ export function ClineChatModelSelector({
 					disabled={disabled}
 					iconRight={<ChevronDown size={14} />}
 					className={cn(
-						"min-w-0 max-w-full justify-between rounded-md border-border-bright bg-surface-3 px-2 text-left text-text-secondary shadow-none hover:cursor-pointer hover:bg-surface-4 hover:text-text-primary",
+						"min-w-0 max-w-full justify-between px-2 text-left shadow-none",
+						triggerVariant === "subtle" &&
+							"bg-surface-3 text-text-secondary hover:bg-surface-4 hover:text-text-primary",
 						(isModelLoading || isModelSaving) && "text-text-tertiary",
 						fill && "w-full",
 					)}
