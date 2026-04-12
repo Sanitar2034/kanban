@@ -39,6 +39,9 @@ interface HookSnapshot {
 	newTaskPrompt: string;
 	newTaskImages: TaskImage[];
 	newTaskBranchRef: string;
+	newTaskAgentId: RuntimeAgentId | undefined;
+	newTaskClineProviderId: string | undefined;
+	newTaskClineModelId: string | undefined;
 	editingTaskId: string | null;
 	editTaskPrompt: string;
 	editTaskStartInPlanMode: boolean;
@@ -95,6 +98,9 @@ function HookHarness({
 			newTaskPrompt: editor.newTaskPrompt,
 			newTaskImages: editor.newTaskImages,
 			newTaskBranchRef: editor.newTaskBranchRef,
+			newTaskAgentId: editor.newTaskAgentId,
+			newTaskClineProviderId: editor.newTaskClineProviderId,
+			newTaskClineModelId: editor.newTaskClineModelId,
 			editingTaskId: editor.editingTaskId,
 			editTaskPrompt: editor.editTaskPrompt,
 			editTaskStartInPlanMode: editor.editTaskStartInPlanMode,
@@ -130,6 +136,9 @@ function HookHarness({
 		editor.newTaskPrompt,
 		editor.newTaskImages,
 		editor.newTaskBranchRef,
+		editor.newTaskAgentId,
+		editor.newTaskClineProviderId,
+		editor.newTaskClineModelId,
 		editor.setEditTaskAutoReviewEnabled,
 		editor.setEditTaskAutoReviewMode,
 		editor.setEditTaskPrompt,
@@ -311,6 +320,11 @@ describe("useTaskEditor", () => {
 		await act(async () => {
 			requireSnapshot(latestSnapshot).setNewTaskPrompt("Create another task");
 		});
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setNewTaskAgentId("codex");
+			requireSnapshot(latestSnapshot).setNewTaskClineProviderId("provider-abc");
+			requireSnapshot(latestSnapshot).setNewTaskClineModelId("model-xyz");
+		});
 
 		await act(async () => {});
 		expect(requireSnapshot(latestSnapshot).newTaskPrompt).toBe("Create another task");
@@ -326,6 +340,9 @@ describe("useTaskEditor", () => {
 		expect(snapshot.isInlineTaskCreateOpen).toBe(true);
 		expect(snapshot.newTaskPrompt).toBe("");
 		expect(snapshot.newTaskBranchRef).toBe("main");
+		expect(snapshot.newTaskAgentId).toBeUndefined();
+		expect(snapshot.newTaskClineProviderId).toBeUndefined();
+		expect(snapshot.newTaskClineModelId).toBeUndefined();
 		expect(snapshot.board.columns[0]?.cards.some((card) => card.prompt === "Create another task")).toBe(true);
 	});
 	it("copies attached images to each split task and clears the draft images", async () => {

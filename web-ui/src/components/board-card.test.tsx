@@ -265,6 +265,37 @@ describe("BoardCard", () => {
 		expect(container.textContent).toContain("~/.cline/worktrees/trash-task-1/kanban");
 	});
 
+	it("shows formatted agent override details with model name and reasoning effort", async () => {
+		mockWorkspaceSnapshot = {
+			taskId: "task-1",
+			path: "/tmp/worktrees/task-1",
+			branch: "feature/override",
+			isDetached: false,
+			headCommit: "1234567890abcdef",
+			changedFiles: 2,
+			additions: 5,
+			deletions: 1,
+		};
+
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard({
+						agentId: "cline",
+						clineModelId: "openai/gpt-5.4",
+					})}
+					index={0}
+					columnId="review"
+					defaultClineReasoningEffort="high"
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Cline");
+		expect(container.textContent).toContain("GPT-5.4 (High)");
+		expect(container.textContent).not.toContain("openai/gpt-5.4");
+	});
+
 	it("shows tool input details in the session preview text", async () => {
 		await act(async () => {
 			root.render(

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BoardCard } from "@/components/board-card";
 import { Button } from "@/components/ui/button";
 import { ColumnIndicator } from "@/components/ui/column-indicator";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeClineReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { findCardColumnId, isCardDropDisabled } from "@/state/drag-rules";
 import type { BoardCard as BoardCardModel, BoardColumn, BoardColumnId, CardSelection } from "@/types";
 
@@ -33,6 +33,7 @@ function ColumnSection({
 	moveToTrashLoadingById,
 	activeDragSourceColumnId,
 	workspacePath,
+	defaultClineReasoningEffort,
 }: {
 	column: BoardColumn;
 	selectedCardId: string;
@@ -56,6 +57,7 @@ function ColumnSection({
 	moveToTrashLoadingById?: Record<string, boolean>;
 	activeDragSourceColumnId?: BoardColumnId | null;
 	workspacePath?: string | null;
+	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const [open, setOpen] = useState(defaultOpen);
 	const canCreate = column.id === "backlog" && onCreateTask;
@@ -197,6 +199,7 @@ function ColumnSection({
 												isOpenPrLoading={openPrTaskLoadingById?.[card.id] ?? false}
 												isMoveToTrashLoading={moveToTrashLoadingById?.[card.id] ?? false}
 												workspacePath={workspacePath}
+												defaultClineReasoningEffort={defaultClineReasoningEffort}
 												onSaveTitle={onSaveTitle}
 												onClick={() => {
 													if (column.id === "backlog") {
@@ -246,6 +249,7 @@ export function ColumnContextPanel({
 	openPrTaskLoadingById,
 	moveToTrashLoadingById,
 	panelWidth,
+	defaultClineReasoningEffort,
 }: {
 	selection: CardSelection;
 	workspacePath?: string | null;
@@ -268,6 +272,7 @@ export function ColumnContextPanel({
 	openPrTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
 	panelWidth?: string;
+	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const [activeDragSourceColumnId, setActiveDragSourceColumnId] = useState<BoardColumnId | null>(null);
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -357,6 +362,7 @@ export function ColumnContextPanel({
 							moveToTrashLoadingById={column.id === "review" ? moveToTrashLoadingById : undefined}
 							activeDragSourceColumnId={activeDragSourceColumnId}
 							workspacePath={workspacePath}
+							defaultClineReasoningEffort={defaultClineReasoningEffort}
 						/>
 					))}
 				</div>

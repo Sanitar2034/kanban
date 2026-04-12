@@ -2,15 +2,19 @@ import { Draggable } from "@hello-pangea/dnd";
 import { getRuntimeAgentCatalogEntry } from "@runtime-agent-catalog";
 import { formatClineToolCallLabel } from "@runtime-cline-tool-call-display";
 import { buildTaskWorktreeDisplayPath } from "@runtime-task-worktree-path";
-import { AlertCircle, AlertTriangle, GitBranch, Play, RotateCcw, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bot, GitBranch, Play, RotateCcw, Trash2 } from "lucide-react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+	formatClineSelectedModelButtonText,
+	resolveClineModelDisplayName,
+} from "@/components/detail-panels/cline-model-picker-options";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeClineReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store";
 import type { BoardCard as BoardCardModel, BoardColumnId } from "@/types";
 import { getTaskAutoReviewCancelButtonLabel } from "@/types";
@@ -227,6 +231,7 @@ export function BoardCard({
 	isDependencyTarget = false,
 	isDependencyLinking = false,
 	workspacePath,
+	defaultClineReasoningEffort = null,
 }: {
 	card: BoardCardModel;
 	index: number;
@@ -250,6 +255,7 @@ export function BoardCard({
 	isDependencyTarget?: boolean;
 	isDependencyLinking?: boolean;
 	workspacePath?: string | null;
+	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const [isHovered, setIsHovered] = useState(false);
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -459,6 +465,25 @@ export function BoardCard({
 	const isAnyGitActionLoading = isCommitLoading || isOpenPrLoading;
 	const cancelAutomaticActionLabel =
 		!isTrashCard && card.autoReviewEnabled ? getTaskAutoReviewCancelButtonLabel(card.autoReviewMode) : null;
+	const agentOverrideLabel = useMemo(
+		() => (card.agentId ? (getRuntimeAgentCatalogEntry(card.agentId)?.label ?? card.agentId) : null),
+		[card.agentId],
+	);
+	const modelOverrideLabel = useMemo(() => {
+		if (!card.clineModelId) {
+			return null;
+		}
+		const modelName = resolveClineModelDisplayName(card.clineModelId);
+		return formatClineSelectedModelButtonText({
+			modelName,
+			reasoningEffort: defaultClineReasoningEffort ?? "",
+			showReasoningEffort: Boolean(defaultClineReasoningEffort),
+		});
+	}, [card.clineModelId, defaultClineReasoningEffort]);
+	const taskAgentSettingsLabel = useMemo(() => {
+		const parts = [agentOverrideLabel, modelOverrideLabel].filter((value): value is string => Boolean(value));
+		return parts.length > 0 ? parts.join(" · ") : null;
+	}, [agentOverrideLabel, modelOverrideLabel]);
 
 	return (
 		<Draggable draggableId={card.id} index={index} isDragDisabled={false}>
@@ -685,14 +710,6 @@ export function BoardCard({
 									</p>
 								</div>
 							) : null}
-							{card.agentId || card.clineModelId ? (
-								<p className="m-0 mt-1 text-[11px] text-text-tertiary truncate">
-									{card.agentId ? (getRuntimeAgentCatalogEntry(card.agentId)?.label ?? card.agentId) : null}
-									{card.agentId && card.clineModelId ? " · " : null}
-									{card.clineModelId ?? null}
-								</p>
-							) : null}
-
 							{sessionActivity ? (
 								<div
 									className="flex gap-1.5 items-start mt-[6px]"
@@ -814,6 +831,21 @@ export function BoardCard({
 										</>
 									) : null}
 								</p>
+							) : null}
+							{taskAgentSettingsLabel ? (
+								<div className="mt-1">
+									<span
+										className={cn(
+											"inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
+											isTrashCard
+												? "border-border text-text-tertiary bg-surface-1"
+												: "border-status-blue/30 bg-status-blue/10 text-status-blue",
+										)}
+									>
+										<Bot size={12} className="shrink-0" />
+										<span className="truncate">{taskAgentSettingsLabel}</span>
+									</span>
+								</div>
 							) : null}
 							{showReviewGitActions ? (
 								<div className="flex gap-1.5 mt-1.5">

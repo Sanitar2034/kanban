@@ -811,6 +811,7 @@ export function CardDetailView({
 							openPrTaskLoadingById={openPrTaskLoadingById}
 							moveToTrashLoadingById={moveToTrashLoadingById}
 							panelWidth="100%"
+							defaultClineReasoningEffort={runtimeConfig?.clineProviderSettings?.reasoningEffort ?? null}
 						/>
 					</div>
 					<ResizeHandle

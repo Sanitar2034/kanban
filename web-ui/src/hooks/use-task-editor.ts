@@ -218,6 +218,9 @@ export function useTaskEditor({
 		setEditTaskPrompt("");
 		setEditTaskImages([]);
 		setNewTaskTitle("");
+		setNewTaskAgentId(undefined);
+		setNewTaskClineProviderId(undefined);
+		setNewTaskClineModelId(undefined);
 		setIsInlineTaskCreateOpen(true);
 	}, []);
 
@@ -227,6 +230,9 @@ export function useTaskEditor({
 		setNewTaskPrompt("");
 		setNewTaskImages([]);
 		setNewTaskBranchRef(resolvedDefaultTaskBranchRef);
+		setNewTaskAgentId(undefined);
+		setNewTaskClineProviderId(undefined);
+		setNewTaskClineModelId(undefined);
 	}, [resolvedDefaultTaskBranchRef]);
 
 	const handleOpenEditTask = useCallback(
@@ -383,6 +389,9 @@ export function useTaskEditor({
 			setNewTaskPrompt("");
 			setNewTaskImages([]);
 			setNewTaskBranchRef(baseRef);
+			setNewTaskAgentId(undefined);
+			setNewTaskClineProviderId(undefined);
+			setNewTaskClineModelId(undefined);
 			if (!options?.keepDialogOpen) {
 				setIsInlineTaskCreateOpen(false);
 			}
@@ -404,6 +413,9 @@ export function useTaskEditor({
 			resolvedDefaultTaskBranchRef,
 			selectedAgentId,
 			setBoard,
+			setNewTaskAgentId,
+			setNewTaskClineModelId,
+			setNewTaskClineProviderId,
 		],
 	);
 
@@ -453,6 +465,9 @@ export function useTaskEditor({
 			setNewTaskPrompt("");
 			setNewTaskImages([]);
 			setNewTaskBranchRef(baseRef);
+			setNewTaskAgentId(undefined);
+			setNewTaskClineProviderId(undefined);
+			setNewTaskClineModelId(undefined);
 			if (!options?.keepDialogOpen) {
 				setIsInlineTaskCreateOpen(false);
 			}
@@ -472,6 +487,9 @@ export function useTaskEditor({
 			resolvedDefaultTaskBranchRef,
 			selectedAgentId,
 			setBoard,
+			setNewTaskAgentId,
+			setNewTaskClineModelId,
+			setNewTaskClineProviderId,
 		],
 	);
 

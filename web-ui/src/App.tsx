@@ -974,6 +974,9 @@ export default function App(): ReactElement {
 													selectedCard ? undefined : handleProgrammaticCardMoveReady
 												}
 												onDragEnd={handleDragEnd}
+												defaultClineReasoningEffort={
+													runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? null
+												}
 											/>
 										)}
 									</div>

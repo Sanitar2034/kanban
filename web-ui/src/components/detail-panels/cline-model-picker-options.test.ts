@@ -7,6 +7,7 @@ import {
 	formatClineReasoningEffortLabel,
 	formatClineSelectedModelButtonText,
 	getClineReasoningEnabledModelIds,
+	resolveClineModelDisplayName,
 } from "@/components/detail-panels/cline-model-picker-options";
 import type { RuntimeClineProviderModel } from "@/runtime/types";
 
@@ -105,5 +106,10 @@ describe("cline model labels", () => {
 				isModelLoading: true,
 			}),
 		).toBe("Loading models...");
+	});
+
+	it("resolves known model IDs to display names", () => {
+		expect(resolveClineModelDisplayName("openai/gpt-5.4")).toBe("GPT-5.4");
+		expect(resolveClineModelDisplayName("openai/unknown-model")).toBe("openai/unknown-model");
 	});
 });
