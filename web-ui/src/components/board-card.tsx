@@ -710,6 +710,21 @@ export function BoardCard({
 									</p>
 								</div>
 							) : null}
+							{taskAgentSettingsLabel ? (
+								<div className="mt-1">
+									<span
+										className={cn(
+											"inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
+											isTrashCard
+												? "border-border text-text-tertiary bg-surface-1"
+												: "border-status-blue/30 bg-status-blue/10 text-status-blue",
+										)}
+									>
+										<Bot size={12} className="shrink-0" />
+										<span className="truncate">{taskAgentSettingsLabel}</span>
+									</span>
+								</div>
+							) : null}
 							{sessionActivity ? (
 								<div
 									className="flex gap-1.5 items-start mt-[6px]"
@@ -831,21 +846,6 @@ export function BoardCard({
 										</>
 									) : null}
 								</p>
-							) : null}
-							{taskAgentSettingsLabel ? (
-								<div className="mt-1">
-									<span
-										className={cn(
-											"inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
-											isTrashCard
-												? "border-border text-text-tertiary bg-surface-1"
-												: "border-status-blue/30 bg-status-blue/10 text-status-blue",
-										)}
-									>
-										<Bot size={12} className="shrink-0" />
-										<span className="truncate">{taskAgentSettingsLabel}</span>
-									</span>
-								</div>
 							) : null}
 							{showReviewGitActions ? (
 								<div className="flex gap-1.5 mt-1.5">
