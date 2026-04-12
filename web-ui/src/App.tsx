@@ -68,7 +68,7 @@ import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
 import { useWorkspacePersistence } from "@/runtime/use-workspace-persistence";
 import { saveWorkspaceState } from "@/runtime/workspace-state-query";
-import { applyTaskDetailClineSettingsSelection, findCardSelection } from "@/state/board-state";
+import { applyTaskDetailClineSettingsChange, findCardSelection } from "@/state/board-state";
 import {
 	getTaskWorkspaceInfo,
 	getTaskWorkspaceSnapshot,
@@ -729,44 +729,26 @@ export default function App(): ReactElement {
 			if (!selectedCard) {
 				return;
 			}
-			const globalProviderId =
-				runtimeProjectConfig?.clineProviderSettings?.providerId ??
-				runtimeProjectConfig?.clineProviderSettings?.oauthProvider ??
-				"";
-			const globalModelId = runtimeProjectConfig?.clineProviderSettings?.modelId ?? "";
-			const globalReasoningEffort = runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? "";
-			const globalAgentId = runtimeProjectConfig?.selectedAgentId ?? null;
-			const hasExplicitTaskAgentSettings =
-				selectedCard.card.agentId === "cline" || selectedCard.card.clineSettings !== undefined;
-			if (!hasExplicitTaskAgentSettings) {
-				return;
-			}
-			const nextTaskAgentId = globalAgentId === "cline" ? undefined : "cline";
-			const nextTaskProviderId =
-				providerId.trim().length > 0 && providerId.trim() !== globalProviderId.trim() ? providerId : undefined;
-			const nextTaskModelId =
-				modelId.trim().length > 0 && modelId.trim() !== globalModelId.trim() ? modelId : undefined;
-			const nextTaskReasoningEffort =
-				reasoningEffort && reasoningEffort !== globalReasoningEffort ? reasoningEffort : undefined;
-			const shouldPersistEmptyTaskClineSettings =
-				reasoningEffort === "" &&
-				(Boolean(globalReasoningEffort) ||
-					(selectedCard.card.clineSettings !== undefined &&
-						Object.keys(selectedCard.card.clineSettings).length === 0));
-			const nextTaskClineSettings =
-				nextTaskProviderId || nextTaskModelId || nextTaskReasoningEffort || shouldPersistEmptyTaskClineSettings
-					? {
-							...(nextTaskProviderId ? { providerId: nextTaskProviderId } : {}),
-							...(nextTaskModelId ? { modelId: nextTaskModelId } : {}),
-							...(nextTaskReasoningEffort ? { reasoningEffort: nextTaskReasoningEffort } : {}),
-						}
-					: undefined;
 			const taskId = selectedCard.card.id;
 			setBoard((currentBoard) => {
-				const result = applyTaskDetailClineSettingsSelection(currentBoard, taskId, {
-					agentId: nextTaskAgentId,
-					clineSettings: nextTaskClineSettings,
-				});
+				const result = applyTaskDetailClineSettingsChange(
+					currentBoard,
+					taskId,
+					{
+						providerId,
+						modelId,
+						reasoningEffort,
+					},
+					{
+						selectedAgentId: runtimeProjectConfig?.selectedAgentId ?? null,
+						providerId:
+							runtimeProjectConfig?.clineProviderSettings?.providerId ??
+							runtimeProjectConfig?.clineProviderSettings?.oauthProvider ??
+							null,
+						modelId: runtimeProjectConfig?.clineProviderSettings?.modelId ?? null,
+						reasoningEffort: runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? null,
+					},
+				);
 				return result.updated ? result.board : currentBoard;
 			});
 		},

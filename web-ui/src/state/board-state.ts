@@ -610,6 +610,63 @@ export function applyTaskDetailClineSettingsSelection(
 	});
 }
 
+export function applyTaskDetailClineSettingsChange(
+	board: BoardData,
+	taskId: string,
+	change: {
+		providerId: string;
+		modelId: string;
+		reasoningEffort: RuntimeClineReasoningEffort | "";
+	},
+	defaults: {
+		selectedAgentId?: RuntimeAgentId | null;
+		providerId?: string | null;
+		modelId?: string | null;
+		reasoningEffort?: RuntimeClineReasoningEffort | null;
+	},
+): { board: BoardData; updated: boolean } {
+	const selection = findCardSelection(board, taskId);
+	if (!selection) {
+		return { board, updated: false };
+	}
+
+	const hasExplicitTaskAgentSettings =
+		selection.card.agentId === "cline" || selection.card.clineSettings !== undefined;
+	if (!hasExplicitTaskAgentSettings) {
+		return { board, updated: false };
+	}
+
+	const globalProviderId = defaults.providerId?.trim() ?? "";
+	const globalModelId = defaults.modelId?.trim() ?? "";
+	const globalReasoningEffort = defaults.reasoningEffort ?? "";
+	const nextTaskAgentId = defaults.selectedAgentId === "cline" ? undefined : "cline";
+	const nextTaskProviderId =
+		change.providerId.trim().length > 0 && change.providerId.trim() !== globalProviderId
+			? change.providerId
+			: undefined;
+	const nextTaskModelId =
+		change.modelId.trim().length > 0 && change.modelId.trim() !== globalModelId ? change.modelId : undefined;
+	const nextTaskReasoningEffort =
+		change.reasoningEffort && change.reasoningEffort !== globalReasoningEffort ? change.reasoningEffort : undefined;
+	const shouldPersistEmptyTaskClineSettings =
+		change.reasoningEffort === "" &&
+		(Boolean(globalReasoningEffort) ||
+			(selection.card.clineSettings !== undefined && Object.keys(selection.card.clineSettings).length === 0));
+	const nextTaskClineSettings =
+		nextTaskProviderId || nextTaskModelId || nextTaskReasoningEffort || shouldPersistEmptyTaskClineSettings
+			? {
+					...(nextTaskProviderId ? { providerId: nextTaskProviderId } : {}),
+					...(nextTaskModelId ? { modelId: nextTaskModelId } : {}),
+					...(nextTaskReasoningEffort ? { reasoningEffort: nextTaskReasoningEffort } : {}),
+				}
+			: undefined;
+
+	return applyTaskDetailClineSettingsSelection(board, taskId, {
+		agentId: nextTaskAgentId,
+		clineSettings: nextTaskClineSettings,
+	});
+}
+
 export function disableTaskAutoReview(board: BoardData, taskId: string): { board: BoardData; updated: boolean } {
 	const selection = findCardSelection(board, taskId);
 	if (!selection) {
