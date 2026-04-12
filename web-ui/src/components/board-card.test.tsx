@@ -354,6 +354,26 @@ describe("BoardCard", () => {
 		expect(container.textContent).not.toContain("GPT-5.4 (High)");
 	});
 
+	it("does not mislabel provider-only overrides as the global default model", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard({
+						clineSettings: {
+							providerId: "groq",
+						},
+					})}
+					index={0}
+					columnId="backlog"
+					defaultClineModelId="openai/gpt-5.4"
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Provider: groq");
+		expect(container.textContent).not.toContain("GPT-5.4");
+	});
+
 	it("does not show inherited global reasoning for explicit model overrides using default effort", async () => {
 		await act(async () => {
 			root.render(

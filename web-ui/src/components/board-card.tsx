@@ -474,12 +474,16 @@ export function BoardCard({
 		if (card.clineSettings === undefined) {
 			return null;
 		}
-		const effectiveModelId = card.clineSettings.modelId ?? defaultClineModelId;
 		const explicitReasoningLabel = card.clineSettings.reasoningEffort
 			? formatClineReasoningEffortLabel(card.clineSettings.reasoningEffort)
 			: !card.clineSettings.providerId && !card.clineSettings.modelId
 				? "Default"
 				: null;
+		if (card.clineSettings.providerId && !card.clineSettings.modelId) {
+			const providerLabel = `Provider: ${card.clineSettings.providerId}`;
+			return explicitReasoningLabel ? `${providerLabel} (${explicitReasoningLabel})` : providerLabel;
+		}
+		const effectiveModelId = card.clineSettings.modelId ?? defaultClineModelId;
 		if (!effectiveModelId) {
 			return explicitReasoningLabel ? `Default model (${explicitReasoningLabel})` : null;
 		}
