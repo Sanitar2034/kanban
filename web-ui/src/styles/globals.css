@@ -277,11 +277,7 @@ body,
 	background: var(--color-text-tertiary);
 }
 
-/* -- Card inline buttons (See more / Less) -- */
 
-button.inline {
-	color: var(--color-accent);
-}
 
 /* -- Card shell -- */
 

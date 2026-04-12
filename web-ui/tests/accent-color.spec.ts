@@ -1,61 +1,40 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("Card inline buttons accent color", () => {
+test.describe("Accent color token", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto("/");
 	});
 
-	test("button.inline uses accent color token, not hardcoded value", async ({ page }) => {
-		const accentColor = await page.evaluate(() => {
-			const el = document.createElement("button");
-			el.className = "inline";
-			document.body.appendChild(el);
-			const color = getComputedStyle(el).color;
-			el.remove();
-			return color;
-		});
-
+	test("accent color token is defined and non-empty", async ({ page }) => {
 		const accentTokenValue = await page.evaluate(() => {
 			return getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim();
 		});
 
-		// Verify that accent token is defined and not empty
 		expect(accentTokenValue).toBeTruthy();
-
-		// Verify button.inline resolves to a color (not inherited/transparent)
-		expect(accentColor).toBeTruthy();
-		expect(accentColor).not.toBe("");
+		// Should be a valid hex color
+		expect(accentTokenValue).toMatch(/^#[0-9A-Fa-f]{6}$/);
 	});
 
-	test("project-row-selected background matches accent token", async ({ page }) => {
-		const selectedBg = await page.evaluate(() => {
+	test("project-row-selected background uses accent token", async ({ page }) => {
+		const { selectedBg, accentTokenValue } = await page.evaluate(() => {
 			const el = document.createElement("div");
 			el.className = "kb-project-row-selected";
 			document.body.appendChild(el);
 			const bg = getComputedStyle(el).backgroundColor;
 			el.remove();
-			return bg;
-		});
 
-		const accentTokenValue = await page.evaluate(() => {
-			return getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim();
+			const token = getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim();
+			return { selectedBg: bg, accentTokenValue: token };
 		});
 
 		expect(accentTokenValue).toBeTruthy();
 		expect(selectedBg).toBeTruthy();
-		// Should NOT be a hardcoded rgb(0, 132, 255) — must come from token
-		expect(selectedBg).not.toBe("");
+		expect(selectedBg).not.toBe("rgba(0, 0, 0, 0)");
 	});
 
-	test("theme change updates button.inline color via accent token", async ({ page }) => {
-		// Default theme accent color
-		const defaultColor = await page.evaluate(() => {
-			const el = document.createElement("button");
-			el.className = "inline";
-			document.body.appendChild(el);
-			const color = getComputedStyle(el).color;
-			el.remove();
-			return color;
+	test("theme change updates accent token", async ({ page }) => {
+		const defaultAccent = await page.evaluate(() => {
+			return getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim();
 		});
 
 		// Switch to midnight theme
@@ -63,18 +42,12 @@ test.describe("Card inline buttons accent color", () => {
 			document.documentElement.setAttribute("data-theme", "midnight");
 		});
 
-		const midnightColor = await page.evaluate(() => {
-			const el = document.createElement("button");
-			el.className = "inline";
-			document.body.appendChild(el);
-			const color = getComputedStyle(el).color;
-			el.remove();
-			return color;
+		const midnightAccent = await page.evaluate(() => {
+			return getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim();
 		});
 
-		// Colors should differ between themes (accent changes)
-		expect(midnightColor).toBeTruthy();
-		// Both should resolve to valid colors, not empty/transparent
-		expect(defaultColor).not.toBe(midnightColor);
+		expect(defaultAccent).toBeTruthy();
+		expect(midnightAccent).toBeTruthy();
+		expect(defaultAccent).not.toBe(midnightAccent);
 	});
 });
