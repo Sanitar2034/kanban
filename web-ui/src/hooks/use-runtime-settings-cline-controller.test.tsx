@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
-import type { RuntimeClineReasoningEffort, RuntimeConfigResponse } from "@/runtime/types";
+import type { RuntimeClineReasoningEffort, RuntimeConfigResponse, RuntimeTaskClineSettings } from "@/runtime/types";
 
 const fetchClineProviderCatalogMock = vi.hoisted(() => vi.fn());
 const fetchClineProviderModelsMock = vi.hoisted(() => vi.fn());
@@ -113,18 +113,14 @@ function HookHarness({
 	workspaceId,
 	selectedAgentId,
 	config,
-	taskClineProviderId,
-	taskClineModelId,
-	taskClineReasoningEffort,
+	taskClineSettings,
 	onSnapshot,
 }: {
 	open: boolean;
 	workspaceId: string | null;
 	selectedAgentId: RuntimeConfigResponse["selectedAgentId"];
 	config: RuntimeConfigResponse | null;
-	taskClineProviderId?: string;
-	taskClineModelId?: string;
-	taskClineReasoningEffort?: RuntimeClineReasoningEffort;
+	taskClineSettings?: RuntimeTaskClineSettings;
 	onSnapshot: (snapshot: HookSnapshot) => void;
 }): null {
 	const state = useRuntimeSettingsClineController({
@@ -132,9 +128,7 @@ function HookHarness({
 		workspaceId,
 		selectedAgentId,
 		config,
-		taskClineProviderId,
-		taskClineModelId,
-		taskClineReasoningEffort,
+		taskClineSettings,
 	});
 
 	useEffect(() => {
@@ -493,9 +487,11 @@ describe("useRuntimeSettingsClineController", () => {
 					workspaceId="workspace-1"
 					selectedAgentId="cline"
 					config={config}
-					taskClineProviderId="openrouter"
-					taskClineModelId="anthropic/claude-sonnet-4.6"
-					taskClineReasoningEffort="low"
+					taskClineSettings={{
+						providerId: "openrouter",
+						modelId: "anthropic/claude-sonnet-4.6",
+						reasoningEffort: "low",
+					}}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
 					}}
@@ -548,7 +544,9 @@ describe("useRuntimeSettingsClineController", () => {
 					workspaceId="workspace-1"
 					selectedAgentId="cline"
 					config={config}
-					taskClineModelId="anthropic/claude-sonnet-4.6"
+					taskClineSettings={{
+						modelId: "anthropic/claude-sonnet-4.6",
+					}}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
 					}}
@@ -562,6 +560,57 @@ describe("useRuntimeSettingsClineController", () => {
 		});
 
 		expect(requireSnapshot(latestSnapshot).modelId).toBe("anthropic/claude-sonnet-4.6");
+		expect(requireSnapshot(latestSnapshot).reasoningEffort).toBe("");
+		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
+	});
+
+	it("treats an explicit task-level default reasoning override as the clean baseline", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openrouter",
+			modelId: "openai/gpt-5",
+			reasoningEffort: "high",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+		fetchClineProviderCatalogMock.mockResolvedValue([
+			{
+				id: "openrouter",
+				name: "OpenRouter",
+				oauthSupported: false,
+				enabled: true,
+				defaultModelId: "openai/gpt-5",
+				baseUrl: "https://openrouter.ai/api/v1",
+			},
+		]);
+		fetchClineProviderModelsMock.mockResolvedValue([
+			{
+				id: "openai/gpt-5",
+				name: "GPT-5",
+				contextWindow: null,
+				maxOutputTokens: null,
+				supportsReasoningEffort: true,
+			},
+		]);
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					taskClineSettings={{}}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		await act(async () => {
+			await flushAsyncWork();
+		});
+
 		expect(requireSnapshot(latestSnapshot).reasoningEffort).toBe("");
 		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
 	});

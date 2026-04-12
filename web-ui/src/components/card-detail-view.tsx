@@ -454,10 +454,7 @@ export function CardDetailView({
 	const { startDrag: startDetailDiffResize } = useResizeDrag();
 	const detailLayoutRef = useRef<HTMLDivElement | null>(null);
 	const hasExplicitTaskClineSettings =
-		Boolean(selection.card.agentId) ||
-		Boolean(selection.card.clineProviderId?.trim()) ||
-		Boolean(selection.card.clineModelId?.trim()) ||
-		Boolean(selection.card.clineReasoningEffort);
+		selection.card.agentId === "cline" || selection.card.clineSettings !== undefined;
 	const mainRowRef = useRef<HTMLDivElement | null>(null);
 	const detailDiffRowRef = useRef<HTMLDivElement | null>(null);
 	const clineAgentChatPanelRef = useRef<ClineAgentChatPanelHandle | null>(null);
@@ -514,7 +511,8 @@ export function CardDetailView({
 	const detailDiffFileTreePanelFlex = `0 0 ${detailDiffFileTreePanelPercent}`;
 	const showMoveToTrashActions = selection.column.id === "review" || selection.column.id === "in_progress";
 	const isTaskTerminalEnabled = selection.column.id === "in_progress" || selection.column.id === "review";
-	const showClineAgentChatPanel = isNativeClineAgentSelected(sessionSummary?.agentId ?? selectedAgentId);
+	const effectiveTaskAgentId = sessionSummary?.agentId ?? selection.card.agentId ?? selectedAgentId;
+	const showClineAgentChatPanel = isNativeClineAgentSelected(effectiveTaskAgentId);
 	const availablePaths = useMemo(() => {
 		if (!runtimeFiles || runtimeFiles.length === 0) {
 			return [];
@@ -642,9 +640,7 @@ export function CardDetailView({
 			showComposerModeToggle={false}
 			workspaceId={currentProjectId}
 			runtimeConfig={runtimeConfig}
-			taskClineProviderId={selection.card.clineProviderId}
-			taskClineModelId={selection.card.clineModelId}
-			taskClineReasoningEffort={selection.card.clineReasoningEffort}
+			taskClineSettings={selection.card.clineSettings}
 			taskHasExplicitClineSettings={hasExplicitTaskClineSettings}
 			onClineSettingsSaved={onClineSettingsSaved}
 			onTaskClineSettingsChanged={onTaskClineSettingsChanged}
@@ -824,7 +820,6 @@ export function CardDetailView({
 							moveToTrashLoadingById={moveToTrashLoadingById}
 							panelWidth="100%"
 							defaultClineModelId={runtimeConfig?.clineProviderSettings?.modelId ?? null}
-							defaultClineReasoningEffort={runtimeConfig?.clineProviderSettings?.reasoningEffort ?? null}
 						/>
 					</div>
 					<ResizeHandle

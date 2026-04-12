@@ -254,15 +254,21 @@ describe("useTaskSessions", () => {
 			await latestSnapshot?.startTaskSession({
 				...createTask(),
 				agentId: "cline",
-				clineProviderId: "openrouter",
-				clineModelId: "anthropic/claude-opus-4.6",
-				clineReasoningEffort: "low",
+				clineSettings: {
+					providerId: "openrouter",
+					modelId: "anthropic/claude-opus-4.6",
+					reasoningEffort: "low",
+				},
 			});
 		});
 
 		expect(startTaskSessionMutateMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				clineReasoningEffort: "low",
+				clineSettings: {
+					providerId: "openrouter",
+					modelId: "anthropic/claude-opus-4.6",
+					reasoningEffort: "low",
+				},
 			}),
 		);
 	});
@@ -287,15 +293,17 @@ describe("useTaskSessions", () => {
 		await act(async () => {
 			await latestSnapshot?.startTaskSession({
 				...createTask(),
-				clineReasoningEffort: "high",
+				clineSettings: {
+					reasoningEffort: "high",
+				},
 			});
 		});
 
 		expect(startTaskSessionMutateMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				clineProviderId: undefined,
-				clineModelId: undefined,
-				clineReasoningEffort: "high",
+				clineSettings: {
+					reasoningEffort: "high",
+				},
 			}),
 		);
 	});

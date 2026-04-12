@@ -32,6 +32,7 @@ import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-
 import type {
 	RuntimeClineReasoningEffort,
 	RuntimeConfigResponse,
+	RuntimeTaskClineSettings,
 	RuntimeTaskSessionMode,
 	RuntimeTaskSessionSummary,
 } from "@/runtime/types";
@@ -84,12 +85,7 @@ export interface ClineAgentChatPanelProps {
 	showComposerModeToggle?: boolean;
 	workspaceId?: string | null;
 	runtimeConfig?: RuntimeConfigResponse | null;
-	/** Task-level provider override – when set, the model picker initialises to this provider instead of the global default. */
-	taskClineProviderId?: string;
-	/** Task-level model override – when set, the model picker initialises to this model instead of the global default. */
-	taskClineModelId?: string;
-	/** Task-level reasoning effort override – when set, the model picker initialises to this effort instead of global. */
-	taskClineReasoningEffort?: RuntimeClineReasoningEffort;
+	taskClineSettings?: RuntimeTaskClineSettings;
 	taskHasExplicitClineSettings?: boolean;
 	onClineSettingsSaved?: () => void;
 	onTaskClineSettingsChanged?: (settings: {
@@ -128,9 +124,7 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			showComposerModeToggle = true,
 			workspaceId = null,
 			runtimeConfig = null,
-			taskClineProviderId,
-			taskClineModelId,
-			taskClineReasoningEffort,
+			taskClineSettings,
 			taskHasExplicitClineSettings = false,
 			onClineSettingsSaved,
 			onTaskClineSettingsChanged,
@@ -199,9 +193,7 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			workspaceId,
 			selectedAgentId: "cline",
 			config: runtimeConfig,
-			taskClineProviderId,
-			taskClineModelId,
-			taskClineReasoningEffort,
+			taskClineSettings,
 		});
 
 		const modelPickerOptions = useMemo(

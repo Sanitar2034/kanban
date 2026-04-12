@@ -546,8 +546,10 @@ describe("useBoardInteractions", () => {
 			autoReviewEnabled: false,
 			autoReviewMode: "commit",
 			agentId: "codex",
-			clineProviderId: "my-provider",
-			clineModelId: "my-model",
+			clineSettings: {
+				providerId: "my-provider",
+				modelId: "my-model",
+			},
 			baseRef: "main",
 			createdAt: 2,
 			updatedAt: 2,
@@ -609,8 +611,10 @@ describe("useBoardInteractions", () => {
 		const reviewCards = currentBoard.columns.find((col) => col.id === "review")?.cards ?? [];
 		const restoredTask = reviewCards.find((card) => card.id === "task-trash-model");
 		expect(restoredTask).toBeDefined();
-		expect(restoredTask?.clineProviderId).toBe("my-provider");
-		expect(restoredTask?.clineModelId).toBe("my-model");
+		expect(restoredTask?.clineSettings).toEqual({
+			providerId: "my-provider",
+			modelId: "my-model",
+		});
 		expect(restoredTask?.agentId).toBe("codex");
 	});
 

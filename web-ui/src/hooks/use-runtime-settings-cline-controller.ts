@@ -20,6 +20,7 @@ import type {
 	RuntimeClineProviderSettings,
 	RuntimeClineReasoningEffort,
 	RuntimeConfigResponse,
+	RuntimeTaskClineSettings,
 } from "@/runtime/types";
 
 interface UseRuntimeSettingsClineControllerOptions {
@@ -27,12 +28,7 @@ interface UseRuntimeSettingsClineControllerOptions {
 	workspaceId: string | null;
 	selectedAgentId: RuntimeAgentId;
 	config: RuntimeConfigResponse | null;
-	/** Task-level provider override. When set, takes precedence over the global config on first render. */
-	taskClineProviderId?: string;
-	/** Task-level model override. When set, takes precedence over the global config on first render. */
-	taskClineModelId?: string;
-	/** Task-level reasoning effort override. When set, takes precedence over the global config on first render. */
-	taskClineReasoningEffort?: RuntimeClineReasoningEffort;
+	taskClineSettings?: RuntimeTaskClineSettings;
 }
 
 interface SaveResult {
@@ -199,15 +195,7 @@ function getDefaultModelIdForProvider(providers: RuntimeClineProviderCatalogItem
 export function useRuntimeSettingsClineController(
 	options: UseRuntimeSettingsClineControllerOptions,
 ): UseRuntimeSettingsClineControllerResult {
-	const {
-		open,
-		workspaceId,
-		selectedAgentId,
-		config,
-		taskClineProviderId,
-		taskClineModelId,
-		taskClineReasoningEffort,
-	} = options;
+	const { open, workspaceId, selectedAgentId, config, taskClineSettings } = options;
 	const [providerId, setProviderId] = useState("");
 	const [modelId, setModelId] = useState("");
 	const [apiKey, setApiKey] = useState("");
@@ -232,18 +220,21 @@ export function useRuntimeSettingsClineController(
 
 	const effectiveProviderSettings = getEffectiveProviderSettings(config, providerSettingsOverride);
 	const configProviderSettings = getRuntimeClineProviderSettings(config);
-	const hasExplicitTaskClineProviderOrModelOverride = Boolean(taskClineProviderId || taskClineModelId);
+	const hasTaskClineSettingsOverride = taskClineSettings !== undefined;
 	const initialProviderId =
-		taskClineProviderId || effectiveProviderSettings?.providerId || effectiveProviderSettings?.oauthProvider || "";
-	const initialModelId = taskClineModelId || effectiveProviderSettings?.modelId || "";
+		taskClineSettings?.providerId ||
+		effectiveProviderSettings?.providerId ||
+		effectiveProviderSettings?.oauthProvider ||
+		"";
+	const initialModelId = taskClineSettings?.modelId || effectiveProviderSettings?.modelId || "";
 	const initialBaseUrl = resolveBaseUrlForProvider(
 		providerCatalog,
 		initialProviderId,
 		effectiveProviderSettings?.baseUrl,
 	);
-	const initialReasoningEffort =
-		taskClineReasoningEffort ??
-		(hasExplicitTaskClineProviderOrModelOverride ? "" : (effectiveProviderSettings?.reasoningEffort ?? ""));
+	const initialReasoningEffort = hasTaskClineSettingsOverride
+		? (taskClineSettings?.reasoningEffort ?? "")
+		: (effectiveProviderSettings?.reasoningEffort ?? "");
 	const normalizedProviderId = providerId.trim().toLowerCase();
 	const managedOauthProvider = toManagedClineOauthProvider(normalizedProviderId);
 	const isOauthProviderSelected = managedOauthProvider !== null;
@@ -330,15 +321,17 @@ export function useRuntimeSettingsClineController(
 			return;
 		}
 		const nextProviderId =
-			taskClineProviderId || (configProviderSettings.providerId ?? configProviderSettings.oauthProvider ?? "");
+			taskClineSettings?.providerId ||
+			(configProviderSettings.providerId ?? configProviderSettings.oauthProvider ?? "");
 		setProviderId(nextProviderId);
-		setModelId(taskClineModelId || (configProviderSettings.modelId ?? ""));
+		setModelId(taskClineSettings?.modelId || (configProviderSettings.modelId ?? ""));
 		setApiKey("");
 		setBaseUrl(resolveBaseUrlForProvider(providerCatalog, nextProviderId, configProviderSettings.baseUrl));
 		setRegion("");
 		setReasoningEffort(
-			taskClineReasoningEffort ??
-				(hasExplicitTaskClineProviderOrModelOverride ? "" : (configProviderSettings.reasoningEffort ?? "")),
+			hasTaskClineSettingsOverride
+				? (taskClineSettings?.reasoningEffort ?? "")
+				: (configProviderSettings.reasoningEffort ?? ""),
 		);
 		setAwsAccessKey("");
 		setAwsSecretKey("");
@@ -356,11 +349,9 @@ export function useRuntimeSettingsClineController(
 		configProviderSettings.oauthProvider,
 		configProviderSettings.providerId,
 		configProviderSettings.reasoningEffort,
-		hasExplicitTaskClineProviderOrModelOverride,
+		hasTaskClineSettingsOverride,
 		open,
-		taskClineReasoningEffort,
-		taskClineProviderId,
-		taskClineModelId,
+		taskClineSettings,
 	]);
 
 	useEffect(() => {

@@ -556,7 +556,9 @@ describe("createRuntimeApi startTaskSession", () => {
 				taskId: "task-1",
 				baseRef: "main",
 				prompt: "Reasoning-only override task",
-				clineReasoningEffort: "medium",
+				clineSettings: {
+					reasoningEffort: "medium",
+				},
 			},
 		);
 
@@ -613,7 +615,9 @@ describe("createRuntimeApi startTaskSession", () => {
 				taskId: "task-1",
 				baseRef: "main",
 				prompt: "Task with model override",
-				clineModelId: "anthropic/claude-opus-4.6",
+				clineSettings: {
+					modelId: "anthropic/claude-opus-4.6",
+				},
 			},
 		);
 

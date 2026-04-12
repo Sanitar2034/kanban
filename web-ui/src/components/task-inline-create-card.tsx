@@ -8,7 +8,7 @@ import { BranchSelectDropdown, type BranchSelectOption } from "@/components/bran
 import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task-agent-model-picker";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
-import type { RuntimeAgentId, RuntimeClineReasoningEffort } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeClineReasoningEffort, RuntimeTaskClineSettings } from "@/runtime/types";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { pasteShortcutLabel } from "@/utils/platform";
 import { useDocumentEvent, useMeasure } from "@/utils/react-use";
@@ -69,12 +69,8 @@ export function TaskInlineCreateCard({
 	idPrefix = "inline-task",
 	agentId,
 	onAgentIdChange,
-	clineProviderId,
-	onClineProviderIdChange,
-	clineModelId,
-	onClineModelIdChange,
-	clineReasoningEffort,
-	onClineReasoningEffortChange,
+	clineSettings,
+	onClineSettingsChange,
 	defaultAgentId,
 	defaultProviderId,
 	defaultModelId,
@@ -105,12 +101,8 @@ export function TaskInlineCreateCard({
 	idPrefix?: string;
 	agentId?: RuntimeAgentId | undefined;
 	onAgentIdChange?: (value: RuntimeAgentId | undefined) => void;
-	clineProviderId?: string | undefined;
-	onClineProviderIdChange?: (value: string | undefined) => void;
-	clineModelId?: string | undefined;
-	onClineModelIdChange?: (value: string | undefined) => void;
-	clineReasoningEffort?: RuntimeClineReasoningEffort | undefined;
-	onClineReasoningEffortChange?: (value: RuntimeClineReasoningEffort | undefined) => void;
+	clineSettings?: RuntimeTaskClineSettings | undefined;
+	onClineSettingsChange?: (value: RuntimeTaskClineSettings | undefined) => void;
 	/** Default agent ID from runtimeConfig.selectedAgentId, used to show "Default (AgentName)" in picker */
 	defaultAgentId?: RuntimeAgentId | null;
 	/** Default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
@@ -158,7 +150,7 @@ export function TaskInlineCreateCard({
 		active: true,
 		workspaceId,
 		agentId,
-		clineProviderId,
+		clineSettings,
 		defaultAgentId,
 		defaultProviderId,
 		defaultModelId,
@@ -322,16 +314,12 @@ export function TaskInlineCreateCard({
 						/>
 					</div>
 				</div>
-				{onAgentIdChange && onClineProviderIdChange && onClineModelIdChange ? (
+				{onAgentIdChange && onClineSettingsChange ? (
 					<TaskAgentModelPicker
 						agentId={agentId}
 						onAgentIdChange={onAgentIdChange}
-						clineProviderId={clineProviderId}
-						onClineProviderIdChange={onClineProviderIdChange}
-						clineModelId={clineModelId}
-						onClineModelIdChange={onClineModelIdChange}
-						clineReasoningEffort={clineReasoningEffort}
-						onClineReasoningEffortChange={onClineReasoningEffortChange}
+						clineSettings={clineSettings}
+						onClineSettingsChange={onClineSettingsChange}
 						agentOptions={agentOptions}
 						clineProviderOptions={clineProviderOptions}
 						clineModelOptions={clineModelOptions}

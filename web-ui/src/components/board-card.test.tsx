@@ -282,12 +282,13 @@ describe("BoardCard", () => {
 				<BoardCard
 					card={createCard({
 						agentId: "cline",
-						clineModelId: "openai/gpt-5.4",
-						clineReasoningEffort: "low",
+						clineSettings: {
+							modelId: "openai/gpt-5.4",
+							reasoningEffort: "low",
+						},
 					})}
 					index={0}
 					columnId="review"
-					defaultClineReasoningEffort="high"
 				/>,
 			);
 		});
@@ -302,17 +303,55 @@ describe("BoardCard", () => {
 			root.render(
 				<BoardCard
 					card={createCard({
-						clineReasoningEffort: "low",
+						clineSettings: {
+							reasoningEffort: "low",
+						},
 					})}
 					index={0}
 					columnId="backlog"
 					defaultClineModelId="openai/gpt-5.4"
-					defaultClineReasoningEffort="high"
 				/>,
 			);
 		});
 
 		expect(container.textContent).toContain("GPT-5.4 (Low)");
+	});
+
+	it("shows a fallback indicator for reasoning-only overrides without a resolved default model", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard({
+						clineSettings: {
+							reasoningEffort: "low",
+						},
+					})}
+					index={0}
+					columnId="backlog"
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("Default model (Low)");
+	});
+
+	it("shows explicit default reasoning metadata for reasoning-only task overrides", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard({
+						agentId: "cline",
+						clineSettings: {},
+					})}
+					index={0}
+					columnId="backlog"
+					defaultClineModelId="openai/gpt-5.4"
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("GPT-5.4 (Default)");
+		expect(container.textContent).not.toContain("GPT-5.4 (High)");
 	});
 
 	it("does not show inherited global reasoning for explicit model overrides using default effort", async () => {
@@ -321,11 +360,12 @@ describe("BoardCard", () => {
 				<BoardCard
 					card={createCard({
 						agentId: "cline",
-						clineModelId: "openai/gpt-5.4",
+						clineSettings: {
+							modelId: "openai/gpt-5.4",
+						},
 					})}
 					index={0}
 					columnId="backlog"
-					defaultClineReasoningEffort="high"
 				/>,
 			);
 		});

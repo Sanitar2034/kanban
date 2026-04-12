@@ -811,9 +811,7 @@ export function useBoardInteractions({
 					autoReviewMode: resolveTaskAutoReviewMode(selection.card.autoReviewMode),
 					images: selection.card.images,
 					agentId: selection.card.agentId,
-					clineProviderId: selection.card.clineProviderId,
-					clineModelId: selection.card.clineModelId,
-					clineReasoningEffort: selection.card.clineReasoningEffort,
+					clineSettings: selection.card.clineSettings,
 					baseRef: selection.card.baseRef,
 				});
 				return updated.updated ? updated.board : currentBoard;

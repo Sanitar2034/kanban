@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useTaskEditor } from "@/hooks/use-task-editor";
-import type { RuntimeAgentId, RuntimeClineReasoningEffort } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeTaskClineSettings } from "@/runtime/types";
 import type { BoardCard, BoardData, TaskAutoReviewMode, TaskImage } from "@/types";
 
 function createTask(taskId: string, prompt: string, createdAt: number, overrides: Partial<BoardCard> = {}): BoardCard {
@@ -40,9 +40,7 @@ interface HookSnapshot {
 	newTaskImages: TaskImage[];
 	newTaskBranchRef: string;
 	newTaskAgentId: RuntimeAgentId | undefined;
-	newTaskClineProviderId: string | undefined;
-	newTaskClineModelId: string | undefined;
-	newTaskClineReasoningEffort: RuntimeClineReasoningEffort | undefined;
+	newTaskClineSettings: RuntimeTaskClineSettings | undefined;
 	editingTaskId: string | null;
 	editTaskPrompt: string;
 	editTaskStartInPlanMode: boolean;
@@ -59,9 +57,7 @@ interface HookSnapshot {
 	setEditTaskAutoReviewEnabled: (value: boolean) => void;
 	setEditTaskAutoReviewMode: (value: TaskAutoReviewMode) => void;
 	setNewTaskAgentId: (value: RuntimeAgentId | undefined) => void;
-	setNewTaskClineProviderId: (value: string | undefined) => void;
-	setNewTaskClineModelId: (value: string | undefined) => void;
-	setNewTaskClineReasoningEffort: (value: RuntimeClineReasoningEffort | undefined) => void;
+	setNewTaskClineSettings: (value: RuntimeTaskClineSettings | undefined) => void;
 }
 
 function requireSnapshot(snapshot: HookSnapshot | null): HookSnapshot {
@@ -101,9 +97,7 @@ function HookHarness({
 			newTaskImages: editor.newTaskImages,
 			newTaskBranchRef: editor.newTaskBranchRef,
 			newTaskAgentId: editor.newTaskAgentId,
-			newTaskClineProviderId: editor.newTaskClineProviderId,
-			newTaskClineModelId: editor.newTaskClineModelId,
-			newTaskClineReasoningEffort: editor.newTaskClineReasoningEffort,
+			newTaskClineSettings: editor.newTaskClineSettings,
 			editingTaskId: editor.editingTaskId,
 			editTaskPrompt: editor.editTaskPrompt,
 			editTaskStartInPlanMode: editor.editTaskStartInPlanMode,
@@ -120,9 +114,7 @@ function HookHarness({
 			setEditTaskAutoReviewEnabled: editor.setEditTaskAutoReviewEnabled,
 			setEditTaskAutoReviewMode: editor.setEditTaskAutoReviewMode,
 			setNewTaskAgentId: editor.setNewTaskAgentId,
-			setNewTaskClineProviderId: editor.setNewTaskClineProviderId,
-			setNewTaskClineModelId: editor.setNewTaskClineModelId,
-			setNewTaskClineReasoningEffort: editor.setNewTaskClineReasoningEffort,
+			setNewTaskClineSettings: editor.setNewTaskClineSettings,
 		});
 	}, [
 		board,
@@ -141,9 +133,7 @@ function HookHarness({
 		editor.newTaskImages,
 		editor.newTaskBranchRef,
 		editor.newTaskAgentId,
-		editor.newTaskClineProviderId,
-		editor.newTaskClineModelId,
-		editor.newTaskClineReasoningEffort,
+		editor.newTaskClineSettings,
 		editor.setEditTaskAutoReviewEnabled,
 		editor.setEditTaskAutoReviewMode,
 		editor.setEditTaskPrompt,
@@ -327,9 +317,11 @@ describe("useTaskEditor", () => {
 		});
 		await act(async () => {
 			requireSnapshot(latestSnapshot).setNewTaskAgentId("codex");
-			requireSnapshot(latestSnapshot).setNewTaskClineProviderId("provider-abc");
-			requireSnapshot(latestSnapshot).setNewTaskClineModelId("model-xyz");
-			requireSnapshot(latestSnapshot).setNewTaskClineReasoningEffort("low");
+			requireSnapshot(latestSnapshot).setNewTaskClineSettings({
+				providerId: "provider-abc",
+				modelId: "model-xyz",
+				reasoningEffort: "low",
+			});
 		});
 
 		await act(async () => {});
@@ -347,9 +339,7 @@ describe("useTaskEditor", () => {
 		expect(snapshot.newTaskPrompt).toBe("");
 		expect(snapshot.newTaskBranchRef).toBe("main");
 		expect(snapshot.newTaskAgentId).toBeUndefined();
-		expect(snapshot.newTaskClineProviderId).toBeUndefined();
-		expect(snapshot.newTaskClineModelId).toBeUndefined();
-		expect(snapshot.newTaskClineReasoningEffort).toBeUndefined();
+		expect(snapshot.newTaskClineSettings).toBeUndefined();
 		expect(snapshot.board.columns[0]?.cards.some((card) => card.prompt === "Create another task")).toBe(true);
 	});
 	it("copies attached images to each split task and clears the draft images", async () => {
@@ -427,7 +417,9 @@ describe("useTaskEditor", () => {
 
 		await act(async () => {
 			requireSnapshot(latestSnapshot).setNewTaskPrompt("Reasoning override only");
-			requireSnapshot(latestSnapshot).setNewTaskClineReasoningEffort("low");
+			requireSnapshot(latestSnapshot).setNewTaskClineSettings({
+				reasoningEffort: "low",
+			});
 		});
 
 		await act(async () => {
@@ -435,9 +427,9 @@ describe("useTaskEditor", () => {
 		});
 
 		const createdCard = requireSnapshot(latestSnapshot).board.columns[0]?.cards[0];
-		expect(createdCard?.clineProviderId).toBeUndefined();
-		expect(createdCard?.clineModelId).toBeUndefined();
-		expect(createdCard?.clineReasoningEffort).toBe("low");
+		expect(createdCard?.clineSettings).toEqual({
+			reasoningEffort: "low",
+		});
 	});
 
 	it("preserves per-task agent/model override fields on each split task", async () => {
@@ -460,9 +452,11 @@ describe("useTaskEditor", () => {
 
 		await act(async () => {
 			requireSnapshot(latestSnapshot).setNewTaskAgentId("codex");
-			requireSnapshot(latestSnapshot).setNewTaskClineProviderId("provider-abc");
-			requireSnapshot(latestSnapshot).setNewTaskClineModelId("model-xyz");
-			requireSnapshot(latestSnapshot).setNewTaskClineReasoningEffort("medium");
+			requireSnapshot(latestSnapshot).setNewTaskClineSettings({
+				providerId: "provider-abc",
+				modelId: "model-xyz",
+				reasoningEffort: "medium",
+			});
 		});
 
 		let createdTaskIds: string[] = [];
@@ -475,9 +469,11 @@ describe("useTaskEditor", () => {
 		expect(backlogCards).toHaveLength(3);
 		for (const card of backlogCards) {
 			expect(card.agentId).toBe("codex");
-			expect(card.clineProviderId).toBe("provider-abc");
-			expect(card.clineModelId).toBe("model-xyz");
-			expect(card.clineReasoningEffort).toBe("medium");
+			expect(card.clineSettings).toEqual({
+				providerId: "provider-abc",
+				modelId: "model-xyz",
+				reasoningEffort: "medium",
+			});
 		}
 	});
 });

@@ -3,7 +3,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UseTaskAgentModelPickerResult } from "@/components/task-agent-model-picker";
-import type { RuntimeAgentId, RuntimeClineProviderCatalogItem, RuntimeClineProviderModel } from "@/runtime/types";
+import type {
+	RuntimeAgentId,
+	RuntimeClineProviderCatalogItem,
+	RuntimeClineProviderModel,
+	RuntimeTaskClineSettings,
+} from "@/runtime/types";
 
 const fetchClineProviderCatalogMock = vi.hoisted(() => vi.fn());
 const fetchClineProviderModelsMock = vi.hoisted(() => vi.fn());
@@ -27,6 +32,10 @@ function createProvider(
 	defaultModelId: string | null = null,
 ): RuntimeClineProviderCatalogItem {
 	return { id, name, oauthSupported: false, enabled, defaultModelId, baseUrl: null, supportsBaseUrl: false };
+}
+
+function createTaskClineSettings(settings?: RuntimeTaskClineSettings): RuntimeTaskClineSettings | undefined {
+	return settings;
 }
 
 let container: HTMLDivElement;
@@ -62,7 +71,7 @@ describe("useTaskAgentModelPicker – clineProviderOptions", () => {
 				active: true,
 				workspaceId: null,
 				agentId: "cline",
-				clineProviderId: undefined,
+				clineSettings: undefined,
 				defaultAgentId: "cline",
 				defaultProviderId: "cline",
 				defaultModelId: null,
@@ -103,7 +112,7 @@ describe("useTaskAgentModelPicker – clineProviderOptions", () => {
 				active: true,
 				workspaceId: null,
 				agentId: "cline",
-				clineProviderId: undefined,
+				clineSettings: undefined,
 				defaultAgentId: "cline",
 				defaultProviderId: "anthropic",
 				defaultModelId: null,
@@ -139,7 +148,7 @@ describe("useTaskAgentModelPicker – clineProviderOptions", () => {
 				active: true,
 				workspaceId: null,
 				agentId: "cline",
-				clineProviderId: undefined,
+				clineSettings: undefined,
 				defaultAgentId: "cline",
 				defaultProviderId: "cline",
 				defaultModelId: null,
@@ -178,7 +187,7 @@ describe("useTaskAgentModelPicker – providerDefaultModels", () => {
 				active: true,
 				workspaceId: null,
 				agentId: "cline",
-				clineProviderId: undefined,
+				clineSettings: undefined,
 				defaultAgentId: "cline",
 				defaultProviderId: "anthropic",
 				defaultModelId: "claude-opus-4-20250514",
@@ -223,7 +232,7 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 				active: true,
 				workspaceId: null,
 				agentId: "cline",
-				clineProviderId: "groq", // <-- explicit provider override to groq
+				clineSettings: createTaskClineSettings({ providerId: "groq" }), // explicit provider override to groq
 				defaultAgentId: "cline",
 				defaultProviderId: "anthropic",
 				defaultModelId: "claude-opus-4-20250514", // global default is Anthropic's model
@@ -266,7 +275,7 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 				active: true,
 				workspaceId: null,
 				agentId: "cline",
-				clineProviderId: undefined, // <-- no provider override
+				clineSettings: undefined, // no provider override
 				defaultAgentId: "cline",
 				defaultProviderId: "anthropic",
 				defaultModelId: "claude-opus-4-20250514",
@@ -291,7 +300,7 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 
 describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 	it("resets clineModelId to the first real model when the selected model is not in the options list", async () => {
-		const onClineModelIdChange = vi.fn();
+		const onClineSettingsChange = vi.fn();
 		const modelOptions = [
 			{ value: "", label: "Llama 3.3 70B" },
 			{ value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B" },
@@ -305,10 +314,11 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 				<TaskAgentModelPicker
 					agentId={"cline" as RuntimeAgentId}
 					onAgentIdChange={() => {}}
-					clineProviderId="groq"
-					onClineProviderIdChange={() => {}}
-					clineModelId="claude-opus-4-20250514" // <-- not in groq's model list
-					onClineModelIdChange={onClineModelIdChange}
+					clineSettings={createTaskClineSettings({
+						providerId: "groq",
+						modelId: "claude-opus-4-20250514",
+					})}
+					onClineSettingsChange={onClineSettingsChange}
 					agentOptions={[{ value: "", label: "Cline" }]}
 					clineProviderOptions={[{ value: "", label: "Anthropic" }]}
 					clineModelOptions={modelOptions}
@@ -321,11 +331,14 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 		);
 
 		// The effect should have fired and selected the first real model
-		expect(onClineModelIdChange).toHaveBeenCalledWith("llama-3.3-70b-versatile");
+		expect(onClineSettingsChange).toHaveBeenCalledWith({
+			providerId: "groq",
+			modelId: "llama-3.3-70b-versatile",
+		});
 	});
 
 	it("does not reset when the selected model exists in the options list", async () => {
-		const onClineModelIdChange = vi.fn();
+		const onClineSettingsChange = vi.fn();
 		const modelOptions = [
 			{ value: "", label: "Llama 3.3 70B" },
 			{ value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B" },
@@ -339,10 +352,11 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 				<TaskAgentModelPicker
 					agentId={"cline" as RuntimeAgentId}
 					onAgentIdChange={() => {}}
-					clineProviderId="groq"
-					onClineProviderIdChange={() => {}}
-					clineModelId="llama-3.3-70b-versatile" // <-- exists in the list
-					onClineModelIdChange={onClineModelIdChange}
+					clineSettings={createTaskClineSettings({
+						providerId: "groq",
+						modelId: "llama-3.3-70b-versatile",
+					})}
+					onClineSettingsChange={onClineSettingsChange}
 					agentOptions={[{ value: "", label: "Cline" }]}
 					clineProviderOptions={[{ value: "", label: "Groq" }]}
 					clineModelOptions={modelOptions}
@@ -354,11 +368,11 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 			),
 		);
 
-		expect(onClineModelIdChange).not.toHaveBeenCalled();
+		expect(onClineSettingsChange).not.toHaveBeenCalled();
 	});
 
 	it("does not reset while models are still loading", async () => {
-		const onClineModelIdChange = vi.fn();
+		const onClineSettingsChange = vi.fn();
 		const modelOptions = [{ value: "", label: "Default" }];
 
 		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
@@ -368,10 +382,11 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 				<TaskAgentModelPicker
 					agentId={"cline" as RuntimeAgentId}
 					onAgentIdChange={() => {}}
-					clineProviderId="groq"
-					onClineProviderIdChange={() => {}}
-					clineModelId="claude-opus-4-20250514" // not in options
-					onClineModelIdChange={onClineModelIdChange}
+					clineSettings={createTaskClineSettings({
+						providerId: "groq",
+						modelId: "claude-opus-4-20250514",
+					})}
+					onClineSettingsChange={onClineSettingsChange}
 					agentOptions={[{ value: "", label: "Cline" }]}
 					clineProviderOptions={[{ value: "", label: "Anthropic" }]}
 					clineModelOptions={modelOptions}
@@ -383,11 +398,11 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 			),
 		);
 
-		expect(onClineModelIdChange).not.toHaveBeenCalled();
+		expect(onClineSettingsChange).not.toHaveBeenCalled();
 	});
 
 	it("does not reset when model options only contain the default placeholder (race condition guard)", async () => {
-		const onClineModelIdChange = vi.fn();
+		const onClineSettingsChange = vi.fn();
 		// Only the "Default" placeholder — real models haven't loaded yet
 		const modelOptions = [{ value: "", label: "Default" }];
 
@@ -398,10 +413,11 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 				<TaskAgentModelPicker
 					agentId={"cline" as RuntimeAgentId}
 					onAgentIdChange={() => {}}
-					clineProviderId="groq"
-					onClineProviderIdChange={() => {}}
-					clineModelId="mixtral-8x7b-32768" // valid saved model, but models haven't loaded yet
-					onClineModelIdChange={onClineModelIdChange}
+					clineSettings={createTaskClineSettings({
+						providerId: "groq",
+						modelId: "mixtral-8x7b-32768",
+					})}
+					onClineSettingsChange={onClineSettingsChange}
 					agentOptions={[{ value: "", label: "Cline" }]}
 					clineProviderOptions={[{ value: "", label: "Groq" }]}
 					clineModelOptions={modelOptions}
@@ -414,7 +430,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 		);
 
 		// Should NOT clear the model — the stale/empty options list should not trigger auto-correct
-		expect(onClineModelIdChange).not.toHaveBeenCalled();
+		expect(onClineSettingsChange).not.toHaveBeenCalled();
 	});
 });
 
@@ -427,10 +443,8 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 				<TaskAgentModelPicker
 					agentId={"cline" as RuntimeAgentId}
 					onAgentIdChange={() => {}}
-					clineProviderId={undefined}
-					onClineProviderIdChange={() => {}}
-					clineModelId={undefined}
-					onClineModelIdChange={() => {}}
+					clineSettings={undefined}
+					onClineSettingsChange={() => {}}
 					agentOptions={[{ value: "", label: "Cline" }]}
 					clineProviderOptions={[{ value: "", label: "Cline" }]}
 					clineModelOptions={[
@@ -479,10 +493,8 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 					<TaskAgentModelPicker
 						agentId={"cline" as RuntimeAgentId}
 						onAgentIdChange={() => {}}
-						clineProviderId={undefined}
-						onClineProviderIdChange={() => {}}
-						clineModelId={undefined}
-						onClineModelIdChange={() => {}}
+						clineSettings={undefined}
+						onClineSettingsChange={() => {}}
 						agentOptions={[{ value: "", label: "Cline" }]}
 						clineProviderOptions={[{ value: "", label: "Cline" }]}
 						clineModelOptions={[
@@ -521,20 +533,15 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 
 	it("persists a reasoning-only override when model stays on default", async () => {
 		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
-		const onClineModelIdChange = vi.fn();
-		const onClineReasoningEffortChange = vi.fn();
+		const onClineSettingsChange = vi.fn();
 
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
 					agentId={"cline" as RuntimeAgentId}
 					onAgentIdChange={() => {}}
-					clineProviderId={undefined}
-					onClineProviderIdChange={() => {}}
-					clineModelId={undefined}
-					onClineModelIdChange={onClineModelIdChange}
-					clineReasoningEffort={undefined}
-					onClineReasoningEffortChange={onClineReasoningEffortChange}
+					clineSettings={undefined}
+					onClineSettingsChange={onClineSettingsChange}
 					agentOptions={[{ value: "", label: "Cline" }]}
 					clineProviderOptions={[{ value: "", label: "Cline" }]}
 					clineModelOptions={[
@@ -577,8 +584,59 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 			(lowReasoningButton as HTMLButtonElement).click();
 		});
 
-		expect(onClineModelIdChange).not.toHaveBeenCalled();
-		expect(onClineReasoningEffortChange).toHaveBeenLastCalledWith("low");
+		expect(onClineSettingsChange).toHaveBeenLastCalledWith({
+			reasoningEffort: "low",
+		});
+	});
+
+	it("persists an explicit default reasoning override when the task inherits a global reasoning effort", async () => {
+		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+		const onClineSettingsChange = vi.fn();
+
+		await act(async () =>
+			root.render(
+				<TaskAgentModelPicker
+					agentId={"cline" as RuntimeAgentId}
+					onAgentIdChange={() => {}}
+					clineSettings={undefined}
+					onClineSettingsChange={onClineSettingsChange}
+					agentOptions={[{ value: "", label: "Cline" }]}
+					clineProviderOptions={[{ value: "", label: "Cline" }]}
+					clineModelOptions={[{ value: "", label: "GPT-5.4" }]}
+					effectiveDefaultModelId="openai/gpt-5.4"
+					providerModels={[{ id: "openai/gpt-5.4", name: "GPT-5.4", supportsReasoningEffort: true }]}
+					isLoadingProviders={false}
+					isLoadingModels={false}
+					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultProviderId="cline"
+					defaultReasoningEffort="high"
+				/>,
+			),
+		);
+
+		const settingsTrigger = Array.from(container.querySelectorAll("button")).find((button) =>
+			button.textContent?.includes("Override Agent Settings"),
+		);
+		expect(settingsTrigger).not.toBeUndefined();
+		await act(async () => {
+			(settingsTrigger as HTMLButtonElement).click();
+		});
+
+		const modelTrigger = document.getElementById("cline-chat-model-picker");
+		expect(modelTrigger).not.toBeNull();
+		await act(async () => {
+			(modelTrigger as HTMLElement).click();
+		});
+
+		const defaultReasoningButton = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.trim() === "Default",
+		);
+		expect(defaultReasoningButton).not.toBeUndefined();
+		await act(async () => {
+			(defaultReasoningButton as HTMLButtonElement).click();
+		});
+
+		expect(onClineSettingsChange).toHaveBeenLastCalledWith({});
 	});
 
 	it("does not inherit the global reasoning effort for explicit task model overrides", async () => {
@@ -589,12 +647,10 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 				<TaskAgentModelPicker
 					agentId={"cline" as RuntimeAgentId}
 					onAgentIdChange={() => {}}
-					clineProviderId={undefined}
-					onClineProviderIdChange={() => {}}
-					clineModelId="openai/gpt-5.3-codex"
-					onClineModelIdChange={() => {}}
-					clineReasoningEffort={undefined}
-					onClineReasoningEffortChange={() => {}}
+					clineSettings={createTaskClineSettings({
+						modelId: "openai/gpt-5.3-codex",
+					})}
+					onClineSettingsChange={() => {}}
 					agentOptions={[{ value: "", label: "Cline" }]}
 					clineProviderOptions={[{ value: "", label: "Cline" }]}
 					clineModelOptions={[

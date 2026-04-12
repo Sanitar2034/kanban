@@ -5,7 +5,7 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { BoardCard } from "@/components/board-card";
 import { Button } from "@/components/ui/button";
 import { ColumnIndicator } from "@/components/ui/column-indicator";
-import type { RuntimeClineReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { isCardDropDisabled, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
 import type { BoardCard as BoardCardModel, BoardColumnId, BoardColumn as BoardColumnModel } from "@/types";
 
@@ -39,7 +39,6 @@ export function BoardColumn({
 	isDependencyLinking,
 	workspacePath,
 	defaultClineModelId,
-	defaultClineReasoningEffort,
 }: {
 	column: BoardColumnModel;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
@@ -70,7 +69,6 @@ export function BoardColumn({
 	isDependencyLinking?: boolean;
 	workspacePath?: string | null;
 	defaultClineModelId?: string | null;
-	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const canCreate = column.id === "backlog" && onCreateTask;
 	const canStartAllTasks = column.id === "backlog" && onStartAllTasks;
@@ -190,7 +188,6 @@ export function BoardColumn({
 											isDependencyLinking={isDependencyLinking}
 											workspacePath={workspacePath}
 											defaultClineModelId={defaultClineModelId}
-											defaultClineReasoningEffort={defaultClineReasoningEffort}
 											onSaveTitle={onSaveTitle}
 											onClick={() => {
 												if (column.id === "backlog") {

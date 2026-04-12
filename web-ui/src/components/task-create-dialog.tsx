@@ -25,7 +25,7 @@ import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
-import type { RuntimeAgentId, RuntimeClineReasoningEffort } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeClineReasoningEffort, RuntimeTaskClineSettings } from "@/runtime/types";
 import { LocalStorageKey } from "@/storage/local-storage-store";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { isMacPlatform, pasteShortcutLabel } from "@/utils/platform";
@@ -122,12 +122,8 @@ export function TaskCreateDialog({
 	onBranchRefChange,
 	agentId,
 	onAgentIdChange,
-	clineProviderId,
-	onClineProviderIdChange,
-	clineModelId,
-	onClineModelIdChange,
-	clineReasoningEffort,
-	onClineReasoningEffortChange,
+	clineSettings,
+	onClineSettingsChange,
 	defaultAgentId,
 	defaultProviderId,
 	defaultModelId,
@@ -159,12 +155,8 @@ export function TaskCreateDialog({
 	onBranchRefChange: (value: string) => void;
 	agentId?: RuntimeAgentId | undefined;
 	onAgentIdChange?: (value: RuntimeAgentId | undefined) => void;
-	clineProviderId?: string | undefined;
-	onClineProviderIdChange?: (value: string | undefined) => void;
-	clineModelId?: string | undefined;
-	onClineModelIdChange?: (value: string | undefined) => void;
-	clineReasoningEffort?: RuntimeClineReasoningEffort | undefined;
-	onClineReasoningEffortChange?: (value: RuntimeClineReasoningEffort | undefined) => void;
+	clineSettings?: RuntimeTaskClineSettings | undefined;
+	onClineSettingsChange?: (value: RuntimeTaskClineSettings | undefined) => void;
 	/** Default agent ID from runtimeConfig.selectedAgentId, used to show "Default (AgentName)" in picker */
 	defaultAgentId?: RuntimeAgentId | null;
 	/** Default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
@@ -202,7 +194,7 @@ export function TaskCreateDialog({
 		active: open,
 		workspaceId,
 		agentId,
-		clineProviderId,
+		clineSettings,
 		defaultAgentId,
 		defaultProviderId,
 		defaultModelId,
@@ -606,16 +598,12 @@ export function TaskCreateDialog({
 						</div>
 					</div>
 
-					{onAgentIdChange && onClineProviderIdChange && onClineModelIdChange ? (
+					{onAgentIdChange && onClineSettingsChange ? (
 						<TaskAgentModelPicker
 							agentId={agentId}
 							onAgentIdChange={onAgentIdChange}
-							clineProviderId={clineProviderId}
-							onClineProviderIdChange={onClineProviderIdChange}
-							clineModelId={clineModelId}
-							onClineModelIdChange={onClineModelIdChange}
-							clineReasoningEffort={clineReasoningEffort}
-							onClineReasoningEffortChange={onClineReasoningEffortChange}
+							clineSettings={clineSettings}
+							onClineSettingsChange={onClineSettingsChange}
 							agentOptions={agentOptions}
 							clineProviderOptions={clineProviderOptions}
 							clineModelOptions={clineModelOptions}

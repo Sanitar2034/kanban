@@ -7,6 +7,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+	formatClineReasoningEffortLabel,
 	formatClineSelectedModelButtonText,
 	resolveClineModelDisplayName,
 } from "@/components/detail-panels/cline-model-picker-options";
@@ -14,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { RuntimeClineReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store";
 import type { BoardCard as BoardCardModel, BoardColumnId } from "@/types";
 import { getTaskAutoReviewCancelButtonLabel } from "@/types";
@@ -232,7 +233,6 @@ export function BoardCard({
 	isDependencyLinking = false,
 	workspacePath,
 	defaultClineModelId = null,
-	defaultClineReasoningEffort = null,
 }: {
 	card: BoardCardModel;
 	index: number;
@@ -257,7 +257,6 @@ export function BoardCard({
 	isDependencyLinking?: boolean;
 	workspacePath?: string | null;
 	defaultClineModelId?: string | null;
-	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const [isHovered, setIsHovered] = useState(false);
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -472,26 +471,29 @@ export function BoardCard({
 		[card.agentId],
 	);
 	const modelOverrideLabel = useMemo(() => {
-		const effectiveModelId = card.clineModelId ?? (card.clineReasoningEffort ? defaultClineModelId : null);
-		if (!effectiveModelId) {
+		if (card.clineSettings === undefined) {
 			return null;
 		}
-		const effectiveReasoningEffort =
-			card.clineReasoningEffort ??
-			(card.clineModelId || card.clineProviderId ? "" : (defaultClineReasoningEffort ?? ""));
+		const effectiveModelId = card.clineSettings.modelId ?? defaultClineModelId;
+		const explicitReasoningLabel = card.clineSettings.reasoningEffort
+			? formatClineReasoningEffortLabel(card.clineSettings.reasoningEffort)
+			: !card.clineSettings.providerId && !card.clineSettings.modelId
+				? "Default"
+				: null;
+		if (!effectiveModelId) {
+			return explicitReasoningLabel ? `Default model (${explicitReasoningLabel})` : null;
+		}
 		const modelName = resolveClineModelDisplayName(effectiveModelId);
+		if (explicitReasoningLabel) {
+			return `${modelName} (${explicitReasoningLabel})`;
+		}
+		const inheritedReasoningEffort = "";
 		return formatClineSelectedModelButtonText({
 			modelName,
-			reasoningEffort: effectiveReasoningEffort,
-			showReasoningEffort: Boolean(effectiveReasoningEffort),
+			reasoningEffort: inheritedReasoningEffort,
+			showReasoningEffort: Boolean(inheritedReasoningEffort),
 		});
-	}, [
-		card.clineModelId,
-		card.clineProviderId,
-		card.clineReasoningEffort,
-		defaultClineModelId,
-		defaultClineReasoningEffort,
-	]);
+	}, [card.clineSettings, defaultClineModelId]);
 	const taskAgentSettingsLabel = useMemo(() => {
 		const parts = [agentOverrideLabel, modelOverrideLabel].filter((value): value is string => Boolean(value));
 		return parts.length > 0 ? parts.join(" · ") : null;

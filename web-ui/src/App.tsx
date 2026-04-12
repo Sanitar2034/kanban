@@ -302,12 +302,8 @@ export default function App(): ReactElement {
 		setNewTaskBranchRef,
 		newTaskAgentId,
 		setNewTaskAgentId,
-		newTaskClineProviderId,
-		setNewTaskClineProviderId,
-		newTaskClineModelId,
-		setNewTaskClineModelId,
-		newTaskClineReasoningEffort,
-		setNewTaskClineReasoningEffort,
+		newTaskClineSettings,
+		setNewTaskClineSettings,
 		editingTaskId,
 		editTaskTitle,
 		setEditTaskTitle,
@@ -326,12 +322,8 @@ export default function App(): ReactElement {
 		setEditTaskBranchRef,
 		editTaskAgentId,
 		setEditTaskAgentId,
-		editTaskClineProviderId,
-		setEditTaskClineProviderId,
-		editTaskClineModelId,
-		setEditTaskClineModelId,
-		editTaskClineReasoningEffort,
-		setEditTaskClineReasoningEffort,
+		editTaskClineSettings,
+		setEditTaskClineSettings,
 		handleOpenCreateTask,
 		handleCancelCreateTask,
 		handleOpenEditTask,
@@ -745,10 +737,7 @@ export default function App(): ReactElement {
 			const globalReasoningEffort = runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? "";
 			const globalAgentId = runtimeProjectConfig?.selectedAgentId ?? null;
 			const hasExplicitTaskAgentSettings =
-				Boolean(selectedCard.card.agentId) ||
-				Boolean(selectedCard.card.clineProviderId?.trim()) ||
-				Boolean(selectedCard.card.clineModelId?.trim()) ||
-				Boolean(selectedCard.card.clineReasoningEffort);
+				selectedCard.card.agentId === "cline" || selectedCard.card.clineSettings !== undefined;
 			if (!hasExplicitTaskAgentSettings) {
 				return;
 			}
@@ -759,13 +748,24 @@ export default function App(): ReactElement {
 				modelId.trim().length > 0 && modelId.trim() !== globalModelId.trim() ? modelId : undefined;
 			const nextTaskReasoningEffort =
 				reasoningEffort && reasoningEffort !== globalReasoningEffort ? reasoningEffort : undefined;
+			const shouldPersistEmptyTaskClineSettings =
+				reasoningEffort === "" &&
+				(Boolean(globalReasoningEffort) ||
+					(selectedCard.card.clineSettings !== undefined &&
+						Object.keys(selectedCard.card.clineSettings).length === 0));
+			const nextTaskClineSettings =
+				nextTaskProviderId || nextTaskModelId || nextTaskReasoningEffort || shouldPersistEmptyTaskClineSettings
+					? {
+							...(nextTaskProviderId ? { providerId: nextTaskProviderId } : {}),
+							...(nextTaskModelId ? { modelId: nextTaskModelId } : {}),
+							...(nextTaskReasoningEffort ? { reasoningEffort: nextTaskReasoningEffort } : {}),
+						}
+					: undefined;
 			const taskId = selectedCard.card.id;
 			setBoard((currentBoard) => {
 				const result = applyTaskDetailClineSettingsSelection(currentBoard, taskId, {
 					agentId: nextTaskAgentId,
-					clineProviderId: nextTaskProviderId,
-					clineModelId: nextTaskModelId,
-					clineReasoningEffort: nextTaskReasoningEffort,
+					clineSettings: nextTaskClineSettings,
 				});
 				return result.updated ? result.board : currentBoard;
 			});
@@ -806,12 +806,8 @@ export default function App(): ReactElement {
 			onBranchRefChange={setEditTaskBranchRef}
 			agentId={editTaskAgentId}
 			onAgentIdChange={setEditTaskAgentId}
-			clineProviderId={editTaskClineProviderId}
-			onClineProviderIdChange={setEditTaskClineProviderId}
-			clineModelId={editTaskClineModelId}
-			onClineModelIdChange={setEditTaskClineModelId}
-			clineReasoningEffort={editTaskClineReasoningEffort}
-			onClineReasoningEffortChange={setEditTaskClineReasoningEffort}
+			clineSettings={editTaskClineSettings}
+			onClineSettingsChange={setEditTaskClineSettings}
 			defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
 			defaultProviderId={runtimeProjectConfig?.clineProviderSettings?.providerId ?? null}
 			defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
@@ -987,9 +983,6 @@ export default function App(): ReactElement {
 												}
 												onDragEnd={handleDragEnd}
 												defaultClineModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
-												defaultClineReasoningEffort={
-													runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? null
-												}
 											/>
 										)}
 									</div>
@@ -1163,12 +1156,8 @@ export default function App(): ReactElement {
 					onBranchRefChange={setNewTaskBranchRef}
 					agentId={newTaskAgentId}
 					onAgentIdChange={setNewTaskAgentId}
-					clineProviderId={newTaskClineProviderId}
-					onClineProviderIdChange={setNewTaskClineProviderId}
-					clineModelId={newTaskClineModelId}
-					onClineModelIdChange={setNewTaskClineModelId}
-					clineReasoningEffort={newTaskClineReasoningEffort}
-					onClineReasoningEffortChange={setNewTaskClineReasoningEffort}
+					clineSettings={newTaskClineSettings}
+					onClineSettingsChange={setNewTaskClineSettings}
 					defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
 					defaultProviderId={runtimeProjectConfig?.clineProviderSettings?.providerId ?? null}
 					defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}

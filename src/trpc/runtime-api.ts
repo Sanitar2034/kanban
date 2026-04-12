@@ -177,9 +177,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				//   2. body.agentId — the card's current per-task agent override.
 				//   3. scopedRuntimeConfig.selectedAgentId — the workspace-level default.
 				//
-				// clineProviderId / clineModelId / clineReasoningEffort (which LLM model
-				// and reasoning profile the Cline agent uses):
-				//   Always taken from the card's current fields. There is no
+				// clineSettings (which LLM model and reasoning profile the Cline agent uses):
+				//   Always taken from the card's current override object. There is no
 				//   session-level persistence for these;
 				//   if the user changes the model on the card, the next session launch
 				//   (including trash-restore) uses the updated values.
@@ -205,16 +204,13 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				}
 
 				if (useClinePath) {
-					const hasTaskLevelClineProviderOrModelOverride =
-						(body.clineProviderId?.trim().length ?? 0) > 0 || (body.clineModelId?.trim().length ?? 0) > 0;
+					const hasTaskLevelClineSettingsOverride = body.clineSettings !== undefined;
 					const clineLaunchConfig = await clineProviderService.resolveLaunchConfig({
-						providerIdOverride: body.clineProviderId ?? undefined,
-						modelIdOverride: body.clineModelId ?? undefined,
-						...(body.clineReasoningEffort !== undefined || hasTaskLevelClineProviderOrModelOverride
+						providerIdOverride: body.clineSettings?.providerId ?? undefined,
+						modelIdOverride: body.clineSettings?.modelId ?? undefined,
+						...(hasTaskLevelClineSettingsOverride
 							? {
-									reasoningEffortOverride:
-										body.clineReasoningEffort ??
-										(hasTaskLevelClineProviderOrModelOverride ? null : undefined),
+									reasoningEffortOverride: body.clineSettings?.reasoningEffort ?? null,
 								}
 							: {}),
 					});

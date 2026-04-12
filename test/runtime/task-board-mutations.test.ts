@@ -117,7 +117,7 @@ describe("per-task agent/model/provider overrides", () => {
 		expect(created.task.agentId).toBe("claude");
 	});
 
-	it("persists clineProviderId, clineModelId, and clineReasoningEffort on the card when creating a task", () => {
+	it("persists task-level Cline settings on the card when creating a task", () => {
 		const created = addTaskToColumn(
 			createBoard(),
 			"backlog",
@@ -125,17 +125,21 @@ describe("per-task agent/model/provider overrides", () => {
 				prompt: "Dumb task",
 				baseRef: "main",
 				agentId: "cline",
-				clineProviderId: "anthropic",
-				clineModelId: "claude-sonnet-4-20250514",
-				clineReasoningEffort: "high",
+				clineSettings: {
+					providerId: "anthropic",
+					modelId: "claude-sonnet-4-20250514",
+					reasoningEffort: "high",
+				},
 			},
 			() => "aaaaa111",
 		);
 
 		expect(created.task.agentId).toBe("cline");
-		expect(created.task.clineProviderId).toBe("anthropic");
-		expect(created.task.clineModelId).toBe("claude-sonnet-4-20250514");
-		expect(created.task.clineReasoningEffort).toBe("high");
+		expect(created.task.clineSettings).toEqual({
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-20250514",
+			reasoningEffort: "high",
+		});
 	});
 
 	it("leaves override fields undefined when not provided", () => {
@@ -147,9 +151,7 @@ describe("per-task agent/model/provider overrides", () => {
 		);
 
 		expect(created.task.agentId).toBeUndefined();
-		expect(created.task.clineProviderId).toBeUndefined();
-		expect(created.task.clineModelId).toBeUndefined();
-		expect(created.task.clineReasoningEffort).toBeUndefined();
+		expect(created.task.clineSettings).toBeUndefined();
 	});
 
 	it("updates agentId from undefined to a value", () => {
@@ -170,17 +172,17 @@ describe("per-task agent/model/provider overrides", () => {
 		const created = addTaskToColumn(
 			createBoard(),
 			"backlog",
-			{ prompt: "Task", baseRef: "main", clineModelId: "old-model" },
+			{ prompt: "Task", baseRef: "main", clineSettings: { modelId: "old-model" } },
 			() => "aaaaa111",
 		);
 
 		const updated = updateTask(created.board, created.task.id, {
 			prompt: "Task",
 			baseRef: "main",
-			clineModelId: "new-model",
+			clineSettings: { modelId: "new-model" },
 		});
 
-		expect(updated.task?.clineModelId).toBe("new-model");
+		expect(updated.task?.clineSettings?.modelId).toBe("new-model");
 	});
 
 	it("preserves existing overrides when update input omits them (undefined)", () => {
@@ -191,9 +193,11 @@ describe("per-task agent/model/provider overrides", () => {
 				prompt: "Task",
 				baseRef: "main",
 				agentId: "claude",
-				clineProviderId: "anthropic",
-				clineModelId: "claude-sonnet-4-20250514",
-				clineReasoningEffort: "low",
+				clineSettings: {
+					providerId: "anthropic",
+					modelId: "claude-sonnet-4-20250514",
+					reasoningEffort: "low",
+				},
 			},
 			() => "aaaaa111",
 		);
@@ -201,13 +205,15 @@ describe("per-task agent/model/provider overrides", () => {
 		const updated = updateTask(created.board, created.task.id, {
 			prompt: "Updated prompt",
 			baseRef: "main",
-			// agentId, clineProviderId, clineModelId all undefined — should preserve
+			// agentId and clineSettings are undefined, so existing overrides should persist
 		});
 
 		expect(updated.task?.agentId).toBe("claude");
-		expect(updated.task?.clineProviderId).toBe("anthropic");
-		expect(updated.task?.clineModelId).toBe("claude-sonnet-4-20250514");
-		expect(updated.task?.clineReasoningEffort).toBe("low");
+		expect(updated.task?.clineSettings).toEqual({
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-20250514",
+			reasoningEffort: "low",
+		});
 	});
 
 	it("clears overrides when update input provides null", () => {
@@ -218,9 +224,11 @@ describe("per-task agent/model/provider overrides", () => {
 				prompt: "Task",
 				baseRef: "main",
 				agentId: "codex",
-				clineProviderId: "openai",
-				clineModelId: "gpt-4",
-				clineReasoningEffort: "medium",
+				clineSettings: {
+					providerId: "openai",
+					modelId: "gpt-4",
+					reasoningEffort: "medium",
+				},
 			},
 			() => "aaaaa111",
 		);
@@ -229,15 +237,11 @@ describe("per-task agent/model/provider overrides", () => {
 			prompt: "Task",
 			baseRef: "main",
 			agentId: null,
-			clineProviderId: null,
-			clineModelId: null,
-			clineReasoningEffort: null,
+			clineSettings: null,
 		});
 
 		expect(updated.task?.agentId).toBeUndefined();
-		expect(updated.task?.clineProviderId).toBeUndefined();
-		expect(updated.task?.clineModelId).toBeUndefined();
-		expect(updated.task?.clineReasoningEffort).toBeUndefined();
+		expect(updated.task?.clineSettings).toBeUndefined();
 	});
 
 	it("preserves overrides across move operations", () => {
@@ -248,9 +252,11 @@ describe("per-task agent/model/provider overrides", () => {
 				prompt: "Movable task",
 				baseRef: "main",
 				agentId: "claude",
-				clineProviderId: "anthropic",
-				clineModelId: "claude-sonnet-4-20250514",
-				clineReasoningEffort: "high",
+				clineSettings: {
+					providerId: "anthropic",
+					modelId: "claude-sonnet-4-20250514",
+					reasoningEffort: "high",
+				},
 			},
 			() => "aaaaa111",
 		);
@@ -259,8 +265,10 @@ describe("per-task agent/model/provider overrides", () => {
 
 		expect(moved.moved).toBe(true);
 		expect(moved.task?.agentId).toBe("claude");
-		expect(moved.task?.clineProviderId).toBe("anthropic");
-		expect(moved.task?.clineModelId).toBe("claude-sonnet-4-20250514");
-		expect(moved.task?.clineReasoningEffort).toBe("high");
+		expect(moved.task?.clineSettings).toEqual({
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-20250514",
+			reasoningEffort: "high",
+		});
 	});
 });
