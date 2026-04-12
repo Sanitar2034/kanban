@@ -63,12 +63,12 @@ import {
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeClineReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
 import { useWorkspacePersistence } from "@/runtime/use-workspace-persistence";
 import { saveWorkspaceState } from "@/runtime/workspace-state-query";
-import { findCardSelection, updateTask } from "@/state/board-state";
+import { applyTaskDetailClineSettingsSelection, findCardSelection } from "@/state/board-state";
 import {
 	getTaskWorkspaceInfo,
 	getTaskWorkspaceSnapshot,
@@ -306,6 +306,8 @@ export default function App(): ReactElement {
 		setNewTaskClineProviderId,
 		newTaskClineModelId,
 		setNewTaskClineModelId,
+		newTaskClineReasoningEffort,
+		setNewTaskClineReasoningEffort,
 		editingTaskId,
 		editTaskTitle,
 		setEditTaskTitle,
@@ -328,6 +330,8 @@ export default function App(): ReactElement {
 		setEditTaskClineProviderId,
 		editTaskClineModelId,
 		setEditTaskClineModelId,
+		editTaskClineReasoningEffort,
+		setEditTaskClineReasoningEffort,
 		handleOpenCreateTask,
 		handleCancelCreateTask,
 		handleOpenEditTask,
@@ -720,47 +724,53 @@ export default function App(): ReactElement {
 		selectedCard?.card.id,
 		latestTaskChatMessage,
 	);
-	// Dual-write handler: when the user changes the model from the task detail view,
-	// the new model is persisted in two places:
-	//   1. Global provider settings — handled upstream by persistClineModelSettings()
-	//      in cline-agent-chat-panel.tsx, which calls saveProviderSettings(). This
-	//      updates the shared default so future tasks (and existing tasks that inherit
-	//      defaults) use the new model.
-	//   2. Per-task override — handled here. We stamp clineProviderId + clineModelId
-	//      directly onto the task card so it keeps an explicit record of the model
-	//      that was chosen while the task was open.
-	//
-	// agentId is hardcoded to "cline" because the detail-view model picker is only
-	// rendered inside the Cline agent chat panel — it is never shown for other agent
-	// types. If the card previously had agentId=undefined (inheriting the global
-	// default), this explicitly pins it to "cline", which is correct: the user just
-	// interacted with the Cline model picker, confirming the task is a Cline task.
-	const handleClineModelChangedForTask = useCallback(
-		(providerId: string, modelId: string) => {
+	const handleClineTaskSettingsChangedForTask = useCallback(
+		({
+			providerId,
+			modelId,
+			reasoningEffort,
+		}: {
+			providerId: string;
+			modelId: string;
+			reasoningEffort: RuntimeClineReasoningEffort | "";
+		}) => {
 			if (!selectedCard) {
 				return;
 			}
+			const globalProviderId =
+				runtimeProjectConfig?.clineProviderSettings?.providerId ??
+				runtimeProjectConfig?.clineProviderSettings?.oauthProvider ??
+				"";
+			const globalModelId = runtimeProjectConfig?.clineProviderSettings?.modelId ?? "";
+			const globalReasoningEffort = runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? "";
+			const globalAgentId = runtimeProjectConfig?.selectedAgentId ?? null;
+			const hasExplicitTaskAgentSettings =
+				Boolean(selectedCard.card.agentId) ||
+				Boolean(selectedCard.card.clineProviderId?.trim()) ||
+				Boolean(selectedCard.card.clineModelId?.trim()) ||
+				Boolean(selectedCard.card.clineReasoningEffort);
+			if (!hasExplicitTaskAgentSettings) {
+				return;
+			}
+			const nextTaskAgentId = globalAgentId === "cline" ? undefined : "cline";
+			const nextTaskProviderId =
+				providerId.trim().length > 0 && providerId.trim() !== globalProviderId.trim() ? providerId : undefined;
+			const nextTaskModelId =
+				modelId.trim().length > 0 && modelId.trim() !== globalModelId.trim() ? modelId : undefined;
+			const nextTaskReasoningEffort =
+				reasoningEffort && reasoningEffort !== globalReasoningEffort ? reasoningEffort : undefined;
 			const taskId = selectedCard.card.id;
 			setBoard((currentBoard) => {
-				const selection = findCardSelection(currentBoard, taskId);
-				if (!selection) {
-					return currentBoard;
-				}
-				const result = updateTask(currentBoard, taskId, {
-					prompt: selection.card.prompt,
-					startInPlanMode: selection.card.startInPlanMode,
-					autoReviewEnabled: selection.card.autoReviewEnabled,
-					autoReviewMode: selection.card.autoReviewMode,
-					images: selection.card.images,
-					agentId: "cline",
-					clineProviderId: providerId || undefined,
-					clineModelId: modelId || undefined,
-					baseRef: selection.card.baseRef,
+				const result = applyTaskDetailClineSettingsSelection(currentBoard, taskId, {
+					agentId: nextTaskAgentId,
+					clineProviderId: nextTaskProviderId,
+					clineModelId: nextTaskModelId,
+					clineReasoningEffort: nextTaskReasoningEffort,
 				});
 				return result.updated ? result.board : currentBoard;
 			});
 		},
-		[selectedCard, setBoard],
+		[runtimeProjectConfig, selectedCard, setBoard],
 	);
 
 	const handleCreateDialogOpenChange = useCallback(
@@ -800,6 +810,8 @@ export default function App(): ReactElement {
 			onClineProviderIdChange={setEditTaskClineProviderId}
 			clineModelId={editTaskClineModelId}
 			onClineModelIdChange={setEditTaskClineModelId}
+			clineReasoningEffort={editTaskClineReasoningEffort}
+			onClineReasoningEffortChange={setEditTaskClineReasoningEffort}
 			defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
 			defaultProviderId={runtimeProjectConfig?.clineProviderSettings?.providerId ?? null}
 			defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
@@ -974,6 +986,7 @@ export default function App(): ReactElement {
 													selectedCard ? undefined : handleProgrammaticCardMoveReady
 												}
 												onDragEnd={handleDragEnd}
+												defaultClineModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
 												defaultClineReasoningEffort={
 													runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? null
 												}
@@ -1092,7 +1105,7 @@ export default function App(): ReactElement {
 									onBottomTerminalToggleExpand={handleToggleExpandDetailTerminal}
 									isDocumentVisible={isDocumentVisible}
 									onClineSettingsSaved={refreshRuntimeProjectConfig}
-									onClineModelChanged={handleClineModelChangedForTask}
+									onTaskClineSettingsChanged={handleClineTaskSettingsChangedForTask}
 								/>
 							</div>
 						) : null}
@@ -1154,6 +1167,8 @@ export default function App(): ReactElement {
 					onClineProviderIdChange={setNewTaskClineProviderId}
 					clineModelId={newTaskClineModelId}
 					onClineModelIdChange={setNewTaskClineModelId}
+					clineReasoningEffort={newTaskClineReasoningEffort}
+					onClineReasoningEffortChange={setNewTaskClineReasoningEffort}
 					defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
 					defaultProviderId={runtimeProjectConfig?.clineProviderSettings?.providerId ?? null}
 					defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}

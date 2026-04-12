@@ -113,12 +113,18 @@ function HookHarness({
 	workspaceId,
 	selectedAgentId,
 	config,
+	taskClineProviderId,
+	taskClineModelId,
+	taskClineReasoningEffort,
 	onSnapshot,
 }: {
 	open: boolean;
 	workspaceId: string | null;
 	selectedAgentId: RuntimeConfigResponse["selectedAgentId"];
 	config: RuntimeConfigResponse | null;
+	taskClineProviderId?: string;
+	taskClineModelId?: string;
+	taskClineReasoningEffort?: RuntimeClineReasoningEffort;
 	onSnapshot: (snapshot: HookSnapshot) => void;
 }): null {
 	const state = useRuntimeSettingsClineController({
@@ -126,6 +132,9 @@ function HookHarness({
 		workspaceId,
 		selectedAgentId,
 		config,
+		taskClineProviderId,
+		taskClineModelId,
+		taskClineReasoningEffort,
 	});
 
 	useEffect(() => {
@@ -447,6 +456,113 @@ describe("useRuntimeSettingsClineController", () => {
 
 		expect(requireSnapshot(latestSnapshot).providerId).toBe("openrouter");
 		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("https://openrouter.ai/api/v1");
+		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
+	});
+
+	it("treats task-level provider, model, and reasoning overrides as the clean baseline", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openrouter",
+			modelId: "openai/gpt-5",
+			reasoningEffort: "high",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+		fetchClineProviderCatalogMock.mockResolvedValue([
+			{
+				id: "openrouter",
+				name: "OpenRouter",
+				oauthSupported: false,
+				enabled: true,
+				defaultModelId: "openai/gpt-5",
+				baseUrl: "https://openrouter.ai/api/v1",
+			},
+		]);
+		fetchClineProviderModelsMock.mockResolvedValue([
+			{
+				id: "anthropic/claude-sonnet-4.6",
+				name: "Claude Sonnet 4.6",
+				contextWindow: null,
+				maxOutputTokens: null,
+				supportsReasoningEffort: true,
+			},
+		]);
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					taskClineProviderId="openrouter"
+					taskClineModelId="anthropic/claude-sonnet-4.6"
+					taskClineReasoningEffort="low"
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		await act(async () => {
+			await flushAsyncWork();
+		});
+
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("openrouter");
+		expect(requireSnapshot(latestSnapshot).modelId).toBe("anthropic/claude-sonnet-4.6");
+		expect(requireSnapshot(latestSnapshot).reasoningEffort).toBe("low");
+		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
+	});
+
+	it("treats task-level provider or model overrides with no reasoning override as model default", async () => {
+		const config = createRuntimeConfigResponse({
+			providerId: "openrouter",
+			modelId: "openai/gpt-5",
+			reasoningEffort: "high",
+		});
+		let latestSnapshot: HookSnapshot | null = null;
+		fetchClineProviderCatalogMock.mockResolvedValue([
+			{
+				id: "openrouter",
+				name: "OpenRouter",
+				oauthSupported: false,
+				enabled: true,
+				defaultModelId: "openai/gpt-5",
+				baseUrl: "https://openrouter.ai/api/v1",
+			},
+		]);
+		fetchClineProviderModelsMock.mockResolvedValue([
+			{
+				id: "anthropic/claude-sonnet-4.6",
+				name: "Claude Sonnet 4.6",
+				contextWindow: null,
+				maxOutputTokens: null,
+				supportsReasoningEffort: true,
+			},
+		]);
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					selectedAgentId="cline"
+					config={config}
+					taskClineModelId="anthropic/claude-sonnet-4.6"
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+
+		await act(async () => {
+			await flushAsyncWork();
+		});
+
+		expect(requireSnapshot(latestSnapshot).modelId).toBe("anthropic/claude-sonnet-4.6");
+		expect(requireSnapshot(latestSnapshot).reasoningEffort).toBe("");
 		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
 	});
 

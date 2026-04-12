@@ -73,6 +73,8 @@ export function TaskInlineCreateCard({
 	onClineProviderIdChange,
 	clineModelId,
 	onClineModelIdChange,
+	clineReasoningEffort,
+	onClineReasoningEffortChange,
 	defaultAgentId,
 	defaultProviderId,
 	defaultModelId,
@@ -107,6 +109,8 @@ export function TaskInlineCreateCard({
 	onClineProviderIdChange?: (value: string | undefined) => void;
 	clineModelId?: string | undefined;
 	onClineModelIdChange?: (value: string | undefined) => void;
+	clineReasoningEffort?: RuntimeClineReasoningEffort | undefined;
+	onClineReasoningEffortChange?: (value: RuntimeClineReasoningEffort | undefined) => void;
 	/** Default agent ID from runtimeConfig.selectedAgentId, used to show "Default (AgentName)" in picker */
 	defaultAgentId?: RuntimeAgentId | null;
 	/** Default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
@@ -326,6 +330,8 @@ export function TaskInlineCreateCard({
 						onClineProviderIdChange={onClineProviderIdChange}
 						clineModelId={clineModelId}
 						onClineModelIdChange={onClineModelIdChange}
+						clineReasoningEffort={clineReasoningEffort}
+						onClineReasoningEffortChange={onClineReasoningEffortChange}
 						agentOptions={agentOptions}
 						clineProviderOptions={clineProviderOptions}
 						clineModelOptions={clineModelOptions}

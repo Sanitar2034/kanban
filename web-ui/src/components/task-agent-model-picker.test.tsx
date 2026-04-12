@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UseTaskAgentModelPickerResult } from "@/components/task-agent-model-picker";
-import type { RuntimeAgentId, RuntimeClineProviderCatalogItem } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeClineProviderCatalogItem, RuntimeClineProviderModel } from "@/runtime/types";
 
 const fetchClineProviderCatalogMock = vi.hoisted(() => vi.fn());
 const fetchClineProviderModelsMock = vi.hoisted(() => vi.fn());
@@ -468,5 +468,162 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 		});
 
 		expect(document.body.textContent).toContain("Reasoning effort");
+	});
+
+	it("retains inherited reasoning effort until model capability data is available", async () => {
+		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+
+		const renderPicker = async (providerModels: RuntimeClineProviderModel[]) => {
+			await act(async () =>
+				root.render(
+					<TaskAgentModelPicker
+						agentId={"cline" as RuntimeAgentId}
+						onAgentIdChange={() => {}}
+						clineProviderId={undefined}
+						onClineProviderIdChange={() => {}}
+						clineModelId={undefined}
+						onClineModelIdChange={() => {}}
+						agentOptions={[{ value: "", label: "Cline" }]}
+						clineProviderOptions={[{ value: "", label: "Cline" }]}
+						clineModelOptions={[
+							{ value: "", label: "GPT-5.4" },
+							{ value: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" },
+						]}
+						effectiveDefaultModelId="openai/gpt-5.4"
+						providerModels={providerModels}
+						isLoadingProviders={false}
+						isLoadingModels={false}
+						defaultAgentId={"cline" as RuntimeAgentId}
+						defaultProviderId="cline"
+						defaultReasoningEffort="high"
+					/>,
+				),
+			);
+		};
+
+		await renderPicker([]);
+
+		const settingsTrigger = Array.from(container.querySelectorAll("button")).find((button) =>
+			button.textContent?.includes("Override Agent Settings"),
+		);
+		expect(settingsTrigger).not.toBeUndefined();
+		await act(async () => {
+			(settingsTrigger as HTMLButtonElement).click();
+		});
+
+		await renderPicker([
+			{ id: "openai/gpt-5.4", name: "GPT-5.4", supportsReasoningEffort: true },
+			{ id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex", supportsReasoningEffort: true },
+		]);
+
+		expect(container.textContent).toContain("GPT-5.4 (High)");
+	});
+
+	it("persists a reasoning-only override when model stays on default", async () => {
+		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+		const onClineModelIdChange = vi.fn();
+		const onClineReasoningEffortChange = vi.fn();
+
+		await act(async () =>
+			root.render(
+				<TaskAgentModelPicker
+					agentId={"cline" as RuntimeAgentId}
+					onAgentIdChange={() => {}}
+					clineProviderId={undefined}
+					onClineProviderIdChange={() => {}}
+					clineModelId={undefined}
+					onClineModelIdChange={onClineModelIdChange}
+					clineReasoningEffort={undefined}
+					onClineReasoningEffortChange={onClineReasoningEffortChange}
+					agentOptions={[{ value: "", label: "Cline" }]}
+					clineProviderOptions={[{ value: "", label: "Cline" }]}
+					clineModelOptions={[
+						{ value: "", label: "GPT-5.4" },
+						{ value: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" },
+					]}
+					effectiveDefaultModelId="openai/gpt-5.4"
+					providerModels={[
+						{ id: "openai/gpt-5.4", name: "GPT-5.4", supportsReasoningEffort: true },
+						{ id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex", supportsReasoningEffort: true },
+					]}
+					isLoadingProviders={false}
+					isLoadingModels={false}
+					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultProviderId="cline"
+					defaultReasoningEffort="high"
+				/>,
+			),
+		);
+
+		const settingsTrigger = Array.from(container.querySelectorAll("button")).find((button) =>
+			button.textContent?.includes("Override Agent Settings"),
+		);
+		expect(settingsTrigger).not.toBeUndefined();
+		await act(async () => {
+			(settingsTrigger as HTMLButtonElement).click();
+		});
+
+		const modelTrigger = document.getElementById("cline-chat-model-picker");
+		expect(modelTrigger).not.toBeNull();
+		await act(async () => {
+			(modelTrigger as HTMLElement).click();
+		});
+
+		const lowReasoningButton = Array.from(document.querySelectorAll("button")).find((button) =>
+			button.textContent?.trim().toLowerCase().startsWith("low"),
+		);
+		expect(lowReasoningButton).not.toBeUndefined();
+		await act(async () => {
+			(lowReasoningButton as HTMLButtonElement).click();
+		});
+
+		expect(onClineModelIdChange).not.toHaveBeenCalled();
+		expect(onClineReasoningEffortChange).toHaveBeenLastCalledWith("low");
+	});
+
+	it("does not inherit the global reasoning effort for explicit task model overrides", async () => {
+		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+
+		await act(async () =>
+			root.render(
+				<TaskAgentModelPicker
+					agentId={"cline" as RuntimeAgentId}
+					onAgentIdChange={() => {}}
+					clineProviderId={undefined}
+					onClineProviderIdChange={() => {}}
+					clineModelId="openai/gpt-5.3-codex"
+					onClineModelIdChange={() => {}}
+					clineReasoningEffort={undefined}
+					onClineReasoningEffortChange={() => {}}
+					agentOptions={[{ value: "", label: "Cline" }]}
+					clineProviderOptions={[{ value: "", label: "Cline" }]}
+					clineModelOptions={[
+						{ value: "", label: "GPT-5.4" },
+						{ value: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" },
+					]}
+					effectiveDefaultModelId="openai/gpt-5.4"
+					providerModels={[
+						{ id: "openai/gpt-5.4", name: "GPT-5.4", supportsReasoningEffort: true },
+						{ id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex", supportsReasoningEffort: true },
+					]}
+					isLoadingProviders={false}
+					isLoadingModels={false}
+					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultProviderId="cline"
+					defaultReasoningEffort="high"
+				/>,
+			),
+		);
+
+		const settingsTrigger = Array.from(container.querySelectorAll("button")).find((button) =>
+			button.textContent?.includes("Override Agent Settings"),
+		);
+		expect(settingsTrigger).not.toBeUndefined();
+		await act(async () => {
+			(settingsTrigger as HTMLButtonElement).click();
+		});
+
+		expect(container.textContent).toContain("GPT-5.3 Codex");
+		expect(container.textContent).not.toContain("GPT-5.3 Codex (High)");
 	});
 });

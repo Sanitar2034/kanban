@@ -7,7 +7,7 @@ import {
 	TASK_AUTO_REVIEW_MODE_STORAGE_KEY,
 	TASK_START_IN_PLAN_MODE_STORAGE_KEY,
 } from "@/hooks/app-utils";
-import type { RuntimeAgentId } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeClineReasoningEffort } from "@/runtime/types";
 import { addTaskToColumnWithResult, findCardSelection, updateTask, updateTaskTitle } from "@/state/board-state";
 import { toTelemetrySelectedAgentId, trackTaskCreated } from "@/telemetry/events";
 import type { BoardCard, BoardData, TaskAutoReviewMode, TaskImage } from "@/types";
@@ -56,6 +56,8 @@ export interface UseTaskEditorResult {
 	setNewTaskClineProviderId: Dispatch<SetStateAction<string | undefined>>;
 	newTaskClineModelId: string | undefined;
 	setNewTaskClineModelId: Dispatch<SetStateAction<string | undefined>>;
+	newTaskClineReasoningEffort: RuntimeClineReasoningEffort | undefined;
+	setNewTaskClineReasoningEffort: Dispatch<SetStateAction<RuntimeClineReasoningEffort | undefined>>;
 	editingTaskId: string | null;
 	editTaskTitle: string;
 	setEditTaskTitle: Dispatch<SetStateAction<string>>;
@@ -78,6 +80,8 @@ export interface UseTaskEditorResult {
 	setEditTaskClineProviderId: Dispatch<SetStateAction<string | undefined>>;
 	editTaskClineModelId: string | undefined;
 	setEditTaskClineModelId: Dispatch<SetStateAction<string | undefined>>;
+	editTaskClineReasoningEffort: RuntimeClineReasoningEffort | undefined;
+	setEditTaskClineReasoningEffort: Dispatch<SetStateAction<RuntimeClineReasoningEffort | undefined>>;
 	handleOpenCreateTask: () => void;
 	handleCancelCreateTask: () => void;
 	handleOpenEditTask: (task: BoardCard, options?: OpenEditTaskOptions) => void;
@@ -133,9 +137,15 @@ export function useTaskEditor({
 	const [newTaskAgentId, setNewTaskAgentId] = useState<RuntimeAgentId | undefined>(undefined);
 	const [newTaskClineProviderId, setNewTaskClineProviderId] = useState<string | undefined>(undefined);
 	const [newTaskClineModelId, setNewTaskClineModelId] = useState<string | undefined>(undefined);
+	const [newTaskClineReasoningEffort, setNewTaskClineReasoningEffort] = useState<
+		RuntimeClineReasoningEffort | undefined
+	>(undefined);
 	const [editTaskAgentId, setEditTaskAgentId] = useState<RuntimeAgentId | undefined>(undefined);
 	const [editTaskClineProviderId, setEditTaskClineProviderId] = useState<string | undefined>(undefined);
 	const [editTaskClineModelId, setEditTaskClineModelId] = useState<string | undefined>(undefined);
+	const [editTaskClineReasoningEffort, setEditTaskClineReasoningEffort] = useState<
+		RuntimeClineReasoningEffort | undefined
+	>(undefined);
 
 	const lastCreatedTaskBranchRef = useMemo(() => {
 		if (!currentProjectId) {
@@ -221,6 +231,7 @@ export function useTaskEditor({
 		setNewTaskAgentId(undefined);
 		setNewTaskClineProviderId(undefined);
 		setNewTaskClineModelId(undefined);
+		setNewTaskClineReasoningEffort(undefined);
 		setIsInlineTaskCreateOpen(true);
 	}, []);
 
@@ -233,6 +244,7 @@ export function useTaskEditor({
 		setNewTaskAgentId(undefined);
 		setNewTaskClineProviderId(undefined);
 		setNewTaskClineModelId(undefined);
+		setNewTaskClineReasoningEffort(undefined);
 	}, [resolvedDefaultTaskBranchRef]);
 
 	const handleOpenEditTask = useCallback(
@@ -257,6 +269,7 @@ export function useTaskEditor({
 			setEditTaskAgentId(task.agentId);
 			setEditTaskClineProviderId(task.clineProviderId);
 			setEditTaskClineModelId(task.clineModelId);
+			setEditTaskClineReasoningEffort(task.clineReasoningEffort);
 		},
 		[resolvedDefaultTaskBranchRef, setSelectedTaskId],
 	);
@@ -299,6 +312,7 @@ export function useTaskEditor({
 				agentId: editTaskAgentId,
 				clineProviderId: editTaskClineProviderId,
 				clineModelId: editTaskClineModelId,
+				clineReasoningEffort: editTaskClineReasoningEffort,
 				baseRef,
 			});
 			return updated.updated ? updated.board : currentBoard;
@@ -314,6 +328,7 @@ export function useTaskEditor({
 		setEditTaskAgentId(undefined);
 		setEditTaskClineProviderId(undefined);
 		setEditTaskClineModelId(undefined);
+		setEditTaskClineReasoningEffort(undefined);
 		return savedTaskId;
 	}, [
 		editTaskAgentId,
@@ -321,6 +336,7 @@ export function useTaskEditor({
 		editTaskAutoReviewMode,
 		editTaskBranchRef,
 		editTaskClineModelId,
+		editTaskClineReasoningEffort,
 		editTaskClineProviderId,
 		editTaskPrompt,
 		editTaskImages,
@@ -370,6 +386,7 @@ export function useTaskEditor({
 				agentId: newTaskAgentId,
 				clineProviderId: newTaskClineProviderId,
 				clineModelId: newTaskClineModelId,
+				clineReasoningEffort: newTaskClineReasoningEffort,
 				baseRef,
 			});
 			setBoard(created.board);
@@ -392,6 +409,7 @@ export function useTaskEditor({
 			setNewTaskAgentId(undefined);
 			setNewTaskClineProviderId(undefined);
 			setNewTaskClineModelId(undefined);
+			setNewTaskClineReasoningEffort(undefined);
 			if (!options?.keepDialogOpen) {
 				setIsInlineTaskCreateOpen(false);
 			}
@@ -405,6 +423,7 @@ export function useTaskEditor({
 			newTaskAutoReviewMode,
 			newTaskBranchRef,
 			newTaskClineModelId,
+			newTaskClineReasoningEffort,
 			newTaskClineProviderId,
 			newTaskImages,
 			newTaskPrompt,
@@ -415,6 +434,7 @@ export function useTaskEditor({
 			setBoard,
 			setNewTaskAgentId,
 			setNewTaskClineModelId,
+			setNewTaskClineReasoningEffort,
 			setNewTaskClineProviderId,
 		],
 	);
@@ -441,6 +461,7 @@ export function useTaskEditor({
 					agentId: newTaskAgentId,
 					clineProviderId: newTaskClineProviderId,
 					clineModelId: newTaskClineModelId,
+					clineReasoningEffort: newTaskClineReasoningEffort,
 					baseRef,
 				});
 				updatedBoard = created.board;
@@ -468,6 +489,7 @@ export function useTaskEditor({
 			setNewTaskAgentId(undefined);
 			setNewTaskClineProviderId(undefined);
 			setNewTaskClineModelId(undefined);
+			setNewTaskClineReasoningEffort(undefined);
 			if (!options?.keepDialogOpen) {
 				setIsInlineTaskCreateOpen(false);
 			}
@@ -481,6 +503,7 @@ export function useTaskEditor({
 			newTaskAutoReviewMode,
 			newTaskBranchRef,
 			newTaskClineModelId,
+			newTaskClineReasoningEffort,
 			newTaskClineProviderId,
 			newTaskImages,
 			newTaskStartInPlanMode,
@@ -489,6 +512,7 @@ export function useTaskEditor({
 			setBoard,
 			setNewTaskAgentId,
 			setNewTaskClineModelId,
+			setNewTaskClineReasoningEffort,
 			setNewTaskClineProviderId,
 		],
 	);
@@ -508,10 +532,12 @@ export function useTaskEditor({
 		setEditTaskAgentId(undefined);
 		setEditTaskClineProviderId(undefined);
 		setEditTaskClineModelId(undefined);
+		setEditTaskClineReasoningEffort(undefined);
 		setNewTaskImages([]);
 		setNewTaskAgentId(undefined);
 		setNewTaskClineProviderId(undefined);
 		setNewTaskClineModelId(undefined);
+		setNewTaskClineReasoningEffort(undefined);
 	}, []);
 
 	return {
@@ -537,6 +563,8 @@ export function useTaskEditor({
 		setNewTaskClineProviderId,
 		newTaskClineModelId,
 		setNewTaskClineModelId,
+		newTaskClineReasoningEffort,
+		setNewTaskClineReasoningEffort,
 		editingTaskId,
 		editTaskTitle,
 		setEditTaskTitle,
@@ -559,6 +587,8 @@ export function useTaskEditor({
 		setEditTaskClineProviderId,
 		editTaskClineModelId,
 		setEditTaskClineModelId,
+		editTaskClineReasoningEffort,
+		setEditTaskClineReasoningEffort,
 		handleOpenCreateTask,
 		handleCancelCreateTask,
 		handleOpenEditTask,

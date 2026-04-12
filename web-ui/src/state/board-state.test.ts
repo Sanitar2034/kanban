@@ -5,6 +5,7 @@ import {
 	addTaskDependency,
 	addTaskToColumn,
 	applyDragResult,
+	applyTaskDetailClineSettingsSelection,
 	clearColumnTasks,
 	disableTaskAutoReview,
 	getTaskColumnId,
@@ -602,6 +603,7 @@ describe("board dependency state", () => {
 			agentId: "codex",
 			clineProviderId: "my-provider",
 			clineModelId: "my-model",
+			clineReasoningEffort: "high",
 			baseRef: "main",
 		});
 		const task = board.columns.find((column) => column.id === "review")?.cards[0];
@@ -612,6 +614,7 @@ describe("board dependency state", () => {
 		expect(task.agentId).toBe("codex");
 		expect(task.clineProviderId).toBe("my-provider");
 		expect(task.clineModelId).toBe("my-model");
+		expect(task.clineReasoningEffort).toBe("high");
 
 		const disabled = disableTaskAutoReview(board, task.id);
 		expect(disabled.updated).toBe(true);
@@ -621,5 +624,85 @@ describe("board dependency state", () => {
 		expect(updatedTask?.agentId).toBe("codex");
 		expect(updatedTask?.clineProviderId).toBe("my-provider");
 		expect(updatedTask?.clineModelId).toBe("my-model");
+		expect(updatedTask?.clineReasoningEffort).toBe("high");
+	});
+
+	it("does not create task model overrides for tasks inheriting global agent settings", () => {
+		let board = createInitialBoardData();
+		board = addTaskToColumn(board, "backlog", {
+			prompt: "Task with inherited settings",
+			baseRef: "main",
+		});
+		const task = board.columns.find((column) => column.id === "backlog")?.cards[0];
+		expect(task).toBeDefined();
+		if (!task) {
+			throw new Error("Expected backlog task to exist");
+		}
+
+		const result = applyTaskDetailClineSettingsSelection(board, task.id, {
+			agentId: "cline",
+			clineProviderId: "openrouter",
+			clineModelId: "anthropic/claude-opus-4.6",
+		});
+		expect(result.updated).toBe(false);
+		const unchangedTask = result.board.columns.find((column) => column.id === "backlog")?.cards[0];
+		expect(unchangedTask?.agentId).toBeUndefined();
+		expect(unchangedTask?.clineProviderId).toBeUndefined();
+		expect(unchangedTask?.clineModelId).toBeUndefined();
+		expect(unchangedTask?.clineReasoningEffort).toBeUndefined();
+	});
+
+	it("updates task model overrides when the task already has explicit task-level settings", () => {
+		let board = createInitialBoardData();
+		board = addTaskToColumn(board, "backlog", {
+			prompt: "Task with explicit override",
+			agentId: "cline",
+			clineProviderId: "openrouter",
+			clineModelId: "anthropic/claude-sonnet-4.6",
+			clineReasoningEffort: "low",
+			baseRef: "main",
+		});
+		const task = board.columns.find((column) => column.id === "backlog")?.cards[0];
+		expect(task).toBeDefined();
+		if (!task) {
+			throw new Error("Expected backlog task to exist");
+		}
+
+		const result = applyTaskDetailClineSettingsSelection(board, task.id, {
+			agentId: "cline",
+			clineProviderId: "openrouter",
+			clineModelId: "anthropic/claude-opus-4.6",
+			clineReasoningEffort: "high",
+		});
+		expect(result.updated).toBe(true);
+		const updatedTask = result.board.columns.find((column) => column.id === "backlog")?.cards[0];
+		expect(updatedTask?.agentId).toBe("cline");
+		expect(updatedTask?.clineProviderId).toBe("openrouter");
+		expect(updatedTask?.clineModelId).toBe("anthropic/claude-opus-4.6");
+		expect(updatedTask?.clineReasoningEffort).toBe("high");
+	});
+
+	it("updates reasoning-only task overrides without forcing provider or model overrides", () => {
+		let board = createInitialBoardData();
+		board = addTaskToColumn(board, "backlog", {
+			prompt: "Task with reasoning-only override",
+			clineReasoningEffort: "low",
+			baseRef: "main",
+		});
+		const task = board.columns.find((column) => column.id === "backlog")?.cards[0];
+		expect(task).toBeDefined();
+		if (!task) {
+			throw new Error("Expected backlog task to exist");
+		}
+
+		const result = applyTaskDetailClineSettingsSelection(board, task.id, {
+			clineReasoningEffort: "high",
+		});
+		expect(result.updated).toBe(true);
+		const updatedTask = result.board.columns.find((column) => column.id === "backlog")?.cards[0];
+		expect(updatedTask?.agentId).toBeUndefined();
+		expect(updatedTask?.clineProviderId).toBeUndefined();
+		expect(updatedTask?.clineModelId).toBeUndefined();
+		expect(updatedTask?.clineReasoningEffort).toBe("high");
 	});
 });

@@ -4,6 +4,7 @@ import type {
 	RuntimeBoardColumnId,
 	RuntimeBoardData,
 	RuntimeBoardDependency,
+	RuntimeClineReasoningEffort,
 	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
 } from "./api-contract";
@@ -21,6 +22,7 @@ export interface RuntimeCreateTaskInput {
 	agentId?: RuntimeAgentId;
 	clineProviderId?: string;
 	clineModelId?: string;
+	clineReasoningEffort?: RuntimeClineReasoningEffort;
 	baseRef: string;
 }
 
@@ -34,6 +36,7 @@ export interface RuntimeUpdateTaskInput {
 	agentId?: RuntimeAgentId | null;
 	clineProviderId?: string | null;
 	clineModelId?: string | null;
+	clineReasoningEffort?: RuntimeClineReasoningEffort | null;
 	baseRef: string;
 }
 
@@ -298,6 +301,7 @@ export function addTaskToColumn(
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.clineProviderId ? { clineProviderId: input.clineProviderId } : {}),
 		...(input.clineModelId ? { clineModelId: input.clineModelId } : {}),
+		...(input.clineReasoningEffort ? { clineReasoningEffort: input.clineReasoningEffort } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,
@@ -616,6 +620,10 @@ export function updateTask(
 				clineProviderId:
 					input.clineProviderId === undefined ? card.clineProviderId : (input.clineProviderId ?? undefined),
 				clineModelId: input.clineModelId === undefined ? card.clineModelId : (input.clineModelId ?? undefined),
+				clineReasoningEffort:
+					input.clineReasoningEffort === undefined
+						? card.clineReasoningEffort
+						: (input.clineReasoningEffort ?? undefined),
 				baseRef,
 				updatedAt: now,
 			};

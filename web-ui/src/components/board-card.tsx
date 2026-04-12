@@ -231,6 +231,7 @@ export function BoardCard({
 	isDependencyTarget = false,
 	isDependencyLinking = false,
 	workspacePath,
+	defaultClineModelId = null,
 	defaultClineReasoningEffort = null,
 }: {
 	card: BoardCardModel;
@@ -255,6 +256,7 @@ export function BoardCard({
 	isDependencyTarget?: boolean;
 	isDependencyLinking?: boolean;
 	workspacePath?: string | null;
+	defaultClineModelId?: string | null;
 	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const [isHovered, setIsHovered] = useState(false);
@@ -470,16 +472,26 @@ export function BoardCard({
 		[card.agentId],
 	);
 	const modelOverrideLabel = useMemo(() => {
-		if (!card.clineModelId) {
+		const effectiveModelId = card.clineModelId ?? (card.clineReasoningEffort ? defaultClineModelId : null);
+		if (!effectiveModelId) {
 			return null;
 		}
-		const modelName = resolveClineModelDisplayName(card.clineModelId);
+		const effectiveReasoningEffort =
+			card.clineReasoningEffort ??
+			(card.clineModelId || card.clineProviderId ? "" : (defaultClineReasoningEffort ?? ""));
+		const modelName = resolveClineModelDisplayName(effectiveModelId);
 		return formatClineSelectedModelButtonText({
 			modelName,
-			reasoningEffort: defaultClineReasoningEffort ?? "",
-			showReasoningEffort: Boolean(defaultClineReasoningEffort),
+			reasoningEffort: effectiveReasoningEffort,
+			showReasoningEffort: Boolean(effectiveReasoningEffort),
 		});
-	}, [card.clineModelId, defaultClineReasoningEffort]);
+	}, [
+		card.clineModelId,
+		card.clineProviderId,
+		card.clineReasoningEffort,
+		defaultClineModelId,
+		defaultClineReasoningEffort,
+	]);
 	const taskAgentSettingsLabel = useMemo(() => {
 		const parts = [agentOverrideLabel, modelOverrideLabel].filter((value): value is string => Boolean(value));
 		return parts.length > 0 ? parts.join(" · ") : null;

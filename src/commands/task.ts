@@ -6,6 +6,7 @@ import type {
 	RuntimeBoardCard,
 	RuntimeBoardColumnId,
 	RuntimeBoardDependency,
+	RuntimeClineReasoningEffort,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { runtimeAgentIdSchema } from "../core/api-contract";
@@ -234,6 +235,7 @@ function formatTaskRecord(
 		...(task.agentId ? { agentId: task.agentId } : {}),
 		...(task.clineProviderId ? { clineProviderId: task.clineProviderId } : {}),
 		...(task.clineModelId ? { clineModelId: task.clineModelId } : {}),
+		...(task.clineReasoningEffort ? { clineReasoningEffort: task.clineReasoningEffort } : {}),
 		createdAt: task.createdAt,
 		updatedAt: task.updatedAt,
 		session: session
@@ -365,6 +367,7 @@ async function createTask(input: {
 	agentId?: RuntimeAgentId;
 	clineProviderId?: string;
 	clineModelId?: string;
+	clineReasoningEffort?: RuntimeClineReasoningEffort;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
@@ -386,6 +389,7 @@ async function createTask(input: {
 				agentId: input.agentId,
 				clineProviderId: input.clineProviderId,
 				clineModelId: input.clineModelId,
+				clineReasoningEffort: input.clineReasoningEffort,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -411,6 +415,7 @@ async function createTask(input: {
 			...(created.agentId ? { agentId: created.agentId } : {}),
 			...(created.clineProviderId ? { clineProviderId: created.clineProviderId } : {}),
 			...(created.clineModelId ? { clineModelId: created.clineModelId } : {}),
+			...(created.clineReasoningEffort ? { clineReasoningEffort: created.clineReasoningEffort } : {}),
 		},
 	};
 }
@@ -428,6 +433,7 @@ async function updateTaskCommand(input: {
 	agentId?: RuntimeAgentId | null;
 	clineProviderId?: string | null;
 	clineModelId?: string | null;
+	clineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): Promise<JsonRecord> {
 	if (
 		input.title === undefined &&
@@ -438,7 +444,8 @@ async function updateTaskCommand(input: {
 		input.autoReviewMode === undefined &&
 		input.agentId === undefined &&
 		input.clineProviderId === undefined &&
-		input.clineModelId === undefined
+		input.clineModelId === undefined &&
+		input.clineReasoningEffort === undefined
 	) {
 		throw new Error("task update requires at least one field to change.");
 	}
@@ -462,6 +469,7 @@ async function updateTaskCommand(input: {
 			agentId: input.agentId,
 			clineProviderId: input.clineProviderId,
 			clineModelId: input.clineModelId,
+			clineReasoningEffort: input.clineReasoningEffort,
 		});
 		if (!updatedTask.updated || !updatedTask.task) {
 			throw new Error(`Task "${input.taskId}" could not be updated.`);
@@ -591,6 +599,7 @@ async function startTask(input: { cwd: string; taskId: string; projectPath?: str
 			agentId: task.agentId,
 			clineProviderId: task.clineProviderId,
 			clineModelId: task.clineModelId,
+			clineReasoningEffort: task.clineReasoningEffort,
 		});
 		if (!started.ok || !started.summary) {
 			throw new Error(started.error ?? "Could not start task session.");

@@ -1,6 +1,7 @@
 import type {
 	RuntimeAgentId,
 	RuntimeBoardColumnId,
+	RuntimeClineReasoningEffort,
 	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
 } from "@/runtime/types";
@@ -52,6 +53,7 @@ export interface BoardCard {
 	agentId?: RuntimeAgentId;
 	clineProviderId?: string;
 	clineModelId?: string;
+	clineReasoningEffort?: RuntimeClineReasoningEffort;
 	baseRef: string;
 	createdAt: number;
 	updatedAt: number;

@@ -698,6 +698,7 @@ export function createClineProviderService() {
 		async resolveLaunchConfig(overrides?: {
 			providerIdOverride?: string;
 			modelIdOverride?: string;
+			reasoningEffortOverride?: RuntimeClineReasoningEffort | null;
 		}): Promise<ResolvedClineLaunchConfig> {
 			const selectedSettings = overrides?.providerIdOverride
 				? (getSdkProviderSettings(overrides.providerIdOverride) ?? getSelectedProviderSettings())
@@ -732,7 +733,10 @@ export function createClineProviderService() {
 				modelId,
 				apiKey,
 				baseUrl: resolvedSettings.baseUrl?.trim() || null,
-				reasoningEffort: toRuntimeReasoningEffort(resolvedSettings.reasoning?.effort),
+				reasoningEffort:
+					overrides && "reasoningEffortOverride" in overrides
+						? (overrides.reasoningEffortOverride ?? null)
+						: toRuntimeReasoningEffort(resolvedSettings.reasoning?.effort),
 			};
 		},
 

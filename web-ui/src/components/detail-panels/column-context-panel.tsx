@@ -33,6 +33,7 @@ function ColumnSection({
 	moveToTrashLoadingById,
 	activeDragSourceColumnId,
 	workspacePath,
+	defaultClineModelId,
 	defaultClineReasoningEffort,
 }: {
 	column: BoardColumn;
@@ -57,6 +58,7 @@ function ColumnSection({
 	moveToTrashLoadingById?: Record<string, boolean>;
 	activeDragSourceColumnId?: BoardColumnId | null;
 	workspacePath?: string | null;
+	defaultClineModelId?: string | null;
 	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const [open, setOpen] = useState(defaultOpen);
@@ -199,6 +201,7 @@ function ColumnSection({
 												isOpenPrLoading={openPrTaskLoadingById?.[card.id] ?? false}
 												isMoveToTrashLoading={moveToTrashLoadingById?.[card.id] ?? false}
 												workspacePath={workspacePath}
+												defaultClineModelId={defaultClineModelId}
 												defaultClineReasoningEffort={defaultClineReasoningEffort}
 												onSaveTitle={onSaveTitle}
 												onClick={() => {
@@ -230,6 +233,7 @@ function ColumnSection({
 export function ColumnContextPanel({
 	selection,
 	workspacePath,
+	defaultClineModelId,
 	onCardSelect,
 	taskSessions,
 	onTaskDragEnd,
@@ -272,6 +276,7 @@ export function ColumnContextPanel({
 	openPrTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
 	panelWidth?: string;
+	defaultClineModelId?: string | null;
 	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const [activeDragSourceColumnId, setActiveDragSourceColumnId] = useState<BoardColumnId | null>(null);
@@ -362,6 +367,7 @@ export function ColumnContextPanel({
 							moveToTrashLoadingById={column.id === "review" ? moveToTrashLoadingById : undefined}
 							activeDragSourceColumnId={activeDragSourceColumnId}
 							workspacePath={workspacePath}
+							defaultClineModelId={defaultClineModelId}
 							defaultClineReasoningEffort={defaultClineReasoningEffort}
 						/>
 					))}

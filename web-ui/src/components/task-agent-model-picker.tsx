@@ -2,7 +2,7 @@ import * as Collapsible from "@radix-ui/react-collapsible";
 import { getRuntimeLaunchSupportedAgentCatalog } from "@runtime-agent-catalog";
 import { ChevronDown } from "lucide-react";
 import type { ReactElement } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ClineChatModelSelector } from "@/components/detail-panels/cline-chat-model-selector";
 import {
@@ -213,6 +213,8 @@ export function TaskAgentModelPicker({
 	onClineProviderIdChange,
 	clineModelId,
 	onClineModelIdChange,
+	clineReasoningEffort,
+	onClineReasoningEffortChange,
 	agentOptions,
 	clineProviderOptions,
 	clineModelOptions,
@@ -232,6 +234,8 @@ export function TaskAgentModelPicker({
 	onClineProviderIdChange: (value: string | undefined) => void;
 	clineModelId: string | undefined;
 	onClineModelIdChange: (value: string | undefined) => void;
+	clineReasoningEffort?: RuntimeClineReasoningEffort | undefined;
+	onClineReasoningEffortChange?: (value: RuntimeClineReasoningEffort | undefined) => void;
 	agentOptions: Array<{ value: string; label: string }>;
 	clineProviderOptions: Array<{ value: string; label: string }>;
 	clineModelOptions: Array<{ value: string; label: string }>;
@@ -258,12 +262,22 @@ export function TaskAgentModelPicker({
 	// (either explicitly overridden, or the global default provider is set)
 	const effectiveProviderId = clineProviderId ?? defaultProviderId ?? null;
 	const showClineModelPicker = showClineProviderPicker && Boolean(effectiveProviderId);
-	const isInheritingGlobalProvider = !clineProviderId;
+	const hasExplicitClineProviderOrModelOverride = Boolean(clineProviderId?.trim() || clineModelId?.trim());
 	const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
 	const [isProviderPopoverOpen, setIsProviderPopoverOpen] = useState(false);
 	const [isModelPopoverOpen, setIsModelPopoverOpen] = useState(false);
 	const [reasoningEffort, setReasoningEffort] = useState<RuntimeClineReasoningEffort | "">(
-		isInheritingGlobalProvider ? (defaultReasoningEffort ?? "") : "",
+		clineReasoningEffort ?? (hasExplicitClineProviderOrModelOverride ? "" : (defaultReasoningEffort ?? "")),
+	);
+	const setReasoningEffortWithOverride = useCallback(
+		(
+			nextReasoningEffort: RuntimeClineReasoningEffort | "",
+			overrideReasoningEffort: RuntimeClineReasoningEffort | undefined = nextReasoningEffort || undefined,
+		) => {
+			setReasoningEffort(nextReasoningEffort);
+			onClineReasoningEffortChange?.(overrideReasoningEffort);
+		},
+		[onClineReasoningEffortChange],
 	);
 
 	const modelPickerOptions = useMemo(() => {
@@ -297,13 +311,30 @@ export function TaskAgentModelPicker({
 	const reasoningEnabledModelIds = useMemo(() => getClineReasoningEnabledModelIds(providerModels), [providerModels]);
 	const reasoningEnabledModelIdSet = useMemo(() => new Set(reasoningEnabledModelIds), [reasoningEnabledModelIds]);
 	const effectiveSelectedModelId = (clineModelId ?? effectiveDefaultModelId ?? "").trim();
+	const selectedModelCapabilityKnown = useMemo(
+		() => providerModels.some((model) => model.id === effectiveSelectedModelId),
+		[effectiveSelectedModelId, providerModels],
+	);
 	const selectedModelSupportsReasoningEffort = reasoningEnabledModelIdSet.has(effectiveSelectedModelId);
 
 	useEffect(() => {
-		if (isInheritingGlobalProvider && !clineModelId) {
-			setReasoningEffort(defaultReasoningEffort ?? "");
+		if (clineReasoningEffort === undefined) {
+			return;
 		}
-	}, [clineModelId, defaultReasoningEffort, isInheritingGlobalProvider]);
+		if (clineReasoningEffort !== reasoningEffort) {
+			setReasoningEffort(clineReasoningEffort);
+		}
+	}, [clineReasoningEffort, reasoningEffort]);
+
+	useEffect(() => {
+		if (clineReasoningEffort !== undefined) {
+			return;
+		}
+		const inheritedReasoningEffort = hasExplicitClineProviderOrModelOverride ? "" : (defaultReasoningEffort ?? "");
+		if (reasoningEffort !== inheritedReasoningEffort) {
+			setReasoningEffort(inheritedReasoningEffort);
+		}
+	}, [clineReasoningEffort, defaultReasoningEffort, hasExplicitClineProviderOrModelOverride, reasoningEffort]);
 
 	useEffect(() => {
 		if (!isSettingsExpanded) {
@@ -317,10 +348,18 @@ export function TaskAgentModelPicker({
 	}, [isModelPopoverOpen, isProviderPopoverOpen, onPopoverOpenChange]);
 
 	useEffect(() => {
-		if (!selectedModelSupportsReasoningEffort && reasoningEffort) {
-			setReasoningEffort("");
+		if (!selectedModelCapabilityKnown) {
+			return;
 		}
-	}, [reasoningEffort, selectedModelSupportsReasoningEffort]);
+		if (!selectedModelSupportsReasoningEffort && reasoningEffort) {
+			setReasoningEffortWithOverride("", undefined);
+		}
+	}, [
+		reasoningEffort,
+		selectedModelCapabilityKnown,
+		selectedModelSupportsReasoningEffort,
+		setReasoningEffortWithOverride,
+	]);
 
 	const selectedModelButtonText = useMemo(
 		() =>
@@ -390,7 +429,7 @@ export function TaskAgentModelPicker({
 										if (value !== "cline") {
 											onClineProviderIdChange(undefined);
 											onClineModelIdChange(undefined);
-											setReasoningEffort(isInheritingGlobalProvider ? (defaultReasoningEffort ?? "") : "");
+											setReasoningEffortWithOverride("", undefined);
 										}
 									}}
 									className="h-7 w-full appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none"
@@ -424,7 +463,10 @@ export function TaskAgentModelPicker({
 													? providerDefaultModels[newProviderId]
 													: undefined;
 											onClineModelIdChange(newDefaultModel);
-											setReasoningEffort(newProviderId ? "" : (defaultReasoningEffort ?? ""));
+											setReasoningEffortWithOverride(
+												newProviderId ? "" : (defaultReasoningEffort ?? ""),
+												undefined,
+											);
 										}}
 										disabled={isLoadingProviders}
 										fill
@@ -451,11 +493,11 @@ export function TaskAgentModelPicker({
 											onSelectModel={(value) => {
 												onClineModelIdChange(value || undefined);
 												if (!value && !clineProviderId) {
-													setReasoningEffort(defaultReasoningEffort ?? "");
+													setReasoningEffortWithOverride(defaultReasoningEffort ?? "", undefined);
 													return;
 												}
 												if (!reasoningEnabledModelIdSet.has(value)) {
-													setReasoningEffort("");
+													setReasoningEffortWithOverride("", undefined);
 												}
 											}}
 											reasoningEnabledModelIds={reasoningEnabledModelIds}
@@ -463,7 +505,9 @@ export function TaskAgentModelPicker({
 												!clineModelId && selectedModelSupportsReasoningEffort
 											}
 											selectedReasoningEffort={reasoningEffort}
-											onSelectReasoningEffort={setReasoningEffort}
+											onSelectReasoningEffort={(nextReasoningEffort) =>
+												setReasoningEffortWithOverride(nextReasoningEffort)
+											}
 											disabled={isLoadingModels}
 											isModelLoading={isLoadingModels}
 											fill

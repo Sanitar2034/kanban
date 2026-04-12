@@ -813,6 +813,7 @@ export function useBoardInteractions({
 					agentId: selection.card.agentId,
 					clineProviderId: selection.card.clineProviderId,
 					clineModelId: selection.card.clineModelId,
+					clineReasoningEffort: selection.card.clineReasoningEffort,
 					baseRef: selection.card.baseRef,
 				});
 				return updated.updated ? updated.board : currentBoard;

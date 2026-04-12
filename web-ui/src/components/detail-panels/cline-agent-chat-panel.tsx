@@ -88,8 +88,15 @@ export interface ClineAgentChatPanelProps {
 	taskClineProviderId?: string;
 	/** Task-level model override – when set, the model picker initialises to this model instead of the global default. */
 	taskClineModelId?: string;
+	/** Task-level reasoning effort override – when set, the model picker initialises to this effort instead of global. */
+	taskClineReasoningEffort?: RuntimeClineReasoningEffort;
+	taskHasExplicitClineSettings?: boolean;
 	onClineSettingsSaved?: () => void;
-	onClineModelChanged?: (providerId: string, modelId: string) => void;
+	onTaskClineSettingsChanged?: (settings: {
+		providerId: string;
+		modelId: string;
+		reasoningEffort: RuntimeClineReasoningEffort | "";
+	}) => void;
 	onSendMessage?: (
 		taskId: string,
 		text: string,
@@ -123,8 +130,10 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			runtimeConfig = null,
 			taskClineProviderId,
 			taskClineModelId,
+			taskClineReasoningEffort,
+			taskHasExplicitClineSettings = false,
 			onClineSettingsSaved,
-			onClineModelChanged,
+			onTaskClineSettingsChanged,
 			onSendMessage,
 			onCancelTurn,
 			onLoadMessages,
@@ -192,6 +201,7 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			config: runtimeConfig,
 			taskClineProviderId,
 			taskClineModelId,
+			taskClineReasoningEffort,
 		});
 
 		const modelPickerOptions = useMemo(
@@ -295,16 +305,6 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			reasoningEffort?: RuntimeClineReasoningEffort | "";
 		};
 
-		// Persists the Cline model/reasoning-effort selection via a dual-write:
-		//
-		// 1. saveProviderSettings() writes to the GLOBAL shared Cline provider
-		//    settings for this workspace. This is intentional — changing the model
-		//    from the detail view updates the default so that future tasks (and
-		//    existing tasks that inherit defaults) pick up the new model.
-		//
-		// 2. onClineModelChanged() fires after a successful save and writes the
-		//    explicit per-task override (clineProviderId + clineModelId) onto the
-		//    current task card. See handleClineModelChangedForTask in App.tsx.
 		const persistClineModelSettings = useCallback(
 			async (overrides?: PersistClineModelSettingsOverrides): Promise<boolean> => {
 				if (!workspaceId) {
@@ -318,26 +318,34 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 				setComposerError(null);
 				setIsSavingModel(true);
 				try {
+					const nextModelId = overrides?.modelId ?? clineSettings.modelId;
+					const nextReasoningEffort =
+						overrides && "reasoningEffort" in overrides
+							? overrides.reasoningEffort || ""
+							: clineSettings.reasoningEffort;
+					if (taskHasExplicitClineSettings) {
+						onTaskClineSettingsChanged?.({
+							providerId: clineSettings.providerId,
+							modelId: nextModelId,
+							reasoningEffort: nextReasoningEffort,
+						});
+						return true;
+					}
 					const result = await clineSettings.saveProviderSettings({
-						modelId: overrides?.modelId ?? clineSettings.modelId,
-						reasoningEffort:
-							overrides && "reasoningEffort" in overrides
-								? overrides.reasoningEffort || null
-								: clineSettings.reasoningEffort || null,
+						modelId: nextModelId,
+						reasoningEffort: nextReasoningEffort || null,
 					});
 					if (!result.ok) {
 						setComposerError(result.message ?? "Could not save Cline model settings.");
 						return false;
 					}
 					onClineSettingsSaved?.();
-					const savedModelId = overrides?.modelId ?? clineSettings.modelId;
-					onClineModelChanged?.(clineSettings.providerId, savedModelId);
 					return true;
 				} finally {
 					setIsSavingModel(false);
 				}
 			},
-			[clineSettings, onClineModelChanged, onClineSettingsSaved, workspaceId],
+			[clineSettings, onClineSettingsSaved, onTaskClineSettingsChanged, taskHasExplicitClineSettings, workspaceId],
 		);
 
 		const handleSelectModel = useCallback(

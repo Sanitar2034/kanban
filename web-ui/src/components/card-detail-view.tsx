@@ -20,6 +20,7 @@ import { useResizeDrag } from "@/resize/use-resize-drag";
 import { isNativeClineAgentSelected } from "@/runtime/native-agent";
 import type {
 	RuntimeAgentId,
+	RuntimeClineReasoningEffort,
 	RuntimeConfigResponse,
 	RuntimeTaskSessionMode,
 	RuntimeTaskSessionSummary,
@@ -363,7 +364,7 @@ export function CardDetailView({
 	onBottomTerminalToggleExpand,
 	isDocumentVisible = true,
 	onClineSettingsSaved,
-	onClineModelChanged,
+	onTaskClineSettingsChanged,
 }: {
 	selection: CardSelection;
 	currentProjectId: string | null;
@@ -425,7 +426,11 @@ export function CardDetailView({
 	onBottomTerminalToggleExpand?: () => void;
 	isDocumentVisible?: boolean;
 	onClineSettingsSaved?: () => void;
-	onClineModelChanged?: (providerId: string, modelId: string) => void;
+	onTaskClineSettingsChanged?: (settings: {
+		providerId: string;
+		modelId: string;
+		reasoningEffort: RuntimeClineReasoningEffort | "";
+	}) => void;
 }): React.ReactElement {
 	const isMobile = useIsMobile();
 	const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
@@ -448,6 +453,11 @@ export function CardDetailView({
 	const { startDrag: startAgentPanelResize } = useResizeDrag();
 	const { startDrag: startDetailDiffResize } = useResizeDrag();
 	const detailLayoutRef = useRef<HTMLDivElement | null>(null);
+	const hasExplicitTaskClineSettings =
+		Boolean(selection.card.agentId) ||
+		Boolean(selection.card.clineProviderId?.trim()) ||
+		Boolean(selection.card.clineModelId?.trim()) ||
+		Boolean(selection.card.clineReasoningEffort);
 	const mainRowRef = useRef<HTMLDivElement | null>(null);
 	const detailDiffRowRef = useRef<HTMLDivElement | null>(null);
 	const clineAgentChatPanelRef = useRef<ClineAgentChatPanelHandle | null>(null);
@@ -634,8 +644,10 @@ export function CardDetailView({
 			runtimeConfig={runtimeConfig}
 			taskClineProviderId={selection.card.clineProviderId}
 			taskClineModelId={selection.card.clineModelId}
+			taskClineReasoningEffort={selection.card.clineReasoningEffort}
+			taskHasExplicitClineSettings={hasExplicitTaskClineSettings}
 			onClineSettingsSaved={onClineSettingsSaved}
-			onClineModelChanged={onClineModelChanged}
+			onTaskClineSettingsChanged={onTaskClineSettingsChanged}
 			onSendMessage={onSendClineChatMessage}
 			onCancelTurn={onCancelClineChatTurn}
 			onLoadMessages={onLoadClineChatMessages}
@@ -811,6 +823,7 @@ export function CardDetailView({
 							openPrTaskLoadingById={openPrTaskLoadingById}
 							moveToTrashLoadingById={moveToTrashLoadingById}
 							panelWidth="100%"
+							defaultClineModelId={runtimeConfig?.clineProviderSettings?.modelId ?? null}
 							defaultClineReasoningEffort={runtimeConfig?.clineProviderSettings?.reasoningEffort ?? null}
 						/>
 					</div>

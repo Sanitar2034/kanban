@@ -283,6 +283,7 @@ describe("BoardCard", () => {
 					card={createCard({
 						agentId: "cline",
 						clineModelId: "openai/gpt-5.4",
+						clineReasoningEffort: "low",
 					})}
 					index={0}
 					columnId="review"
@@ -292,8 +293,45 @@ describe("BoardCard", () => {
 		});
 
 		expect(container.textContent).toContain("Cline");
-		expect(container.textContent).toContain("GPT-5.4 (High)");
+		expect(container.textContent).toContain("GPT-5.4 (Low)");
 		expect(container.textContent).not.toContain("openai/gpt-5.4");
+	});
+
+	it("shows the task-level indicator for reasoning-only overrides", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard({
+						clineReasoningEffort: "low",
+					})}
+					index={0}
+					columnId="backlog"
+					defaultClineModelId="openai/gpt-5.4"
+					defaultClineReasoningEffort="high"
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("GPT-5.4 (Low)");
+	});
+
+	it("does not show inherited global reasoning for explicit model overrides using default effort", async () => {
+		await act(async () => {
+			root.render(
+				<BoardCard
+					card={createCard({
+						agentId: "cline",
+						clineModelId: "openai/gpt-5.4",
+					})}
+					index={0}
+					columnId="backlog"
+					defaultClineReasoningEffort="high"
+				/>,
+			);
+		});
+
+		expect(container.textContent).toContain("GPT-5.4");
+		expect(container.textContent).not.toContain("GPT-5.4 (High)");
 	});
 
 	it("shows tool input details in the session preview text", async () => {

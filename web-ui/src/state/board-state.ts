@@ -3,7 +3,7 @@ import { createShortTaskId } from "@runtime-task-id";
 import * as runtimeTaskState from "@runtime-task-state";
 
 import { createInitialBoardData } from "@/data/board-data";
-import type { RuntimeAgentId } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeClineReasoningEffort } from "@/runtime/types";
 import { isAllowedCrossColumnCardMove, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
 import {
 	type BoardCard,
@@ -28,6 +28,7 @@ export interface TaskDraft {
 	agentId?: RuntimeAgentId;
 	clineProviderId?: string;
 	clineModelId?: string;
+	clineReasoningEffort?: RuntimeClineReasoningEffort;
 	baseRef: string;
 }
 
@@ -114,6 +115,7 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		agentId?: unknown;
 		clineProviderId?: unknown;
 		clineModelId?: unknown;
+		clineReasoningEffort?: unknown;
 		createdAt?: unknown;
 		updatedAt?: unknown;
 	};
@@ -148,6 +150,12 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 			? { clineProviderId: card.clineProviderId }
 			: {}),
 		...(typeof card.clineModelId === "string" && card.clineModelId ? { clineModelId: card.clineModelId } : {}),
+		...(card.clineReasoningEffort === "low" ||
+		card.clineReasoningEffort === "medium" ||
+		card.clineReasoningEffort === "high" ||
+		card.clineReasoningEffort === "xhigh"
+			? { clineReasoningEffort: card.clineReasoningEffort }
+			: {}),
 		createdAt: typeof card.createdAt === "number" ? card.createdAt : now,
 		updatedAt: typeof card.updatedAt === "number" ? card.updatedAt : now,
 	};
@@ -296,6 +304,7 @@ export function addTaskToColumnWithResult(
 			agentId: draft.agentId,
 			clineProviderId: draft.clineProviderId,
 			clineModelId: draft.clineModelId,
+			clineReasoningEffort: draft.clineReasoningEffort,
 			baseRef: draft.baseRef,
 		},
 		createBrowserUuid,
@@ -495,6 +504,7 @@ export function updateTask(board: BoardData, taskId: string, draft: TaskDraft): 
 				agentId: draft.agentId,
 				clineProviderId: draft.clineProviderId,
 				clineModelId: draft.clineModelId,
+				clineReasoningEffort: draft.clineReasoningEffort,
 				baseRef,
 				updatedAt: Date.now(),
 			};
@@ -528,6 +538,44 @@ export function updateTaskTitle(
 	});
 }
 
+export function applyTaskDetailClineSettingsSelection(
+	board: BoardData,
+	taskId: string,
+	settings: {
+		agentId?: RuntimeAgentId;
+		clineProviderId?: string;
+		clineModelId?: string;
+		clineReasoningEffort?: RuntimeClineReasoningEffort;
+	},
+): { board: BoardData; updated: boolean } {
+	const selection = findCardSelection(board, taskId);
+	if (!selection) {
+		return { board, updated: false };
+	}
+
+	const hasExplicitTaskAgentSettings =
+		Boolean(selection.card.agentId) ||
+		Boolean(selection.card.clineProviderId?.trim()) ||
+		Boolean(selection.card.clineModelId?.trim()) ||
+		Boolean(selection.card.clineReasoningEffort);
+	if (!hasExplicitTaskAgentSettings) {
+		return { board, updated: false };
+	}
+
+	return updateTask(board, taskId, {
+		prompt: selection.card.prompt,
+		startInPlanMode: selection.card.startInPlanMode,
+		autoReviewEnabled: selection.card.autoReviewEnabled,
+		autoReviewMode: selection.card.autoReviewMode,
+		images: selection.card.images,
+		agentId: settings.agentId,
+		clineProviderId: settings.clineProviderId,
+		clineModelId: settings.clineModelId,
+		clineReasoningEffort: settings.clineReasoningEffort,
+		baseRef: selection.card.baseRef,
+	});
+}
+
 export function disableTaskAutoReview(board: BoardData, taskId: string): { board: BoardData; updated: boolean } {
 	const selection = findCardSelection(board, taskId);
 	if (!selection) {
@@ -543,6 +591,7 @@ export function disableTaskAutoReview(board: BoardData, taskId: string): { board
 		agentId: selection.card.agentId,
 		clineProviderId: selection.card.clineProviderId,
 		clineModelId: selection.card.clineModelId,
+		clineReasoningEffort: selection.card.clineReasoningEffort,
 		baseRef: selection.card.baseRef,
 	});
 }

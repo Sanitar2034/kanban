@@ -167,6 +167,7 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 					agentId: task.agentId,
 					clineProviderId: task.clineProviderId,
 					clineModelId: task.clineModelId,
+					clineReasoningEffort: task.clineReasoningEffort,
 				});
 				if (!payload.ok || !payload.summary) {
 					return {

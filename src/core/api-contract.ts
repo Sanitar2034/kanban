@@ -97,9 +97,10 @@ export const runtimeBoardCardSchema = z
 		autoReviewEnabled: z.boolean().optional(),
 		autoReviewMode: runtimeTaskAutoReviewModeSchema.optional(),
 		images: z.array(runtimeTaskImageSchema).optional(),
-	    agentId: runtimeAgentIdSchema.optional(),
-	    clineProviderId: z.string().optional(),
-	    clineModelId: z.string().optional(),
+		agentId: runtimeAgentIdSchema.optional(),
+		clineProviderId: z.string().optional(),
+		clineModelId: z.string().optional(),
+		clineReasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
 		baseRef: z.string(),
 		createdAt: z.number(),
 		updatedAt: z.number(),
@@ -884,6 +885,7 @@ export const runtimeTaskSessionStartRequestSchema = z.object({
 	agentId: runtimeAgentIdSchema.optional(),
 	clineProviderId: z.string().optional(),
 	clineModelId: z.string().optional(),
+	clineReasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
 });
 export type RuntimeTaskSessionStartRequest = z.infer<typeof runtimeTaskSessionStartRequestSchema>;
 

@@ -38,6 +38,7 @@ export function BoardColumn({
 	dependencyTargetTaskId,
 	isDependencyLinking,
 	workspacePath,
+	defaultClineModelId,
 	defaultClineReasoningEffort,
 }: {
 	column: BoardColumnModel;
@@ -68,6 +69,7 @@ export function BoardColumn({
 	dependencyTargetTaskId?: string | null;
 	isDependencyLinking?: boolean;
 	workspacePath?: string | null;
+	defaultClineModelId?: string | null;
 	defaultClineReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): React.ReactElement {
 	const canCreate = column.id === "backlog" && onCreateTask;
@@ -187,6 +189,7 @@ export function BoardColumn({
 											isDependencyTarget={dependencyTargetTaskId === card.id}
 											isDependencyLinking={isDependencyLinking}
 											workspacePath={workspacePath}
+											defaultClineModelId={defaultClineModelId}
 											defaultClineReasoningEffort={defaultClineReasoningEffort}
 											onSaveTitle={onSaveTitle}
 											onClick={() => {
