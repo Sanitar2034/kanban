@@ -417,3 +417,56 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 		expect(onClineModelIdChange).not.toHaveBeenCalled();
 	});
 });
+
+describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
+	it("shows reasoning metadata for an inherited default model and opens reasoning choices immediately", async () => {
+		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+
+		await act(async () =>
+			root.render(
+				<TaskAgentModelPicker
+					agentId={"cline" as RuntimeAgentId}
+					onAgentIdChange={() => {}}
+					clineProviderId={undefined}
+					onClineProviderIdChange={() => {}}
+					clineModelId={undefined}
+					onClineModelIdChange={() => {}}
+					agentOptions={[{ value: "", label: "Cline" }]}
+					clineProviderOptions={[{ value: "", label: "Cline" }]}
+					clineModelOptions={[
+						{ value: "", label: "GPT-5.4" },
+						{ value: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" },
+					]}
+					effectiveDefaultModelId="openai/gpt-5.4"
+					providerModels={[
+						{ id: "openai/gpt-5.4", name: "GPT-5.4", supportsReasoningEffort: true },
+						{ id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex", supportsReasoningEffort: true },
+					]}
+					isLoadingProviders={false}
+					isLoadingModels={false}
+					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultProviderId="cline"
+					defaultReasoningEffort="high"
+				/>,
+			),
+		);
+
+		const settingsTrigger = Array.from(container.querySelectorAll("button")).find((button) =>
+			button.textContent?.includes("Override Agent Settings"),
+		);
+		expect(settingsTrigger).not.toBeUndefined();
+		await act(async () => {
+			(settingsTrigger as HTMLButtonElement).click();
+		});
+
+		expect(container.textContent).toContain("GPT-5.4 (High)");
+
+		const trigger = document.getElementById("cline-chat-model-picker");
+		expect(trigger).not.toBeNull();
+		await act(async () => {
+			(trigger as HTMLElement).click();
+		});
+
+		expect(document.body.textContent).toContain("Reasoning effort");
+	});
+});

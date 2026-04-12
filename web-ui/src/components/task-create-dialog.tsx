@@ -25,7 +25,7 @@ import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
-import type { RuntimeAgentId } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeClineReasoningEffort } from "@/runtime/types";
 import { LocalStorageKey } from "@/storage/local-storage-store";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { isMacPlatform, pasteShortcutLabel } from "@/utils/platform";
@@ -129,6 +129,7 @@ export function TaskCreateDialog({
 	defaultAgentId,
 	defaultProviderId,
 	defaultModelId,
+	defaultReasoningEffort,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -166,6 +167,8 @@ export function TaskCreateDialog({
 	defaultProviderId?: string | null;
 	/** Default Cline model ID from runtimeConfig.clineProviderSettings.modelId */
 	defaultModelId?: string | null;
+	/** Default Cline reasoning effort from runtimeConfig.clineProviderSettings.reasoningEffort */
+	defaultReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): ReactElement {
 	const [mode, setMode] = useState<"single" | "multi">("single");
 	const [createMore, setCreateMore] = useState(false);
@@ -186,6 +189,8 @@ export function TaskCreateDialog({
 		agentOptions,
 		clineProviderOptions,
 		clineModelOptions,
+		effectiveDefaultModelId,
+		providerModels,
 		isLoadingProviders,
 		isLoadingModels,
 		providerDefaultModels,
@@ -608,10 +613,13 @@ export function TaskCreateDialog({
 							agentOptions={agentOptions}
 							clineProviderOptions={clineProviderOptions}
 							clineModelOptions={clineModelOptions}
+							effectiveDefaultModelId={effectiveDefaultModelId}
+							providerModels={providerModels}
 							isLoadingProviders={isLoadingProviders}
 							isLoadingModels={isLoadingModels}
 							defaultAgentId={defaultAgentId}
 							defaultProviderId={defaultProviderId}
+							defaultReasoningEffort={defaultReasoningEffort}
 							providerDefaultModels={providerDefaultModels}
 						/>
 					) : null}

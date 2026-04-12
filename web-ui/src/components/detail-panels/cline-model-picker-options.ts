@@ -76,3 +76,44 @@ export function formatClineSelectedModelButtonText({
 	}
 	return `${modelName} (${formatClineReasoningEffortLabel(reasoningEffort)})`;
 }
+
+export function getClineReasoningEnabledModelIds(providerModels: readonly RuntimeClineProviderModel[]): string[] {
+	return providerModels.filter((model) => model.supportsReasoningEffort).map((model) => model.id);
+}
+
+export function buildClineSelectedModelButtonText({
+	modelOptions,
+	selectedModelId,
+	reasoningEffort,
+	showReasoningEffort,
+	isModelLoading = false,
+	isModelSaving = false,
+	loadingLabel = "Loading models...",
+	savingLabel = "Saving model...",
+	emptyLabel = "Select model",
+}: {
+	modelOptions: readonly SearchSelectOption[];
+	selectedModelId: string;
+	reasoningEffort?: RuntimeClineReasoningEffort | "" | null;
+	showReasoningEffort: boolean;
+	isModelLoading?: boolean;
+	isModelSaving?: boolean;
+	loadingLabel?: string;
+	savingLabel?: string;
+	emptyLabel?: string;
+}): string {
+	if (isModelSaving) {
+		return savingLabel;
+	}
+	if (isModelLoading) {
+		return loadingLabel;
+	}
+	const selectedOption = modelOptions.find((option) => option.value === selectedModelId);
+	const trimmedModelId = selectedModelId.trim();
+	const selectedModelName = selectedOption?.label ?? (trimmedModelId.length > 0 ? trimmedModelId : emptyLabel);
+	return formatClineSelectedModelButtonText({
+		modelName: selectedModelName,
+		reasoningEffort,
+		showReasoningEffort,
+	});
+}

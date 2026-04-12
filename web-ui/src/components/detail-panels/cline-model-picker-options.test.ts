@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
 	buildClineAgentModelPickerOptions,
+	buildClineSelectedModelButtonText,
 	CLINE_RECOMMENDED_MODEL_IDS,
 	formatClineReasoningEffortLabel,
 	formatClineSelectedModelButtonText,
+	getClineReasoningEnabledModelIds,
 } from "@/components/detail-panels/cline-model-picker-options";
 import type { RuntimeClineProviderModel } from "@/runtime/types";
 
@@ -70,5 +72,38 @@ describe("cline model labels", () => {
 				showReasoningEffort: false,
 			}),
 		).toBe("GPT-5.4");
+	});
+
+	it("returns model IDs that support reasoning effort", () => {
+		const models: RuntimeClineProviderModel[] = [
+			{ id: "model-a", name: "Model A", supportsReasoningEffort: true },
+			{ id: "model-b", name: "Model B", supportsReasoningEffort: false },
+			{ id: "model-c", name: "Model C", supportsReasoningEffort: true },
+		];
+
+		expect(getClineReasoningEnabledModelIds(models)).toEqual(["model-a", "model-c"]);
+	});
+
+	it("builds selected model button text with loading and reasoning metadata", () => {
+		expect(
+			buildClineSelectedModelButtonText({
+				modelOptions: [
+					{ value: "openai/gpt-5.4", label: "GPT-5.4" },
+					{ value: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" },
+				],
+				selectedModelId: "openai/gpt-5.4",
+				reasoningEffort: "high",
+				showReasoningEffort: true,
+			}),
+		).toBe("GPT-5.4 (High)");
+
+		expect(
+			buildClineSelectedModelButtonText({
+				modelOptions: [],
+				selectedModelId: "",
+				showReasoningEffort: false,
+				isModelLoading: true,
+			}),
+		).toBe("Loading models...");
 	});
 });

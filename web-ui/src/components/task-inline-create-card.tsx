@@ -8,7 +8,7 @@ import { BranchSelectDropdown, type BranchSelectOption } from "@/components/bran
 import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task-agent-model-picker";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
-import type { RuntimeAgentId } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeClineReasoningEffort } from "@/runtime/types";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { pasteShortcutLabel } from "@/utils/platform";
 import { useDocumentEvent, useMeasure } from "@/utils/react-use";
@@ -76,6 +76,7 @@ export function TaskInlineCreateCard({
 	defaultAgentId,
 	defaultProviderId,
 	defaultModelId,
+	defaultReasoningEffort,
 }: {
 	title?: string;
 	onTitleChange?: (value: string) => void;
@@ -112,6 +113,8 @@ export function TaskInlineCreateCard({
 	defaultProviderId?: string | null;
 	/** Default Cline model ID from runtimeConfig.clineProviderSettings.modelId */
 	defaultModelId?: string | null;
+	/** Default Cline reasoning effort from runtimeConfig.clineProviderSettings.reasoningEffort */
+	defaultReasoningEffort?: RuntimeClineReasoningEffort | null;
 }): ReactElement {
 	const promptId = `${idPrefix}-prompt-input`;
 	const planModeId = `${idPrefix}-plan-mode-toggle`;
@@ -142,6 +145,8 @@ export function TaskInlineCreateCard({
 		agentOptions,
 		clineProviderOptions,
 		clineModelOptions,
+		effectiveDefaultModelId,
+		providerModels,
 		isLoadingProviders,
 		isLoadingModels,
 		providerDefaultModels,
@@ -324,10 +329,13 @@ export function TaskInlineCreateCard({
 						agentOptions={agentOptions}
 						clineProviderOptions={clineProviderOptions}
 						clineModelOptions={clineModelOptions}
+						effectiveDefaultModelId={effectiveDefaultModelId}
+						providerModels={providerModels}
 						isLoadingProviders={isLoadingProviders}
 						isLoadingModels={isLoadingModels}
 						defaultAgentId={defaultAgentId}
 						defaultProviderId={defaultProviderId}
+						defaultReasoningEffort={defaultReasoningEffort}
 						providerDefaultModels={providerDefaultModels}
 						onPopoverOpenChange={setIsModelPickerPopoverOpen}
 					/>

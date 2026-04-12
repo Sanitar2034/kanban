@@ -18,7 +18,8 @@ import { ClineChatComposer } from "@/components/detail-panels/cline-chat-compose
 import { ClineChatMessageItem } from "@/components/detail-panels/cline-chat-message-item";
 import {
 	buildClineAgentModelPickerOptions,
-	formatClineSelectedModelButtonText,
+	buildClineSelectedModelButtonText,
+	getClineReasoningEnabledModelIds,
 } from "@/components/detail-panels/cline-model-picker-options";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/components/ui/link";
@@ -204,34 +205,29 @@ export const ClineAgentChatPanel = React.forwardRef<ClineAgentChatPanelHandle, C
 			[clineSettings.modelId, clineSettings.providerModels],
 		);
 		const reasoningEnabledModelIds = useMemo(
-			() => clineSettings.providerModels.filter((model) => model.supportsReasoningEffort).map((model) => model.id),
+			() => getClineReasoningEnabledModelIds(clineSettings.providerModels),
 			[clineSettings.providerModels],
 		);
 
-		const selectedModelButtonText = useMemo(() => {
-			if (isSavingModel) {
-				return "Saving model...";
-			}
-			if (clineSettings.isLoadingProviderModels) {
-				return "Loading models...";
-			}
-			const selectedOption = modelOptions.find((option) => option.value === clineSettings.modelId);
-			const trimmedModelId = clineSettings.modelId.trim();
-			const selectedModelName =
-				selectedOption?.label ?? (trimmedModelId.length > 0 ? trimmedModelId : "Select model");
-			return formatClineSelectedModelButtonText({
-				modelName: selectedModelName,
-				reasoningEffort: clineSettings.reasoningEffort,
-				showReasoningEffort: clineSettings.selectedModelSupportsReasoningEffort,
-			});
-		}, [
-			clineSettings.isLoadingProviderModels,
-			clineSettings.modelId,
-			clineSettings.reasoningEffort,
-			clineSettings.selectedModelSupportsReasoningEffort,
-			isSavingModel,
-			modelOptions,
-		]);
+		const selectedModelButtonText = useMemo(
+			() =>
+				buildClineSelectedModelButtonText({
+					modelOptions,
+					selectedModelId: clineSettings.modelId,
+					reasoningEffort: clineSettings.reasoningEffort,
+					showReasoningEffort: clineSettings.selectedModelSupportsReasoningEffort,
+					isModelLoading: clineSettings.isLoadingProviderModels,
+					isModelSaving: isSavingModel,
+				}),
+			[
+				clineSettings.isLoadingProviderModels,
+				clineSettings.modelId,
+				clineSettings.reasoningEffort,
+				clineSettings.selectedModelSupportsReasoningEffort,
+				isSavingModel,
+				modelOptions,
+			],
+		);
 
 		const panelError = composerError ?? error;
 		const attachmentWarningMessage =

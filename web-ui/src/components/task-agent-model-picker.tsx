@@ -1,11 +1,24 @@
+import * as Collapsible from "@radix-ui/react-collapsible";
 import { getRuntimeLaunchSupportedAgentCatalog } from "@runtime-agent-catalog";
 import { ChevronDown } from "lucide-react";
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useState } from "react";
 
+import { ClineChatModelSelector } from "@/components/detail-panels/cline-chat-model-selector";
+import {
+	buildClineAgentModelPickerOptions,
+	buildClineSelectedModelButtonText,
+	getClineReasoningEnabledModelIds,
+} from "@/components/detail-panels/cline-model-picker-options";
 import { SearchSelectDropdown } from "@/components/search-select-dropdown";
+import { cn } from "@/components/ui/cn";
 import { fetchClineProviderCatalog, fetchClineProviderModels } from "@/runtime/runtime-config-query";
-import type { RuntimeAgentId, RuntimeClineProviderCatalogItem, RuntimeClineProviderModel } from "@/runtime/types";
+import type {
+	RuntimeAgentId,
+	RuntimeClineProviderCatalogItem,
+	RuntimeClineProviderModel,
+	RuntimeClineReasoningEffort,
+} from "@/runtime/types";
 
 // ---------------------------------------------------------------------------
 // Hook: manages fetch state for Cline provider catalog + model lists
@@ -28,6 +41,8 @@ export interface UseTaskAgentModelPickerResult {
 	agentOptions: Array<{ value: string; label: string }>;
 	clineProviderOptions: Array<{ value: string; label: string }>;
 	clineModelOptions: Array<{ value: string; label: string }>;
+	effectiveDefaultModelId: string | null;
+	providerModels: RuntimeClineProviderModel[];
 	isLoadingProviders: boolean;
 	isLoadingModels: boolean;
 	/** Map of provider ID → its default model ID (from the provider catalog). */
@@ -179,6 +194,8 @@ export function useTaskAgentModelPicker({
 		agentOptions,
 		clineProviderOptions,
 		clineModelOptions,
+		effectiveDefaultModelId,
+		providerModels,
 		isLoadingProviders,
 		isLoadingModels,
 		providerDefaultModels,
@@ -199,11 +216,14 @@ export function TaskAgentModelPicker({
 	agentOptions,
 	clineProviderOptions,
 	clineModelOptions,
+	effectiveDefaultModelId = null,
+	providerModels = [],
 	isLoadingProviders,
 	isLoadingModels,
 	onPopoverOpenChange,
 	defaultAgentId,
 	defaultProviderId,
+	defaultReasoningEffort,
 	providerDefaultModels,
 }: {
 	agentId: RuntimeAgentId | undefined;
@@ -215,6 +235,8 @@ export function TaskAgentModelPicker({
 	agentOptions: Array<{ value: string; label: string }>;
 	clineProviderOptions: Array<{ value: string; label: string }>;
 	clineModelOptions: Array<{ value: string; label: string }>;
+	effectiveDefaultModelId?: string | null;
+	providerModels?: RuntimeClineProviderModel[];
 	isLoadingProviders: boolean;
 	isLoadingModels: boolean;
 	onPopoverOpenChange?: (open: boolean) => void;
@@ -222,6 +244,8 @@ export function TaskAgentModelPicker({
 	defaultAgentId?: RuntimeAgentId | null;
 	/** The default Cline provider ID from runtimeConfig — used to decide if model picker should show by default */
 	defaultProviderId?: string | null;
+	/** The global default reasoning effort from runtimeConfig.clineProviderSettings.reasoningEffort */
+	defaultReasoningEffort?: RuntimeClineReasoningEffort | null;
 	/** Map of provider ID → its default model ID (from the provider catalog). */
 	providerDefaultModels?: Record<string, string>;
 }): ReactElement {
@@ -234,114 +258,224 @@ export function TaskAgentModelPicker({
 	// (either explicitly overridden, or the global default provider is set)
 	const effectiveProviderId = clineProviderId ?? defaultProviderId ?? null;
 	const showClineModelPicker = showClineProviderPicker && Boolean(effectiveProviderId);
+	const isInheritingGlobalProvider = !clineProviderId;
+	const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
+	const [isProviderPopoverOpen, setIsProviderPopoverOpen] = useState(false);
+	const [isModelPopoverOpen, setIsModelPopoverOpen] = useState(false);
+	const [reasoningEffort, setReasoningEffort] = useState<RuntimeClineReasoningEffort | "">(
+		isInheritingGlobalProvider ? (defaultReasoningEffort ?? "") : "",
+	);
+
+	const modelPickerOptions = useMemo(() => {
+		const defaultOption = clineModelOptions.find((option) => option.value === "");
+		const explicitOptions = clineModelOptions.filter((option) => option.value !== "");
+		const providerId = (effectiveProviderId ?? "").trim();
+
+		if (!providerId || explicitOptions.length === 0) {
+			return {
+				options: defaultOption ? [defaultOption, ...explicitOptions] : explicitOptions,
+				recommendedModelIds: [] as string[],
+				shouldPinSelectedModelToTop: true,
+			};
+		}
+
+		const orderedOptions = buildClineAgentModelPickerOptions(providerId, providerModels);
+		const explicitOptionByValue = new Map(explicitOptions.map((option) => [option.value, option] as const));
+		const orderedExplicit = orderedOptions.options
+			.map((option) => explicitOptionByValue.get(option.value))
+			.filter((option): option is { value: string; label: string } => option !== undefined);
+		const orderedExplicitValueSet = new Set(orderedExplicit.map((option) => option.value));
+		const remainingExplicit = explicitOptions.filter((option) => !orderedExplicitValueSet.has(option.value));
+
+		return {
+			options: defaultOption ? [defaultOption, ...orderedExplicit, ...remainingExplicit] : orderedExplicit,
+			recommendedModelIds: orderedOptions.recommendedModelIds,
+			shouldPinSelectedModelToTop: orderedOptions.shouldPinSelectedModelToTop,
+		};
+	}, [clineModelOptions, effectiveProviderId, providerModels]);
+
+	const reasoningEnabledModelIds = useMemo(() => getClineReasoningEnabledModelIds(providerModels), [providerModels]);
+	const reasoningEnabledModelIdSet = useMemo(() => new Set(reasoningEnabledModelIds), [reasoningEnabledModelIds]);
+	const effectiveSelectedModelId = (clineModelId ?? effectiveDefaultModelId ?? "").trim();
+	const selectedModelSupportsReasoningEffort = reasoningEnabledModelIdSet.has(effectiveSelectedModelId);
+
+	useEffect(() => {
+		if (isInheritingGlobalProvider && !clineModelId) {
+			setReasoningEffort(defaultReasoningEffort ?? "");
+		}
+	}, [clineModelId, defaultReasoningEffort, isInheritingGlobalProvider]);
+
+	useEffect(() => {
+		if (!isSettingsExpanded) {
+			setIsProviderPopoverOpen(false);
+			setIsModelPopoverOpen(false);
+		}
+	}, [isSettingsExpanded]);
+
+	useEffect(() => {
+		onPopoverOpenChange?.(isProviderPopoverOpen || isModelPopoverOpen);
+	}, [isModelPopoverOpen, isProviderPopoverOpen, onPopoverOpenChange]);
+
+	useEffect(() => {
+		if (!selectedModelSupportsReasoningEffort && reasoningEffort) {
+			setReasoningEffort("");
+		}
+	}, [reasoningEffort, selectedModelSupportsReasoningEffort]);
+
+	const selectedModelButtonText = useMemo(
+		() =>
+			buildClineSelectedModelButtonText({
+				modelOptions: modelPickerOptions.options,
+				selectedModelId: clineModelId ?? "",
+				reasoningEffort,
+				showReasoningEffort: selectedModelSupportsReasoningEffort,
+				isModelLoading: isLoadingModels,
+			}),
+		[
+			clineModelId,
+			isLoadingModels,
+			modelPickerOptions.options,
+			reasoningEffort,
+			selectedModelSupportsReasoningEffort,
+		],
+	);
 
 	// When models finish loading and the currently selected model isn't in the
 	// options list, auto-select the first real model so the button never shows
 	// "No models available". Pick the first non-empty option (skipping the
 	// "Default" placeholder) so the user immediately sees a concrete model name.
 	//
-	// Guard: also skip when clineModelOptions only contains the "Default"
+	// Guard: also skip when model options only contains the "Default"
 	// placeholder (length <= 1). This prevents a race condition where the
 	// effect fires on the initial render before models have been fetched —
 	// at that point isLoadingModels is still false (hasn't been set to true
 	// yet by the fetch effect) and the stale/empty options list would
 	// incorrectly clear a valid saved clineModelId.
 	useEffect(() => {
-		if (isLoadingModels || !clineModelId || clineModelOptions.length <= 1) {
+		if (isLoadingModels || !clineModelId || modelPickerOptions.options.length <= 1) {
 			return;
 		}
-		const modelExists = clineModelOptions.some((opt) => opt.value === clineModelId);
+		const modelExists = modelPickerOptions.options.some((opt) => opt.value === clineModelId);
 		if (!modelExists) {
-			const firstRealModel = clineModelOptions.find((opt) => opt.value !== "");
+			const firstRealModel = modelPickerOptions.options.find((opt) => opt.value !== "");
 			onClineModelIdChange(firstRealModel?.value ?? undefined);
 		}
-	}, [isLoadingModels, clineModelId, clineModelOptions, onClineModelIdChange]);
+	}, [isLoadingModels, clineModelId, modelPickerOptions.options, onClineModelIdChange]);
 
 	return (
 		<div className="flex flex-col gap-2">
-			<div>
-				<span className="text-[11px] text-text-secondary block mb-1">Agent override</span>
-				<div className="relative inline-flex w-full">
-					<select
-						value={agentId ?? ""}
-						onChange={(e) => {
-							const value = e.currentTarget.value;
-							onAgentIdChange(value ? (value as RuntimeAgentId) : undefined);
-							if (value !== "cline") {
-								onClineProviderIdChange(undefined);
-								onClineModelIdChange(undefined);
-							}
-						}}
-						className="h-7 w-full appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none"
+			<Collapsible.Root open={isSettingsExpanded} onOpenChange={setIsSettingsExpanded}>
+				<Collapsible.Trigger asChild>
+					<button
+						type="button"
+						className="inline-flex w-fit items-center gap-1 text-[12px] text-text-secondary hover:text-text-primary cursor-pointer bg-transparent border-none p-0"
 					>
-						{agentOptions.map((option) => (
-							<option key={option.value} value={option.value}>
-								{option.label}
-							</option>
-						))}
-					</select>
-					<ChevronDown
-						size={14}
-						className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-text-secondary"
-					/>
-				</div>
-			</div>
-			{showClineProviderPicker ? (
-				<>
-					<div>
-						<span className="text-[11px] text-text-secondary block mb-1">
-							Cline provider{isLoadingProviders ? " (loading\u2026)" : ""}
-						</span>
-						<div className="relative inline-flex w-full">
-							<select
-								value={clineProviderId ?? ""}
-								onChange={(e) => {
-									const newProviderId = e.currentTarget.value || undefined;
-									onClineProviderIdChange(newProviderId);
-									// Auto-select the new provider's default model so the
-									// model dropdown shows a model that the provider supports.
-									const newDefaultModel =
-										newProviderId && providerDefaultModels ? providerDefaultModels[newProviderId] : undefined;
-									onClineModelIdChange(newDefaultModel);
-								}}
-								disabled={isLoadingProviders}
-								className="h-7 w-full appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none disabled:opacity-50 disabled:cursor-default"
-							>
-								{clineProviderOptions.map((option) => (
-									<option key={option.value} value={option.value}>
-										{option.label}
-									</option>
-								))}
-							</select>
-							<ChevronDown
-								size={14}
-								className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-text-secondary"
-							/>
+						<ChevronDown
+							size={12}
+							className={cn("transition-transform", isSettingsExpanded ? "rotate-0" : "-rotate-90")}
+						/>
+						Override Agent Settings
+					</button>
+				</Collapsible.Trigger>
+				<Collapsible.Content className="pt-2">
+					<div className="flex flex-col gap-2">
+						<div className="w-full sm:w-1/2 min-w-0">
+							<span className="text-[11px] text-text-secondary block mb-1">Agent</span>
+							<div className="relative inline-flex w-full">
+								<select
+									value={agentId ?? ""}
+									onChange={(e) => {
+										const value = e.currentTarget.value;
+										onAgentIdChange(value ? (value as RuntimeAgentId) : undefined);
+										if (value !== "cline") {
+											onClineProviderIdChange(undefined);
+											onClineModelIdChange(undefined);
+											setReasoningEffort(isInheritingGlobalProvider ? (defaultReasoningEffort ?? "") : "");
+										}
+									}}
+									className="h-7 w-full appearance-none rounded-md border border-border-bright bg-surface-2 pl-2 pr-7 text-[12px] text-text-primary cursor-pointer focus:border-border-focus focus:outline-none"
+								>
+									{agentOptions.map((option) => (
+										<option key={option.value} value={option.value}>
+											{option.label}
+										</option>
+									))}
+								</select>
+								<ChevronDown
+									size={14}
+									className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-text-secondary"
+								/>
+							</div>
 						</div>
+						{showClineProviderPicker ? (
+							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+								<div className="min-w-0">
+									<span className="text-[11px] text-text-secondary block mb-1">
+										Provider{isLoadingProviders ? " (loading\u2026)" : ""}
+									</span>
+									<SearchSelectDropdown
+										options={clineProviderOptions}
+										selectedValue={clineProviderId ?? ""}
+										onSelect={(value) => {
+											const newProviderId = value || undefined;
+											onClineProviderIdChange(newProviderId);
+											const newDefaultModel =
+												newProviderId && providerDefaultModels
+													? providerDefaultModels[newProviderId]
+													: undefined;
+											onClineModelIdChange(newDefaultModel);
+											setReasoningEffort(newProviderId ? "" : (defaultReasoningEffort ?? ""));
+										}}
+										disabled={isLoadingProviders}
+										fill
+										size="sm"
+										placeholder="Search providers..."
+										emptyText="No providers available"
+										noResultsText="No matching providers"
+										showSelectedIndicator
+										buttonClassName="w-full justify-between rounded-md border-border-bright bg-surface-2 text-text-secondary shadow-none hover:bg-surface-3 hover:text-text-primary"
+										onPopoverOpenChange={setIsProviderPopoverOpen}
+									/>
+								</div>
+								{showClineModelPicker ? (
+									<div className="min-w-0">
+										<span className="text-[11px] text-text-secondary block mb-1">
+											Model{isLoadingModels ? " (loading\u2026)" : ""}
+										</span>
+										<ClineChatModelSelector
+											modelOptions={modelPickerOptions.options}
+											recommendedModelIds={modelPickerOptions.recommendedModelIds}
+											pinSelectedModelToTop={modelPickerOptions.shouldPinSelectedModelToTop}
+											selectedModelId={clineModelId ?? ""}
+											selectedModelButtonText={selectedModelButtonText}
+											onSelectModel={(value) => {
+												onClineModelIdChange(value || undefined);
+												if (!value && !clineProviderId) {
+													setReasoningEffort(defaultReasoningEffort ?? "");
+													return;
+												}
+												if (!reasoningEnabledModelIdSet.has(value)) {
+													setReasoningEffort("");
+												}
+											}}
+											reasoningEnabledModelIds={reasoningEnabledModelIds}
+											defaultOptionSupportsReasoningEffort={
+												!clineModelId && selectedModelSupportsReasoningEffort
+											}
+											selectedReasoningEffort={reasoningEffort}
+											onSelectReasoningEffort={setReasoningEffort}
+											disabled={isLoadingModels}
+											isModelLoading={isLoadingModels}
+											fill
+											onPopoverOpenChange={setIsModelPopoverOpen}
+										/>
+									</div>
+								) : null}
+							</div>
+						) : null}
 					</div>
-					{showClineModelPicker ? (
-						<div>
-							<span className="text-[11px] text-text-secondary block mb-1">
-								Cline model{isLoadingModels ? " (loading\u2026)" : ""}
-							</span>
-							<SearchSelectDropdown
-								options={clineModelOptions}
-								selectedValue={clineModelId ?? ""}
-								onSelect={(value) => onClineModelIdChange(value || undefined)}
-								disabled={isLoadingModels}
-								fill
-								size="sm"
-								placeholder="Search models..."
-								emptyText="No models available"
-								noResultsText="No matching models"
-								showSelectedIndicator
-								buttonClassName="w-full justify-between rounded-md border-border-bright bg-surface-2 text-text-secondary shadow-none hover:bg-surface-3 hover:text-text-primary"
-								onPopoverOpenChange={onPopoverOpenChange}
-							/>
-						</div>
-					) : null}
-				</>
-			) : null}
+				</Collapsible.Content>
+			</Collapsible.Root>
 		</div>
 	);
 }
