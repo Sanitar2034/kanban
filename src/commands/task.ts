@@ -1,6 +1,5 @@
 import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import type { Command } from "commander";
-
 import type {
 	RuntimeAgentId,
 	RuntimeBoardCard,
@@ -26,6 +25,7 @@ import {
 import { resolveProjectInputPath } from "../projects/project-path";
 import { loadWorkspaceContext, mutateWorkspaceState } from "../state/workspace-state";
 import type { RuntimeAppRouter } from "../trpc/app-router";
+import { registerTaskAttachCommand } from "./task-attach";
 
 const LIST_TASK_COLUMNS = ["backlog", "in_progress", "review", "trash"] as const;
 type ListTaskColumn = (typeof LIST_TASK_COLUMNS)[number];
@@ -241,7 +241,7 @@ function resolveTaskCommandTarget(input: TaskCommandTarget, commandName: string)
 	throw new Error(`${commandName} requires either --task-id or --column.`);
 }
 
-function createRuntimeTrpcClient(workspaceId: string | null) {
+export function createRuntimeTrpcClient(workspaceId: string | null) {
 	return createTRPCProxyClient<RuntimeAppRouter>({
 		links: [
 			httpBatchLink({
@@ -256,7 +256,7 @@ function createRuntimeTrpcClient(workspaceId: string | null) {
 	});
 }
 
-async function resolveRuntimeWorkspace(
+export async function resolveRuntimeWorkspace(
 	projectPath: string | undefined,
 	cwd: string,
 	options: { autoCreateIfMissing?: boolean } = {},
@@ -1091,6 +1091,8 @@ async function runTaskCommand(handler: () => Promise<JsonRecord>): Promise<void>
 
 export function registerTaskCommand(program: Command): void {
 	const task = program.command("task").alias("tasks").description("Manage Kanban board tasks from the CLI.");
+
+	registerTaskAttachCommand(task);
 
 	task
 		.command("list")

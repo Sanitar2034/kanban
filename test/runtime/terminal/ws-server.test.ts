@@ -255,8 +255,10 @@ describe("createTerminalWebSocketBridge – passcode gate", () => {
 			resolveTerminalManager: (workspaceId) => (workspaceId === WORKSPACE_ID ? terminalManager : null),
 			isTerminalIoWebSocketPath: (pathname) => pathname === "/api/terminal/io",
 			isTerminalControlWebSocketPath: (pathname) => pathname === "/api/terminal/control",
-			// Validator: only the token "valid-token" is accepted.
-			validateUpgradeSession: (cookieHeader) => cookieHeader?.includes("kanban_session=valid-token") === true,
+			// Validator: only the token "valid-token" in cookie or bearer header is accepted.
+			validateUpgradeSession: (request) =>
+				request.headers.cookie?.includes("kanban_session=valid-token") === true ||
+				request.headers.authorization === "Bearer valid-token",
 		});
 		server.listen(0, "127.0.0.1");
 		await once(server, "listening");

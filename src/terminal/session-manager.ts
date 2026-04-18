@@ -205,6 +205,13 @@ function hasCodexStartupUiRendered(text: string): boolean {
 export class TerminalSessionManager implements TerminalSessionService {
 	private readonly entries = new Map<string, SessionEntry>();
 	private readonly summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
+	private historyStore: import("./session-history-store").SessionHistoryStore | null = null;
+
+	/** Set a session history store to persist terminal snapshots on session exit. */
+	setHistoryStore(store: import("./session-history-store").SessionHistoryStore): void {
+		if (this.historyStore) return; // already wired — skip redundant calls
+		this.historyStore = store;
+	}
 
 	private trySendDeferredCodexStartupInput(taskId: string): boolean {
 		const entry = this.entries.get(taskId);
@@ -464,6 +471,34 @@ export class TerminalSessionManager implements TerminalSessionService {
 						taskListener.onState?.(cloneSummary(summary));
 						taskListener.onExit?.(event.exitCode);
 					}
+
+					// Persist terminal snapshot before clearing active state (best effort)
+					if (this.historyStore && !shouldAutoRestart && currentEntry.terminalStateMirror) {
+						const taskId = currentEntry.summary.taskId;
+						const mirror = currentEntry.terminalStateMirror;
+						const store = this.historyStore;
+						mirror
+							.getSnapshot()
+							.then((snapshot) => {
+								store
+									.save(taskId, {
+										taskId,
+										snapshot: snapshot.snapshot,
+										cols: snapshot.cols,
+										rows: snapshot.rows,
+										exitCode: event.exitCode,
+										completedAt: Date.now(),
+										agentId: currentEntry.summary.agentId,
+									})
+									.catch(() => {
+										/* best effort */
+									});
+							})
+							.catch(() => {
+								/* best effort */
+							});
+					}
+
 					currentEntry.active = null;
 					this.emitSummary(summary);
 					if (shouldAutoRestart) {

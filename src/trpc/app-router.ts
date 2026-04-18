@@ -222,6 +222,13 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskSessionInputRequest,
 		) => Promise<RuntimeTaskSessionInputResponse>;
+		getSessionHistory: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: { taskId: string },
+		) => Promise<{
+			ok: boolean;
+			snapshot: import("../terminal/session-history-store").PersistedSessionSnapshot | null;
+		}>;
 		getTaskChatMessages: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatMessagesRequest,
@@ -467,6 +474,9 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.sendTaskSessionInput(ctx.workspaceScope, input);
 			}),
+		getSessionHistory: workspaceProcedure.input(z.object({ taskId: z.string() })).query(async ({ ctx, input }) => {
+			return await ctx.runtimeApi.getSessionHistory(ctx.workspaceScope, input);
+		}),
 		getTaskChatMessages: workspaceProcedure
 			.input(runtimeTaskChatMessagesRequestSchema)
 			.output(runtimeTaskChatMessagesResponseSchema)

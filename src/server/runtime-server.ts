@@ -32,6 +32,7 @@ import {
 	validateSession,
 } from "../security/passcode-manager";
 import { loadWorkspaceContextById } from "../state/workspace-state";
+import { FileSessionHistoryStore } from "../terminal/session-history-store";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
@@ -132,7 +133,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	};
 
 	const getScopedTerminalManager = async (scope: RuntimeTrpcWorkspaceScope): Promise<TerminalSessionManager> =>
-		await deps.ensureTerminalManagerForWorkspace(scope.workspaceId, scope.workspacePath);
+		await ensureTerminalManagerWithHistory(scope.workspaceId, scope.workspacePath);
 	const clineTaskSessionServiceByWorkspaceId = new Map<string, ClineTaskSessionService>();
 	const clineWatcherRegistry = createClineWatcherRegistry();
 	const getScopedClineTaskSessionService = async (
@@ -148,6 +149,22 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		}
 		return service;
 	};
+	// Session history store -- shared across all workspaces
+	const sessionHistoryStore = new FileSessionHistoryStore();
+	// Prune history older than 30 days (non-blocking, best-effort)
+	sessionHistoryStore.deleteOlderThan(30 * 24 * 60 * 60 * 1000).catch(() => {});
+
+	// Hook history store into terminal managers as they're created
+	const origEnsureTerminalManager = deps.ensureTerminalManagerForWorkspace;
+	const ensureTerminalManagerWithHistory = async (
+		workspaceId: string,
+		repoPath: string,
+	): Promise<TerminalSessionManager> => {
+		const manager = await origEnsureTerminalManager(workspaceId, repoPath);
+		manager.setHistoryStore(sessionHistoryStore);
+		return manager;
+	};
+
 	const disposeClineTaskSessionServiceAsync = async (workspaceId: string): Promise<void> => {
 		const service = clineTaskSessionServiceByWorkspaceId.get(workspaceId);
 		if (!service) {
@@ -199,9 +216,10 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				broadcastTaskChatCleared: deps.runtimeStateHub.broadcastTaskChatCleared,
 				bumpClineSessionContextVersion: deps.runtimeStateHub.bumpClineSessionContextVersion,
 				prepareForStateReset,
+				sessionHistoryStore,
 			}),
 			workspaceApi: createWorkspaceApi({
-				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
+				ensureTerminalManagerForWorkspace: ensureTerminalManagerWithHistory,
 				getScopedClineTaskSessionService,
 				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
 				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
@@ -232,7 +250,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			}),
 			hooksApi: createHooksApi({
 				getWorkspacePathById: deps.workspaceRegistry.getWorkspacePathById,
-				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
+				ensureTerminalManagerForWorkspace: ensureTerminalManagerWithHistory,
 				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
 				broadcastTaskReadyForReview: deps.runtimeStateHub.broadcastTaskReadyForReview,
 			}),
@@ -444,9 +462,12 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		isTerminalControlWebSocketPath: (pathname) => normalizeRequestPath(pathname) === "/api/terminal/control",
 		validateUpgradeSession:
 			isRemoteMode && isPasscodeEnabled()
-				? (cookieHeader) => {
-						const token = extractSessionTokenFromCookie(cookieHeader);
-						return token !== null && validateSession(token);
+				? (request) => {
+						const sessionToken = extractSessionTokenFromCookie(request.headers.cookie);
+						const sessionAuth = sessionToken !== null && validateSession(sessionToken);
+						const bearerToken = extractBearerToken(request.headers.authorization);
+						const internalAuth = bearerToken !== null && validateInternalToken(bearerToken);
+						return sessionAuth || internalAuth;
 					}
 				: undefined,
 	});
