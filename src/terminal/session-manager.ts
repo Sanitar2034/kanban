@@ -24,6 +24,7 @@ import {
 import { hasCodexWorkspaceTrustPrompt, shouldAutoConfirmCodexWorkspaceTrust } from "./codex-workspace-trust";
 import { stripAnsi } from "./output-utils";
 import { PtySession } from "./pty-session";
+import type { SessionHistoryStore } from "./session-history-store";
 import { reduceSessionTransition, type SessionTransitionEvent } from "./session-state-machine";
 import {
 	createTerminalProtocolFilterState,
@@ -205,10 +206,10 @@ function hasCodexStartupUiRendered(text: string): boolean {
 export class TerminalSessionManager implements TerminalSessionService {
 	private readonly entries = new Map<string, SessionEntry>();
 	private readonly summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
-	private historyStore: import("./session-history-store").SessionHistoryStore | null = null;
+	private historyStore: SessionHistoryStore | null = null;
 
 	/** Set a session history store to persist terminal snapshots on session exit. */
-	setHistoryStore(store: import("./session-history-store").SessionHistoryStore): void {
+	setHistoryStore(store: SessionHistoryStore): void {
 		if (this.historyStore) return; // already wired — skip redundant calls
 		this.historyStore = store;
 	}
