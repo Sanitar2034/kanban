@@ -444,9 +444,12 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		isTerminalControlWebSocketPath: (pathname) => normalizeRequestPath(pathname) === "/api/terminal/control",
 		validateUpgradeSession:
 			isRemoteMode && isPasscodeEnabled()
-				? (cookieHeader) => {
-						const token = extractSessionTokenFromCookie(cookieHeader);
-						return token !== null && validateSession(token);
+				? (request) => {
+						const sessionToken = extractSessionTokenFromCookie(request.headers.cookie);
+						const sessionAuth = sessionToken !== null && validateSession(sessionToken);
+						const bearerToken = extractBearerToken(request.headers.authorization);
+						const internalAuth = bearerToken !== null && validateInternalToken(bearerToken);
+						return sessionAuth || internalAuth;
 					}
 				: undefined,
 	});
