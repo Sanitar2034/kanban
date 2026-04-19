@@ -98,10 +98,9 @@ describe("FileSessionHistoryStore", () => {
 		});
 
 		it("returns 0 when no files match", async () => {
-			// Use threshold of 0 (nothing is older than epoch+0) so nothing is
-			// deleted, even if leftover files exist from prior test runs in the
-			// shared history directory.
-			const deleted = await store.deleteOlderThan(0);
+			// Use a very large maxAge so cutoff is near epoch — no real file
+			// should have completedAt < 0, so nothing gets deleted.
+			const deleted = await store.deleteOlderThan(Number.MAX_SAFE_INTEGER);
 			expect(deleted).toBeGreaterThanOrEqual(0);
 		});
 	});
