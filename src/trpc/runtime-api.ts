@@ -61,6 +61,7 @@ export interface CreateRuntimeApiDependencies {
 	broadcastTaskChatCleared?: (workspaceId: string, taskId: string) => void;
 	bumpClineSessionContextVersion?: () => void;
 	prepareForStateReset?: () => Promise<void>;
+	sessionHistoryStore?: import("../terminal/session-history-store").SessionHistoryStore;
 }
 
 async function resolveExistingTaskCwdOrEnsure(options: {
@@ -374,6 +375,13 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					error: message,
 				};
 			}
+		},
+		getSessionHistory: async (_workspaceScope, input: { taskId: string }) => {
+			const historyStore = deps.sessionHistoryStore;
+			if (!historyStore) return { ok: false as const, snapshot: null };
+			const result = await historyStore.load(input.taskId);
+			if (!result) return { ok: false as const, snapshot: null };
+			return { ok: true as const, snapshot: result };
 		},
 		getTaskChatMessages: async (workspaceScope, input) => {
 			try {

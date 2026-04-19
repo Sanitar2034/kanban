@@ -1,12 +1,8 @@
-import { rm } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { FileSessionHistoryStore, type PersistedSessionSnapshot } from "../../../src/terminal/session-history-store";
 
-const TEST_DIR = join(homedir(), ".cline", "kanban", "session-history-test");
+const USED_TASK_IDS: string[] = [];
 
 function makeSnapshot(overrides: Partial<PersistedSessionSnapshot> = {}): PersistedSessionSnapshot {
 	return {
@@ -24,13 +20,14 @@ function makeSnapshot(overrides: Partial<PersistedSessionSnapshot> = {}): Persis
 describe("FileSessionHistoryStore", () => {
 	let store: FileSessionHistoryStore;
 
-	beforeEach(async () => {
-		store = new FileSessionHistoryStore(TEST_DIR);
-		await rm(TEST_DIR, { recursive: true, force: true });
+	beforeEach(() => {
+		store = new FileSessionHistoryStore();
 	});
 
 	afterEach(async () => {
-		await rm(TEST_DIR, { recursive: true, force: true });
+		// Clean up any task IDs written during the test
+		await Promise.all(USED_TASK_IDS.map((id) => store.delete(id).catch(() => {})));
+		USED_TASK_IDS.length = 0;
 	});
 
 	describe("save + load round-trip", () => {
@@ -121,6 +118,7 @@ describe("FileSessionHistoryStore", () => {
 
 	describe("truncation", () => {
 		it("truncates snapshots exceeding 1MB", async () => {
+			// Create a ~1.1MB string
 			const line = `${"x".repeat(100)}\n`;
 			const bigSnapshot = line.repeat(11_000); // ~1.1MB
 			expect(Buffer.byteLength(bigSnapshot, "utf8")).toBeGreaterThan(1_000_000);
@@ -141,6 +139,7 @@ describe("FileSessionHistoryStore", () => {
 		it("preserves the most recent content when truncating", async () => {
 			const header = "HEADER_CONTENT_TO_REMOVE\n";
 			const footer = "FOOTER_CONTENT_TO_KEEP\n";
+			// Build a large snapshot that starts with the header
 			const padding = `${"x".repeat(100)}\n`;
 			const lines = [header, ...Array(11_000).fill(padding), footer].join("");
 			expect(Buffer.byteLength(lines, "utf8")).toBeGreaterThan(1_000_000);
@@ -155,6 +154,7 @@ describe("FileSessionHistoryStore", () => {
 
 			const loaded = await store.load("keep-recent-test");
 			expect(loaded?.snapshot).toContain("FOOTER_CONTENT_TO_KEEP");
+			// The header should have been truncated away
 			expect(loaded?.snapshot).not.toContain("HEADER_CONTENT_TO_REMOVE");
 		});
 	});
