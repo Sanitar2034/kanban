@@ -2693,3 +2693,82 @@ describe("createRuntimeApi getFeaturebaseToken", () => {
 		expect(oauthMocks.getValidClineCredentials).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe("createRuntimeApi getSessionHistory", () => {
+	it("returns ok:false when no session history store is configured", async () => {
+		const api = createRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedClineTaskSessionService: vi.fn(async () => createClineTaskSessionServiceMock() as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.getSessionHistory(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "task-1" },
+		);
+
+		expect(response).toEqual({ ok: false, snapshot: null });
+	});
+
+	it("returns ok:false when store has no data for the task", async () => {
+		const mockStore = { load: vi.fn(async () => null), save: vi.fn(), delete: vi.fn(), deleteOlderThan: vi.fn() };
+		const api = createRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedClineTaskSessionService: vi.fn(async () => createClineTaskSessionServiceMock() as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+			sessionHistoryStore: mockStore,
+		});
+
+		const response = await api.getSessionHistory(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "nonexistent-task" },
+		);
+
+		expect(response).toEqual({ ok: false, snapshot: null });
+		expect(mockStore.load).toHaveBeenCalledWith("nonexistent-task");
+	});
+
+	it("returns ok:true with snapshot when store has data", async () => {
+		const snapshot = {
+			taskId: "task-1",
+			snapshot: "\x1b[2Jterminal output",
+			cols: 80,
+			rows: 24,
+			exitCode: 0,
+			completedAt: 1_700_000_000_000,
+			agentId: "claude",
+		};
+		const mockStore = {
+			load: vi.fn(async () => snapshot),
+			save: vi.fn(),
+			delete: vi.fn(),
+			deleteOlderThan: vi.fn(),
+		};
+		const api = createRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedClineTaskSessionService: vi.fn(async () => createClineTaskSessionServiceMock() as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+			sessionHistoryStore: mockStore,
+		});
+
+		const response = await api.getSessionHistory(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "task-1" },
+		);
+
+		expect(response).toEqual({ ok: true, snapshot });
+		expect(mockStore.load).toHaveBeenCalledWith("task-1");
+	});
+});
