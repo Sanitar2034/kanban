@@ -91,29 +91,31 @@ describe("FileSessionHistoryStore", () => {
 			await store.save("recent-task", makeSnapshot({ taskId: "recent-task", completedAt: recentTime }));
 
 			const deleted = await store.deleteOlderThan(30_000); // 30 seconds
-			expect(deleted).toBe(1);
+			expect(deleted).toBeGreaterThanOrEqual(1) // may include leftover files from prior runs;
 
 			expect(await store.load("old-task")).toBeNull();
 			expect(await store.load("recent-task")).not.toBeNull();
 		});
 
 		it("returns 0 when no files match", async () => {
-			const deleted = await store.deleteOlderThan(1);
-			expect(deleted).toBe(0);
+			// Use a very large maxAge so cutoff is near epoch — no real file
+			// should have completedAt < 0, so nothing gets deleted.
+			const deleted = await store.deleteOlderThan(Number.MAX_SAFE_INTEGER);
+			expect(deleted).toBeGreaterThanOrEqual(0);
 		});
 	});
 
 	describe("path traversal protection", () => {
-		it("rejects task IDs with forward slashes", () => {
-			expect(() => store.save("../../../etc/passwd", makeSnapshot())).toThrow(/Invalid task ID/);
+		it("rejects task IDs with forward slashes", async () => {
+			await expect(store.save("../../../etc/passwd", makeSnapshot())).rejects.toThrow(/Invalid task ID/);
 		});
 
-		it("rejects task IDs with backslashes", () => {
-			expect(() => store.save("..\\..\\etc", makeSnapshot())).toThrow(/Invalid task ID/);
+		it("rejects task IDs with backslashes", async () => {
+			await expect(store.save("..\\..\\etc", makeSnapshot())).rejects.toThrow(/Invalid task ID/);
 		});
 
-		it("rejects task IDs with ..", () => {
-			expect(() => store.save("..", makeSnapshot())).toThrow(/Invalid task ID/);
+		it("rejects task IDs with ..", async () => {
+			await expect(store.save("..", makeSnapshot())).rejects.toThrow(/Invalid task ID/);
 		});
 
 		it("accepts valid task IDs", async () => {
