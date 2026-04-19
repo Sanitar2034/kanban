@@ -2736,6 +2736,33 @@ describe("createRuntimeApi getSessionHistory", () => {
 		expect(mockStore.load).toHaveBeenCalledWith("nonexistent-task");
 	});
 
+	it("propagates error when store.load rejects", async () => {
+		const mockStore = {
+			load: vi.fn(async () => {
+				throw new Error("disk read failed");
+			}),
+			save: vi.fn(),
+			delete: vi.fn(),
+			deleteOlderThan: vi.fn(),
+		};
+		const api = createRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedClineTaskSessionService: vi.fn(async () => createClineTaskSessionServiceMock() as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+			sessionHistoryStore: mockStore,
+		});
+
+		await expect(
+			api.getSessionHistory({ workspaceId: "workspace-1", workspacePath: "/tmp/repo" }, { taskId: "task-1" }),
+		).rejects.toThrow("disk read failed");
+
+		expect(mockStore.load).toHaveBeenCalledWith("task-1");
+	});
+
 	it("returns ok:true with snapshot when store has data", async () => {
 		const snapshot = {
 			taskId: "task-1",
