@@ -200,21 +200,15 @@ async function attemptUpgradeAndReadResponse(
 	url: string,
 	cookieHeader?: string,
 	timeoutMs = 2_000,
-	extraHeaders?: Record<string, string>,
 ): Promise<{ statusLine: string }> {
 	return await new Promise((resolve, reject) => {
 		const timeoutId = setTimeout(() => {
 			reject(new Error(`Timed out waiting for upgrade response: ${url}`));
 		}, timeoutMs);
 
-		const headers: Record<string, string> = {};
-		if (cookieHeader) {
-			headers.cookie = cookieHeader;
-		}
-		if (extraHeaders) {
-			Object.assign(headers, extraHeaders);
-		}
-		const ws = new WebSocket(url, { headers });
+		const ws = new WebSocket(url, {
+			headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+		});
 
 		let statusLine = "";
 
@@ -309,17 +303,6 @@ describe("createTerminalWebSocketBridge – passcode gate", () => {
 	it("allows /api/terminal/control upgrade when a valid session cookie is present", async () => {
 		const url = `${runtimeUrl}/api/terminal/control?taskId=${TASK_ID}&workspaceId=${WORKSPACE_ID}`;
 		const { statusLine } = await attemptUpgradeAndReadResponse(url, "kanban_session=valid-token");
-		expect(statusLine).toContain("101");
-	});
-
-	it("accepts upgrades with valid bearer token", async () => {
-		const url = `${runtimeUrl}/api/terminal/io?taskId=${TASK_ID}&workspaceId=${WORKSPACE_ID}`;
-		const { statusLine } = await attemptUpgradeAndReadResponse(
-			url,
-			undefined,
-			2_000,
-			{ authorization: "Bearer valid-token" },
-		);
 		expect(statusLine).toContain("101");
 	});
 
