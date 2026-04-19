@@ -653,6 +653,9 @@ export class TerminalSessionManager implements TerminalSessionService {
 						taskListener.onOutput?.(filteredChunk);
 					}
 				},
+				// Note: Shell sessions intentionally skip history persistence.
+				// Unlike task sessions (startTaskSession), shells are ephemeral
+				// interactive terminals not worth replaying after exit.
 				onExit: (event) => {
 					const currentEntry = this.entries.get(request.taskId);
 					if (!currentEntry) {
